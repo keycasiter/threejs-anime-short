@@ -1,0 +1,74 @@
+# 资产、动画、GPU状态与场景规模
+
+用于glTF角色、程序植被、GPU粒子、地形和大量可交互对象。源码入口与版本见 [demo-source-atlas.md](demo-source-atlas.md)；渲染侧约束见 [rendering-choices.md](rendering-choices.md)。选技术前确认近景需要、运动方式、目标设备和是否必须随机跳帧。
+
+## 资产管线负责把设计带到运行时
+
+完整链为：建模/UV/法线/材质与动画准备 → 导出glTF → 适用的压缩 → 解码/加载 → 语义校验 → 实例/动画 → 释放。Three.js不会仅因能渲染而自动补出高质量资产。用户要求纯代码时，保留程序几何路线；允许外部资产时不必把复杂人体重新拆成基础体。
+
+按资产配置GLTFLoader、DRACOLoader、KTX2Loader和MeshoptDecoder。Draco/Meshopt主要解决几何/数据传输与解码，KTX2/Basis可转为设备支持的GPU压缩纹理；体积小不等于解码快、显存少或draw calls少。`KTX2Loader.detectSupport(renderer)`及解码器文件路径必须在目标后端成立；离线交付把wasm、worker、纹理、模型与decoder一起纳入依赖清单，实际断网验证。
+
+load完成后更新世界矩阵再计算包围盒与构图，核对单位、up axis、根缩放、pivot、材质颜色语义和动画clip。材质默认值不一致时先定位导出/加载语义，不随意覆盖所有材料。READY门槛包括真实资产和关键程序预热；纹理/worker失败不能用空模型继续交付。
+
+资源共享与销毁明确归属：模型替换时停止并uncache旧mixer，解绑事件/RAF，释放私有geometry、material、texture、render targets、PMREM结果与worker/decoder；共享资产用引用关系，避免销毁仍被别的角色使用的纹理。JS对象移出scene不等于GPU资源释放。
+
+## 骨骼、动作与接触：绝对时间之后仍要约束
+
+克隆蒙皮角色优先使用`SkeletonUtils.clone`，保证骨骼引用重新映射；普通Object3D.clone不保证得到独立骨架。骨架独立不等于geometry/material也独立，需要单角色换材质或修改几何时再复制对应资源。
+
+推荐求值顺序：
+
+```text
+t → clip区间、循环与速度映射 → 明确action权重/时间/启停
+  → 动画求值 → root motion与支撑脚约束/IK
+  → updateMatrixWorld + skeleton更新 → 变形后锚点/包围体
+  → 更新加速结构、捕获/阴影/渲染
+```
+
+`AnimationMixer.setTime(t)`会重置mixer和action的time再update，但输入仍受`mixer.timeScale`影响：设成0暂停后再setTime会得到0时刻。它也不是所有crossfade、warp、循环事件和未跟踪transform的通用重置器。按时间明确配置权重/动作状态，清理依赖历史的fade/warp，恢复需要的基准姿势，避免每次seek再叠一次`.play()`或以事件回调累加状态。R3F的`useAnimations`负责生命周期和update，不自动提供影片所需的无历史求值。
+
+脚底固定需要支撑阶段、世界空间脚锚点和root/髋/腿链共同修正；动画clip会动不代表接地成立。先读最终蒙皮/形变位置再计算接触；近景不要拿静止geometry顶点作为脚底。`getVertexPosition`可读取当前蒙皮/morph后的局部顶点，再转世界空间；shader独有变形需另有一致的CPU锚点或GPU读回，CPU原几何无法知道它。
+
+脚锁锚点来自明确支撑区间或可重建的状态，不从“上一帧脚在哪”临时猜。测试首尾、循环缝、换动作、连续播放与乱序seek，分别检查身体重心、足底滑动与接触误差；骨骼API通过不等于表演自然。
+
+## 粒子和物理：区分解析时间与历史积分
+
+解析式`position=f(seed,id,t)`可直接取时刻；GPUComputationRenderer纹理ping-pong、TSL storage compute和物理step通常是`state[n+1]=F(state[n],dt)`。给后者换一个time uniform不会复原位置、速度、寿命、碰撞和交互历史。
+
+官方WebGL GPGPU通过变量依赖、初始化texture及双缓冲更新；TSL compute通过storage/instanceIndex更新GPU缓冲，渲染材质再读取同一状态。流场demo的链为初始形体属性 → position/life/strength缓冲 → curl场积分及寿命回收 → 节点材质，不是“噪声移动顶点”一句话即可替代。
+
+影片改造按成本选择：解析近似；固定seed+固定dt从初态重放；带版本/输入hash的检查点；预计算缓存。检查点需包含速度、寿命、交互输入等完整状态，不只存position。重置ping-pong两侧、compute缓冲、累积效果和随机源；尾端不足一步按明确策略处理。实时鼠标/物理事件先录入时间线，不能从当前鼠标位置决定历史画面。
+
+新TSL示例和旧GLSL计算纹理只是两条实现路径。确认目标GPU、storage/纹理格式、readback和fallback能力后再选；设备支持WebGL2不等于支持任意WebGPU compute。研究中原生WebGPU小探针验证了storage重置与固定步重放，不代表完整粒子demo/物理系统已通过。避免逐帧大量GPU→CPU读回；数值锚点与渲染尽量共享解析关系，确需读回时计入异步导出协议。
+
+## 植被与程序环境：共享场，而非无关随机数
+
+高质量植被需要统一世界坐标下的地形高度、坡向、颜色、密度/排除mask、风场和交互场。根部采样地表，顶端有随高度增长的弯曲；方向、长度、色彩变化有空间相关性。形变同时更新法线/背面明暗；需要阴影时让depth/distance或shadow节点使用一致变形。不可见的高频细节随像素尺度衰减，避免远景闪烁。
+
+两种已读表示：al-ro草场使用InstancedBufferGeometry/实例属性、四元数弯曲与透光；Folio 2025草是合并三角属性与节点位移、相机附近区域回卷，并采样统一地形数据，不能统称为InstancedMesh。复制旧示例前迁移旧API；其r147色彩pow/编码不能原封不动叠进新色彩链。
+
+相机周围回卷可以减少无用远景几何，但要按稳定世界格子/id生成随机变化，避免游动时植被花纹漂移。原demo的Math.random与交互相机只是展示选择，影片需固定seed与镜头时间。不要全局关闭裁剪掩盖包围体错误；局部草场可按其表示有意关闭，普通实例则分块并更新保守bounds。
+
+程序地形采用四叉树/分块/worker时，难点包括共享高度场、不同LOD边界和异步结果一致性。SimonDev源码在邻接块层级改变时插值边界顶点/法线，并局部重建邻居。仅用不同细分数的平面会裂缝。任务结果携带chunk身份、版本与镜头状态，丢弃过期worker结果；此处版本防护是移植建议，不能由教程存在worker推断已经实现。
+
+固定核心镜头未必需要无限地形：先按可见范围与景别控制几何、LOD与细节预算。CSG用于造型结构时检查封闭二流形、世界矩阵、属性/材质groups与法线；three-bvh-csg明示数值边界，不把快速布尔当可靠CAD。静态布尔优先在准备阶段计算并缓存，是否需要每帧重算先用镜头需求证明。
+
+## 大规模实例、拾取和BVH
+
+| 变化/任务 | 必须同步的内容 | 边界 |
+|---|---|---|
+| setMatrixAt修改实例 | GPU上传标记`instanceMatrix.needsUpdate`；按需重算aggregate boundingSphere/Box和空间索引 | 上传标记不更新CPU包围体；研究探针复现了移动实例漏拾取，重算球后命中 |
+| 万级实例拾取 | 对象/实例层空间分块、候选筛选或适用版本ObjectBVH，稳定instanceId到业务对象映射 | 一个draw call不等于一次相交；传统InstancedMesh.raycast在总包围体通过后遍历实例，MeshBVH仅加速共享几何内部三角测试不足以移除此循环 |
+| 静态网格顶点变化 | position更新、bounds更新、MeshBVH.refit | refit适合同拓扑，严重变形后树质量可能下降；拓扑改变需重建 |
+| 骨骼/形变网格 | 最终姿势后更新骨架/矩阵；支持版本的SkinnedMeshBVH与refit，或生成静态快照重建 | 研究版本已存在SkinnedMeshBVH，不能泛称BVH不支持蒙皮。其`raycastObject3D`接口不等于MeshBVH的`raycastFirst`；按实际类核对 |
+| shader风/位移 | 保守渲染bounds；相同形变的阴影；匹配的拾取proxy或CPU变形 | 原始CPU几何及其BVH不会自动跟随任意shader位移；proxy只能声明为近似 |
+
+直接BVH几何查询一般使用局部坐标；Object3D/raycaster适配层可能处理世界矩阵。核对具体接口的坐标、near/far、返回distance及非均匀缩放，不能混用。少量已知射线与原生raycast对照，覆盖变形前后、尺度变化、边缘与空命中；firstHitOnly只在业务确实需要最近交点时使用。
+
+## 性能、质量档与成片可靠性
+
+瓶颈先分类：CPU遍历/动画/构建、draw calls、顶点、透明overdraw、阴影/反射/环境捕获、后期像素、纹理显存、编译与解码。`renderer.info`跨多遍统计要控制autoReset并汇总全部render，单次主场景数字不能代表整帧。像素工作量约随宽×高×DPR²增长；大量草叶或全屏粒子可能是填充瓶颈，减draw calls并不够。
+
+实时质量档可借鉴Folio/drei：按窗口样本和上下界调整DPR、影图、实例密度、后期规模，并设滞回/退档锁定，避免每帧来回切换。影片导出锁定档位、seed、分辨率、采样预算与LOD策略，不能随机器瞬时fps改变内容。预热代表性材质/阴影/透明组合，再分别报告冷启动、稳定帧和峰值。
+
+每次优化固定机位做A/B：差异能否被看见、边缘/遮挡/接触是否退化、CPU/GPU耗时与资源是否确实降低。持续切镜、seek、装卸资产后观察资源是否稳定；帧数高不能抵消主体不完整、阴影错位或随机导出失败。
