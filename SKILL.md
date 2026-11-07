@@ -25,16 +25,18 @@ description: 用于从设计到交付制作、改编或打磨 Three.js 动画短
 
 | 当前任务 | 参考与职责 |
 |---|---|
-| 原理、行业案例、流程研究 | [成熟生产流程研究](references/industry-production-study.md)：来源、机制与适用条件 |
+| 原理、优秀案例、流程研究 | [研究方法](references/research-methods.md)：证据与迁移条件；[逐帧机制研究](references/frame-mechanism-study.md)：镜头贡献与掌握程度 |
 | 文字要求落成模型、结构或质感 | [资产设计与生成](references/asset-craft.md)：结构规格、表示选择、大中小形与材质 |
 | 从零制作、阶段依赖或职责协作 | [生产流程](references/production-workflow.md)：阶段交付、契约、文件归属与集成 |
 | 动作、时间、镜头、声音组织 | [制作技术](references/production.md) |
 | 渲染后端、PBR/IBL、色彩与异步收敛 | [渲染路线](references/rendering-choices.md) |
+| 参数曲面、IK、脊柱、环境体积和反馈 | [程序化制作机制](references/procedural-systems.md)：结构与生成器 |
+| 自定义描线/绘画、多遍与深度合成 | [渲染契约](references/render-contracts.md)：数据格式、绑定和消费者 |
 | 外部资产加载、骨骼、GPU状态与规模 | [动画和场景规模](references/motion-and-scale.md) |
 | 图像/3D/声音生成服务 | [AI资产管线](references/ai-asset-pipeline.md)：可选工具、成本与资产验收 |
 | 视觉门槛、运行证据与交付检查 | [验收](references/validation.md)：统一标准与辅助脚本 |
 
-研究 THE BIG ONE 读 [来源与实现](references/reference-study.md)，研究 LEVIATHAN 读 [来源与实现](references/leviathan-study.md)。完整对比读 [两仓库审计](references/two-repo-technical-audit.md)；逐帧任务读 [帧与机制](references/frame-mechanism-study.md)。选择同类绘画路线时才读 [技术路径](references/technical-paths.md) 和 [渲染协议](references/render-contracts.md)，理解后在目标题材实现，不据此默认复制源码或画风。其他机制从 [源码图谱](references/demo-source-atlas.md) 定向选读，固定提交不代表当前兼容性。普通任务不必读取全部研究页。
+这些文档按问题选读，不要求每次加载全部内容。历史案例与来源存放在发布仓库的研究档案，普通制作不依赖档案、原仓库或特定角色。
 
 ## 1. 定义设计输入和完成标准
 
@@ -56,7 +58,7 @@ description: 用于从设计到交付制作、改编或打磨 Three.js 动画短
 
 资产和布局已具备所需输入后，先完成最能代表目标能力的一镜，按 [核心镜头门槛](references/validation.md#核心镜头放行标准) 放行后再扩片；用户只要5秒时，这一镜就是完整交付，不另造无关试片。
 
-按角色结构选择分件/IK、连续蒙皮/修形或长体脊柱。真实人物用来源清楚的正侧面依据校准身份和比例；两部机械/巨兽参考不能代替人体方案。手、道具、支撑和FX共享变形后世界锚点，检查接触前中后；包围球数字通过不等于可见表面接触。
+按角色结构选择分件/IK、连续蒙皮/修形或长体脊柱。真实人物用来源清楚的正侧面依据校准身份和比例；机械分件或长体生物的方法不能自动替代人体软组织方案。手、道具、支撑和FX共享变形后世界锚点，检查接触前中后；包围球数字通过不等于可见表面接触。
 
 主时钟连续，姿态、显隐、材质、FX和标题从绝对时间完整求值；需要抽帧画风才分层配置采样率，不推迟接触cue。物理/累计效果按 [状态重建](references/motion-and-scale.md) 和 [异步导出](references/rendering-choices.md) 处理，不以time uniform代替历史重建。
 
@@ -75,3 +77,5 @@ description: 用于从设计到交付制作、改编或打磨 Three.js 动画短
 HTML回调注入、脚本解析、依赖完整性、源码/资产hash与预热按 [制作技术](references/production.md) 和验收页执行。实际核对最终媒体时长/帧数/音轨/关键帧，测试播放、暂停恢复、拖动、重播及结尾；有声音交付时审听最终混音。播放器证据用当前允许的CUA/MCP；作品正常导出帧不能替代交互操作。
 
 报告能打开的产物、来源与原创范围、已验证能力和未覆盖状态。构建、视觉、连续动作、交互、声音和性能分别记录。经验写入skill只保留通用因果、表示与流程，具体题材参数、截图和迭代记录留在项目；文档校验通过不证明创作能力已经提高。
+
+维护此skill及同步发布时读取 [维护约定](AGENTS.md)；普通影片制作不触发skill发布。

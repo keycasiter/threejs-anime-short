@@ -1,0 +1,4 @@
+interface:
+  display_name: "Three.js 动画成片制作"
+  short_description: "参考成片驱动的 Three.js 动画制作与验收，按需求选择程序化或外部资产"
+  default_prompt: "使用 $threejs-anime-short，按题材、画风与资产约束制作或打磨一部 Three.js 短片，并完成核心镜头及逐镜验收。"
