@@ -77,6 +77,42 @@ function renderStill() { renderer.render(scene, camera); }
 | 颜色与受光 | 色板、材料边界、主光方向/软硬 | `Material`、光源、shader | 灰度/色彩图对照、材质响应 |
 | 水/雾/光迹 | 起点、方向、尺度、持续/衰减方式 | 曲面、shader、实例粒子与锚点 | 事件前中后帧、静帧和连续播放 |
 
+### 资产开工前的质量预排：把常见失败变成可计算约束
+
+在写细节几何之前，先用最终相机、目标分辨率和画风做一份短的“资产实现计划”。它是代码设计输入，不是对渲染不满意后再补的修图单。
+
+| 开工前确定 | 写下或计算 | 对应的 Three.js 做法与预防检查 |
+|---|---|---|
+| 投影轮廓与负形 | 目标视口占幅、宽高比、轮廓层级、必须保留的空隙/开口、近中远细节尺度 | 以目标相机检查草图/代理轮廓；给前中后层分别规定可辨认形体，不能等到铺满细节后才发现剪影读不出来 |
+| 形体与结构覆盖 | 把每个识别特征列成主形、中层结构、表面信息；写清父子件、锚点、接触、搭接/穿入和可见末端 | 每项映射到独立生成函数或材质职责；枝条从父枝表面起步，重复件由布局规则产生，不能只放在资产附近 |
+| 重复几何预算 | 所有实例簇/粒子/重复构件的计划数、LOD密度和性能上限 | 先对生成计划求和，再创建 `InstancedMesh`；容量不足时先按目标像素调整密度/LOD并重算，禁止用 `if (count < capacity)` 悄悄丢弃剩余实例 |
+| 自定义网格约束 | 截面/中心线段数、连续帧、端盖、UV范围、顶点法线、包围盒和碰撞/变形锚点 | sweep/loft 用连续局部基底（如 `computeFrenetFrames`），UV接缝处复制顶点，目标镜头可见的开口端封盖；生成后计算法线、包围盒并检查退化三角形/反面 |
+| 末端与表面覆盖 | 哪些枝梢/管口/边界应该自然收尖、封口、被遮挡或连接到下一个部件 | 用锚点与端点清单逐项覆盖；树梢须收进叶簇或明确裸枝，不能留细长刺；建筑面板边缘和器物开口要有厚度/内壁 |
+| 材质细节来源 | 大/中/小尺度分别由几何、顶点色、CanvasTexture、法线/粗糙度图或 shader 哪一层负责 | 用 UV 密度匹配世界尺寸，颜色贴图设 `SRGBColorSpace`，数据贴图使用数据色彩空间；没有 UV 的网格不能假设树皮/表面纹理会正确显示 |
+
+实例预算的标准写法是由布局计划推导容量并校验完整写入，不在生成循环里截断：
+
+```js
+const plannedCount = clusters.reduce((sum, cluster) => sum + cluster.count, 0);
+if (plannedCount > instanceBudget) {
+  throw new Error(`Planned ${plannedCount} instances exceeds budget ${instanceBudget}`);
+}
+const instances = new THREE.InstancedMesh(geometry, material, plannedCount);
+let written = 0;
+for (const cluster of clusters) {
+  for (let i = 0; i < cluster.count; i++) {
+    // 从确定性布局规则求位置、朝向和尺度，再写入实例矩阵/颜色。
+    instances.setMatrixAt(written++, matrixFor(cluster, i));
+  }
+}
+if (written !== plannedCount) {
+  throw new Error(`Instance plan mismatch: planned ${plannedCount}, wrote ${written}`);
+}
+instances.count = written;
+```
+
+`instanceBudget` 是性能上限，不是目标数量。若计划超限，依据屏幕像素和LOD有意降低密度，再重新计算；不能让遍历顺序决定哪些末端/区域被丢掉。植被、毛发、栏杆、窗格、碎屑和粒子都应使用同一约束。
+
 将尺寸归一化到一个稳定标尺（如主体高度=1或场地宽度=10），先用低细节模型确认相机、比例和相对位置，再按最近景别提高结构密度。不要从生成图直接描像素轮廓后把一个平面当成模型。
 
 ### 细节规格、像素预算与高品质资产配方
@@ -119,33 +155,33 @@ function renderStill() { renderer.render(scene, camera); }
 ```js
 function buildTaperedSweep(points, radiusAt, radialSegments = 10, steps = 18) {
   const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
-  const positions = [], indices = [];
+  // Frenet frames keep the cross-section orientation continuous along a curved centerline.
+  const frames = curve.computeFrenetFrames(steps, false);
+  const positions = [], uvs = [], indices = [];
   for (let i = 0; i <= steps; i++) {
     const u = i / steps;
     const center = curve.getPointAt(u);
-    const tangent = curve.getTangentAt(u).normalize();
-    // 避免局部切线接近参考轴时叉积退化。
-    const reference = Math.abs(tangent.y) > 0.94
-      ? new THREE.Vector3(1, 0, 0)
-      : new THREE.Vector3(0, 1, 0);
-    const normal = new THREE.Vector3().crossVectors(tangent, reference).normalize();
-    const binormal = new THREE.Vector3().crossVectors(tangent, normal).normalize();
+    const normal = frames.normals[i];
+    const binormal = frames.binormals[i];
     const radius = Math.max(0.001, radiusAt(u));
-    for (let j = 0; j < radialSegments; j++) {
+    // Duplicate the seam vertex so UVs wrap cleanly from 1 back to 0.
+    for (let j = 0; j <= radialSegments; j++) {
       const a = j / radialSegments * Math.PI * 2;
       const ripple = 1 + 0.035 * Math.sin(a * 5 + u * 9); // 微弱树皮起伏，不改变大形
       const p = center.clone()
         .addScaledVector(normal, Math.cos(a) * radius * ripple)
         .addScaledVector(binormal, Math.sin(a) * radius * ripple);
       positions.push(p.x, p.y, p.z);
-      if (i < steps) {
-        const row = radialSegments, v = i * row + j, next = i * row + (j + 1) % row;
-        indices.push(v, next, v + row, next, next + row, v + row);
+      uvs.push(j / radialSegments, u);
+      if (i < steps && j < radialSegments) {
+        const row = radialSegments + 1, k = i * row + j;
+        indices.push(k, k + 1, k + row, k + 1, k + row + 1, k + row);
       }
     }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
@@ -153,7 +189,7 @@ function buildTaperedSweep(points, radiusAt, radialSegments = 10, steps = 18) {
 }
 ```
 
-调用时把半径函数和分段数写进资产规格，例如主干使用由粗到细的非线性曲线，枝条从父枝表面起步且终点收尖。生产代码还要为接口端盖、顶点色/树皮 UV、碰撞或风摆锚点补齐对应数据；示例不代表可以省掉这些镜头需要的结构。叶簇位置应由枝条末端和树冠体积共同约束，再用固定种子的 `InstancedMesh` 分布；不要在一个球内无条件撒满叶片。
+调用时把半径函数和分段数写进资产规格，例如主干使用由粗到细的非线性曲线，枝条从父枝表面起步且终点收尖。此 helper 只生成侧壁；镜头可见的端口还要添加与端面法线一致的独立 cap 几何，碰撞/风摆锚点也须从同一中心线导出。叶簇位置应由枝条末端和树冠体积共同约束，再用固定种子的 `InstancedMesh` 分布；先算完所有簇的数量再分配容量，不要在球内无条件撒叶或静默截断实例。
 
 #### 程序化材质如何增加有效细节
 
@@ -171,17 +207,29 @@ function buildTaperedSweep(points, radiusAt, radialSegments = 10, steps = 18) {
 - **远景背景：**轮廓族、色带、冠层/建筑群体和大气透视；省去不会进入像素的独立小件。
 - 不把同一细节密度铺到全场。实例分布按路径边缘、向阳面、物种区域、风向和镜头方向组织，焦点让位的背景区域主动降低频率。
 
-#### 典型低细节症状与返修方向
+#### 低质量信号、代码根因与预防
 
-| 画面症状 | 先回查 | 有效修复 |
+| 画面信号 | 常见代码/数据根因 | 编码前预防与定位 |
 |---|---|---|
-| 树冠/岩石/云团读成一组球或胶囊 | 专属剪影、连接关系、尺度层级 | 重构轮廓和体块组合；补真实分枝/断面/流向；形体成立后再加表面细节 |
-| 森林像均匀摆放的复制品 | 物种族、分布规则、前中远比例 | 设定聚落、间距、体型/颜色族与遮挡；使用固定种子复核重复节奏 |
-| 路像一条浮在地面的贴片 | 高度采样、宽度变化、两侧过渡和接触 | 路径沿地形取样；构建路肩、台阶/铺石和压叠；检查坡度和局部贴合 |
-| 远景是一条平线或空白墙 | 地形纵深、山脊层级、雾和相机仰俯 | 先修大尺度轮廓与视线，再调空气透视；避免装饰性平面遮挡 |
-| 细节很多却显得脏/闪 | 屏幕像素、UV频率、实例密度、运动采样 | 降低高频对比或聚合小件；调整 UV/mipmap/像素尺度；在运动中复核 |
+| 识别对象读成基础体拼贴 | 轮廓、负形或中层装配未写成几何职责 | 做目标相机剪影与结构关系图；明确每个 BufferGeometry/部件负责哪项识别特征 |
+| 重复件缺失、某一侧突然变稀 | InstancedMesh容量小于计划数，循环静默截断，或实例顺序偏向前几组 | 先聚合所有cluster counts，再创建网格；运行时断言 planned count 与 written count 相等 |
+| 有机物末端像刺、轮廓呈空拱/断带 | 枝梢没有叶簇覆盖，叶簇只放在分枝端点，投影覆盖区未规划 | 编码前画枝条骨架和冠层/覆盖区；逐个验收终端锚点，并沿骨架中段布置层级化簇，不以单个球掩盖空洞 |
+| 连接件显得像粗黑横梁或互相穿插 | 半径等级没随结构层级递减，分枝起点/方向与父件不一致，阴影过重 | 先灰模检查主次和负形；规定主干/次枝/末梢半径阶梯，起点投影到父件表面，近景检查接点 |
+| 材料细节不显示、方向怪或像脏噪声 | 缺UV/接缝重复，UV密度与世界尺寸不匹配，颜色/数据贴图色彩空间错 | 在材质开发前确认网格有UV；用棋盘格或单色调试材质检查方向/接缝，再贴细节图 |
+| 地面/背景出现突然切边或比例塌陷 | 环境范围按物体局部设定，未覆盖目标相机视锥/运动路径 | 根据相机包围范围和运动补边计算环境尺寸，在首帧和末帧检查边界与大气融合 |
+| 细节很多却脏、闪或糊成块 | 频率超过目标像素能力，实例尺度/密度与镜头速度不匹配 | 在缩略图、原尺寸、近景裁切和运动中分别检查；合并低于采样能力的细节，控制高频对比 |
 
-每次修一个最影响画面的问题：固定机位、灯光和其它参数，修改对应结构或材质，重新输出同一时间、同一尺寸的原图与局部裁切。连续两轮仍无法改善时回到资产表示选择，重写规格或换几何表示，不继续叠加零散细节。
+#### 有证据的返修循环
+
+迭代用于检验规格和几何假设，不用来替代前置设计。每轮按同一目标相机、尺寸、随机种子和时间点工作：
+
+1. **记录可见差异。** 写明画面位置、目标尺度以及它与质量规格的差异，例如“右冠层外缘完整，中央负形宽度超规格”，不写“看起来怪”。
+2. **定位负责层。** 在设计/相机、主轮廓/拓扑、结构/接触、实例布局/容量、材质/UV、灯光/阴影、像素/采样中选一个根因层；用实例数、包围盒、投影边界、锚点或UV检查辅助验证。
+3. **改生成规则。** 修改负责的几何生成函数、布局数据或材质参数；不要用新装饰件遮挡缺陷，也不要让随机种子改变掩盖原因。
+4. **同条件复核。** 重新输出相同帧、相同尺寸的总图与局部裁切；只在预期差异出现且相关不变量仍通过时接受修改。
+5. **把反复问题前移。** 同类问题再次出现时，在资产实现计划中增加对应的预算、关系字段或断言，使下一个资产在首次渲染前能发现它。
+
+如果连续两轮改动都没有在预期区域形成可见改善，暂停加细节，回到特征规格/表示选择/相机投影，重新判断几何是否选错或空间覆盖是否漏项。
 
 
 ## 2. 选择最能表达形体的代码表示
