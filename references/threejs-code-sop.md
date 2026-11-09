@@ -220,13 +220,22 @@ function buildTaperedSweep(points, radiusAt, radialSegments = 10, steps = 18, se
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  // The UV seam needs two vertex records (u=0/1), but one smooth surface normal.
+  const normals = geometry.getAttribute('normal');
+  for (let i = 0; i <= steps; i++) {
+    const a = i * (radialSegments + 1), b = a + radialSegments;
+    const n = new THREE.Vector3().fromBufferAttribute(normals, a)
+      .add(new THREE.Vector3().fromBufferAttribute(normals, b)).normalize();
+    normals.setXYZ(a, n.x, n.y, n.z);
+    normals.setXYZ(b, n.x, n.y, n.z);
+  }
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
 }
 ```
 
-调用时把半径函数、截面变化和分段数写进资产规格。此 helper 只生成侧壁；只有端面可见或截面应封闭时才添加端盖。若动画、碰撞或附件依赖路径位置，锚点应从同一条中心线和坐标架导出，避免另算一套近似位置。其他类型的重复附属结构用其真实支撑面和布局规则分布；仅在使用实例/粒子时才套用前述容量预算。
+调用时把半径函数、截面变化和分段数写进资产规格。UV首尾保留独立顶点与0/1坐标，但同一光滑表面的法线需一致；`computeVertexNormals()`不会跨重复顶点自动平均。上例只修该接缝，不把倒角、端盖或设计硬边全局平滑。此 helper 只生成侧壁；只有端面可见或截面应封闭时才添加端盖。若动画、碰撞或附件依赖路径位置，锚点应从同一条中心线和坐标架导出，避免另算一套近似位置。其他类型的重复附属结构用其真实支撑面和布局规则分布；仅在使用实例/粒子时才套用前述容量预算。
 
 #### 程序化材质如何增加有效细节
 
