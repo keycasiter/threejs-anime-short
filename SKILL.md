@@ -87,7 +87,7 @@ flowchart TD
 |---|---|
 | 从需求到交付、阶段产物、职责交接 | [生产流程](references/production-workflow.md) |
 | 参考图转规格、形体/材料设计、资产路线与空间布局 | [资产设计](references/asset-craft.md) |
-| 编写几何、生成器、程序材质/FX与基础时间函数 | [Three.js代码方法](references/threejs-code-sop.md)，按目录读取对应章节 |
+| 编写几何、生成器、共享语义场、受控散布、程序材质/FX与基础时间函数 | [Three.js代码方法](references/threejs-code-sop.md)，按目录读取对应章节 |
 | 渲染后端、PBR/IBL、色彩、反射/透射与渐进导出 | [渲染选择](references/rendering-choices.md) |
 | 自定义MRT、描线、深度雾与多遍数据 | [渲染契约](references/render-contracts.md)，仅相应管线使用 |
 | glTF/骨骼、IK、历史模拟、GPU状态、实例/BVH与性能 | [动画与场景规模](references/motion-and-scale.md) |
