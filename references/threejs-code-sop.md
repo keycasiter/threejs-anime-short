@@ -603,6 +603,29 @@ scene.add(fill, key);
 
 材质与光照的代码仍须在目标画面中验证。对水等动态材质先以静帧看形体和反射，再看动画中波纹的时间稳定性；shader能运行不表示效果正确。
 
+### 按变形区域分配控制网格
+
+先在需要凹陷、鼓起、折转的区域布置顶点，再施加位移。总面数与细分参数不说明顶点位于哪里；有些圆角生成器将新增采样集中在倒角，大平面中央仍跨很长的三角形。先看局部线框和相邻顶点间距，使最窄的目标起伏跨过多个样本；中央不足时改用覆盖整面的网格/曲面控制域，而不是继续提高边缘细分。
+
+以下只生成局部XY参数域上的单值曲面，`heightAt(x,y)`返回局部Z、与width/height同单位，适用于可以由一个高度描述的局部面：
+
+```js
+function deformPatch(THREE, {width, height, cols, rows, heightAt}) {
+  const geometry = new THREE.PlaneGeometry(width, height, cols, rows);
+  const p = geometry.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    p.setZ(i, heightAt(p.getX(i), p.getY(i)));
+  }
+  p.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+```
+
+调用方按起伏宽度、曲率和目标像素选择cols/rows；用连续的鼓起、受力凹陷与转折控制形体，材料只补更小的表面响应。此例是开口面：需要实体时生成背面与连续侧边，共用边界；折叠、倒扣或多值关系改用控制网格、截面/体积或DCC。CPU改顶点后更新法线及包围体；shader位移还要同步其光照/阴影表示。相同机位比较起伏深度输入改变前后，确认对应区域的顶点与受光真正变化。
+
 ### 表面位移与受光法线
 
 岩石等表面可用三维场构造几何，再通过高度场的切向梯度扰动照明法线；以下是机制示意，不是所有材质的默认方案：
