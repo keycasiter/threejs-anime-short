@@ -1,6 +1,7 @@
-/** Bake user-defined physical height/roughness fields into Three.js PBR data maps.
- * Inject the same THREE namespace used by the consuming scene (verified with r180).
- * No renderer, geometry, material, random field or external image is created.
+/** Bake authored fields into Three.js PBR maps, optionally composing a material.
+ * Inject the scene's THREE namespace (verified with r180). createSurfaceMaps
+ * creates data maps only; createRegionMaterial also owns a standard material.
+ * Neither creates a renderer, geometry, random field or external image.
  */
 
 /**
@@ -99,4 +100,64 @@ export function createSurfaceMaps(THREE, {
     if (disposed) return;
     disposed = true;normalMap.dispose();roughnessMap.dispose();
   }};
+}
+
+/** Optional PBR composition of a caller-designed regional field.
+ * regionAt({u,v,x,y}) -> {color: THREE.Color in linear working space,
+ * roughness: 0..1, metalness: 0..1, height: physical units}.
+ * Each region is sampled once per texel, so all four channels share boundaries.
+ * Color is encoded sRGB in map; scalar data remain raw (roughness G, metalness B).
+ * Inherits createSurfaceMaps' physical UV/TBN, filtering and band-limit limits.
+ * This supplies no wear/noise preset and does not create geometric edges.
+ */
+export function createRegionMaterial(THREE, {regionAt, ...options} = {}) {
+  if (typeof regionAt !== 'function') throw new Error('regionAt must be a function');
+  const cache = new Map();
+  function region(p) {
+    const key = `${p.u},${p.v}`;
+    if (!cache.has(key)) {
+      const value = regionAt(p);
+      // Callers may reuse a scratch object/Color; preserve this texel's values.
+      cache.set(key, {height: value.height, roughness: value.roughness,
+        metalness: value.metalness, color: value.color?.isColor ? value.color.clone() : value.color});
+    }
+    return cache.get(key);
+  }
+  const surface = createSurfaceMaps(THREE, {
+    ...options,
+    heightAt: p => region(p).height,
+    roughnessAt: p => region(p).roughness
+  });
+  const {width, height, physicalSize} = surface.metadata;
+  const colors = new Uint8Array(width * height * 4), metals = new Uint8Array(colors.length);
+  try {
+    for (let j = 0; j < height; j++) for (let i = 0; i < width; i++) {
+      const u = (i + .5) / width, v = (j + .5) / height;
+      const r = region({u, v, x: u * physicalSize[0], y: v * physicalSize[1]});
+      if (!r.color?.isColor || !r.color.toArray().every(n => Number.isFinite(n) && n >= 0 && n <= 1)) throw new Error('Region color must be a linear THREE.Color with components in [0,1]');
+      if (!Number.isFinite(r.metalness) || r.metalness < 0 || r.metalness > 1) throw new Error('Region metalness must be in [0,1]');
+      const c = r.color.clone().convertLinearToSRGB(), k = (j * width + i) * 4;
+      colors[k] = Math.round(c.r * 255);colors[k+1] = Math.round(c.g * 255);colors[k+2] = Math.round(c.b * 255);colors[k+3] = 255;
+      metals[k+2] = Math.round(r.metalness * 255);metals[k+3] = 255;
+    }
+  } catch (error) {surface.dispose();throw error;}
+  cache.clear();
+  function texture(data, colorSpace) {
+    const t = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.colorSpace = colorSpace;t.flipY = false;
+    t.wrapS = surface.normalMap.wrapS;t.wrapT = surface.normalMap.wrapT;
+    t.magFilter = THREE.LinearFilter;t.minFilter = THREE.LinearMipmapLinearFilter;t.generateMipmaps = true;
+    t.needsUpdate = true;return t;
+  }
+  const map = texture(colors, THREE.SRGBColorSpace), metalnessMap = texture(metals, THREE.NoColorSpace);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 1, metalness: 1,
+    map, roughnessMap: surface.roughnessMap, normalMap: surface.normalMap, metalnessMap
+  });
+  let disposed = false;
+  return {material, maps: {map, metalnessMap, roughnessMap: surface.roughnessMap, normalMap: surface.normalMap},
+    metadata: {...surface.metadata, regionChannels: 'sRGB color; raw roughness G / metalness B; height -> normal',
+      limits: 'caller-designed regional field; physical UV/unit TBN and band-limited fields required; no geometry, displacement, lighting or normal-variance compensation'},
+    dispose() {if (disposed) return;disposed = true;material.dispose();map.dispose();metalnessMap.dispose();surface.dispose();}
+  };
 }

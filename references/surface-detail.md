@@ -24,7 +24,38 @@
 
 颜色说明颜色，不应把参考上的高光和阴影画进albedo；高度扰动受光法线，不改变轮廓；roughness决定反射扩散，不能用颜色噪声代替。
 
-需要从物理尺度高度/粗糙度场生成数据图时，复制[表面场模块](../assets/materials/surface-fields.mjs)到作品源码，注入同一份THREE。该模块以Three 0.180.0验证；字段本身由当前材料设计提供。
+### 让同一区域进入实际PBR通道
+
+先为材料定区域边界：由构件端面/边缘距离、接触磨耗、受潮高度、流向或手工设计mask得到位置相关的权重；再选择各区响应。形体边界来自网格/UV/局部坐标，不能对每个通道各造一套无关随机斑。空间变化先低频分区与方向，再补中小尺度。
+
+需要同时烘焙颜色、金属、粗糙与微表面时，复制[表面场模块](../assets/materials/surface-fields.mjs)并使用`createRegionMaterial`。下面的A/B为当前设计的两种材料响应，`regionWeightAt(p)`由对象形成规律提供；示例混合方式不规定所有材料必须只有两区。
+
+```js
+import {createRegionMaterial} from './surface-fields.mjs';
+
+const surface = createRegionMaterial(THREE, {
+  width: 256, height: 256, physicalSize: spec.tileSize,
+  regionAt: p => {
+    const w = THREE.MathUtils.clamp(regionWeightAt(p), 0, 1);
+    return {
+      color: regionA.color.clone().lerp(regionB.color, w),
+      roughness: THREE.MathUtils.lerp(regionA.roughness, regionB.roughness, w),
+      metalness: THREE.MathUtils.lerp(regionA.metalness, regionB.metalness, w),
+      height: materialHeightAt(p, w) // 与tileSize相同单位
+    };
+  }
+});
+representativeMesh.material = surface.material;
+// 最终不再使用时surface.dispose()释放自己创建的材质和四张图。
+```
+
+该函数每texel仅取一次区域，创建实际连接到MeshStandardMaterial的map、roughnessMap、metalnessMap和normalMap。输入color为Three线性工作空间的Color（0–1）；输出颜色编码sRGB，roughness写原始G，metalness写原始B。标量color白、roughness/metalness为1，避免无意再次乘色/衰减；有意修改时仍按乘法语义。数据图默认flipY=false、线性过滤与mipmap，继承下方物理UV/TBN及带限约束。
+
+区域权重、响应值和高低尺度由当前对象决定；该工具不自动创造旧木、氧化或皮肤。高度仍不改变轮廓；需要厚涂层、崩边、压痕和实际接触时由几何负责。金属/介质边界和湿润亮带要在最终光照检查，单张“看起来很脏”的颜色图无法替代它们。
+
+### 仅需要高度与粗糙度数据时
+
+需要从物理尺度高度/粗糙度场生成数据图时，使用同模块的`createSurfaceMaps`，注入同一份THREE。模块以Three 0.180.0验证；字段本身由当前材料设计提供。
 
 ```js
 import { createSurfaceMaps } from './surface-fields.mjs';
