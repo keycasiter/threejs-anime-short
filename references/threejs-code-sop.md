@@ -406,6 +406,26 @@ profile里的`x`是半径、`y`是高度。截面点的顺序决定内外表面�
 
 制作回转壳体、内腔或带孔板件前，先读取[截面与厚壁方法](profile-geometry.md)：显式内外剖面、环形口沿、光滑/折边法线、真实贯穿孔、成品厚度及倒角包络。该模块可随作品复制；上述短片段仍用于理解原生API。
 
+### 局部前向与内容锚点
+
+有开口、展示内容或操作面的资产，在自己的局部坐标声明面向使用者的法线`frontLocal`和该面上的`anchorLocal`；网格与两者共用父级变换。布局时朝向使用区，实际取景时再核对内容可见性。下面只返回相机在哪一侧；`THREE`由当前工程导入：
+
+```js
+function facingSide(asset, frontLocal, anchorLocal, camera) {
+  asset.updateWorldMatrix(true, false);
+  if (asset.matrixWorld.determinant() === 0) throw Error('singular asset transform');
+  const normal = frontLocal.clone().applyMatrix3(
+    new THREE.Matrix3().getNormalMatrix(asset.matrixWorld)
+  ).normalize();
+  const anchor = asset.localToWorld(anchorLocal.clone());
+  const towardCamera = camera.getWorldPosition(new THREE.Vector3()).sub(anchor);
+  if (towardCamera.lengthSq() === 0) return null;
+  return normal.dot(towardCamera.normalize()); // 正：前侧；负：背侧；接近0：掠视。
+}
+```
+
+`frontLocal`为非零法线，相机与锚点重合返回`null`；正值不保证内容在画内或未被遮挡。用[锚点投影](composition-and-form.md#把世界锚点投影到目标视口)判断取景；有必要时用第一遮挡射线定位自身背板、外壳和场景遮挡，再审实际画面。实例/骨骼/shader形变使用最终实例/变形锚点；中心射线不等于整面可见率。此片段适用可逆仿射Object3D变换，法线按[逆转置矩阵](https://threejs.org/docs/pages/Matrix3.html#method:getNormalMatrix)变换，不能只把局部向量当世界方向。
+
 ### 用截面生成连续曲面
 
 船体、果实、头部、岩层、枝干等通常需要沿主轴定义多个截面。每个截面包含中心、宽度和上下/左右轮廓；沿轴插值截面，再绕截面采样生成顶点、UV和三角面，端部加封盖，最后求/校正法线。
@@ -448,26 +468,42 @@ function buildGridGeometry({ rows, columns, pointAt, reverseWinding = false }) {
 }
 ```
 
-例如，以Y轴为主轴生成具有椭圆截面和两端收窄的有机体：
+以下以Y方向为轴，演示**关键截面→实际顶点**。`u`为沿程参数，`halfWidth/halfDepth`为半尺寸；中心、宽、深与截面扭角分别可改。数值仅演示控制关系，按当前目标重设：
 
 ```js
+const sections = [
+  {u: 0,    y: -1.5, x: 0,    z: 0,   halfWidth: .28, halfDepth: .22, twist: 0},
+  {u: .25,  y: -.65, x: -.10, z: 0,   halfWidth: .72, halfDepth: .43, twist: 0},
+  {u: .50,  y: 0,    x: 0,    z: .10, halfWidth: .48, halfDepth: .62, twist: .12},
+  {u: .75,  y: .65,  x: .12,  z: 0,   halfWidth: .81, halfDepth: .35, twist: .08},
+  {u: 1,    y: 1.5,  x: 0,    z: 0,   halfWidth: .23, halfDepth: .18, twist: 0},
+];
+function sectionAt(u) {
+  // 有效规格：u严格递增，首尾0/1，半尺寸为正；网格须采到关键层位。
+  const k = Math.max(1, sections.findIndex(s => s.u >= u));
+  const a = sections[k - 1], b = sections[k];
+  const t = (u - a.u) / (b.u - a.u);
+  const s = {};
+  for (const key of ['x', 'y', 'z', 'halfWidth', 'halfDepth', 'twist']) {
+    s[key] = THREE.MathUtils.lerp(a[key], b[key], t);
+  }
+  return s;
+}
 const geometry = buildGridGeometry({
-  rows: 40, columns: 32,
+  rows: 40, columns: 32, // 本例关键u均被采到；任意层位须显式纳入采样行。
   pointAt: (u, v) => {
-    const angle = 2 * Math.PI * v;
-    const taper = Math.max(0.025, Math.sin(Math.PI * u) ** 0.72);
-    const centerX = 0.08 * Math.sin(Math.PI * u);
-    return new THREE.Vector3(
-      centerX + Math.cos(angle) * 0.72 * taper,
-      THREE.MathUtils.lerp(-1.8, 1.8, u),
-      Math.sin(angle) * 0.46 * taper,
-    );
+    const s = sectionAt(u), angle = 2 * Math.PI * v;
+    const x = Math.cos(angle) * s.halfWidth, z = Math.sin(angle) * s.halfDepth;
+    const c = Math.cos(s.twist), n = Math.sin(s.twist);
+    return new THREE.Vector3(s.x + c*x + n*z, s.y, s.z - n*x + c*z);
   },
 });
 const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-  color: '#789078', roughness: 0.78, metalness: 0.02,
+  color: '#789078', roughness: .78, metalness: .02,
 }));
 ```
+
+先改一个层位的宽/深/偏心，确认该处与相邻过渡确实改变，其他控制点保留。上例用分段线性插值，转折处可见曲率变化；需要连续圆滑时设计切向/Hermite或增加有意截面，并检查插值过冲及净空。沿弯曲路径改用路径框架，分枝/洞口另设计拓扑；这个简单loft不是任意结构的成品生成器。
 
 `pointAt`决定实际形状：换控制截面即可改变腹背、肩部、端部和偏心。上例是开口表面模板，不包含端盖；正式封闭资产需要生成端盖或连接独立几何。闭合截面在`v=0`和`v=1`位置重复顶点以获得UV接缝，因此普通`computeVertexNormals()`可能在接缝处出现法线断层；要平滑闭合时需焊接位置相同顶点后计算/复制法线，或手工对接缝两侧平均法线。检查`reverseWinding`是否符合外向法线，必要时在调试材质中开启`THREE.DoubleSide`定位方向，但交付时应修正绕序。
 
@@ -528,7 +564,7 @@ scene.add(fill, key);
 
 灯光量要结合曝光与tone mapping校准。主光用来揭示形体转折，填充光保持暗部层次；避免把所有材质加亮到自发光效果。阴影发脏/漂浮时检查shadow camera范围、bias、接收面和法线，不要统一把阴影调黑。
 
-程序化表面先定形成规律、材料坐标、实际尺度和目标像素，再分别编码颜色、高度/法线与粗糙度。需要数据场、方向纹理、磨损分区或排查规则波纹时，先读取[表面细节方法](surface-detail.md)：用物理尺度高度求法线，以独立粗糙度场控制反射；可复制对应数据图模块。颜色图可用确定性的Canvas绘制并标sRGB，数据图不做颜色解码。两者都应随所属表面保持坐标关系。
+先按[响应数据链](rendering-choices.md#从目标响应接到实际消费者)选择实际消费者与渲染状态；程序化表面再定形成规律、材料坐标、实际尺度和目标像素，分别编码颜色、高度/法线与粗糙度。需要数据场、方向纹理、磨损分区或排查规则波纹时，先读取[表面细节方法](surface-detail.md)：用物理尺度高度求法线，以独立粗糙度场控制反射；可复制对应数据图模块。颜色图可用确定性的Canvas绘制并标sRGB，数据图不做颜色解码。两者都应随所属表面保持坐标关系。
 
 该方法不替代轮廓、凹陷、厚度或宏观褶皱；先用低频材料和实际光区校准，再分配中/微尺度。表面频率与对比超过目标像素时先合并/带限，别让均匀条纹或高频噪声成为默认细节。
 
