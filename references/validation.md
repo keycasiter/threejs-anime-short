@@ -118,8 +118,8 @@ node scripts/check_contacts.mjs path/to/contacts.json
 `render_film.mjs` 仅用于渲染自己有权制作的离线影片源码；不是网站浏览或 CUA 权限回退工具。依赖 Node 22+、本机 Chrome；`--video` 额外需要 ffmpeg/ffprobe。通过 `CHROME` 指定其他平台的可执行文件。
 
 ```sh
-node scripts/render_film.mjs --html /absolute/film.html --out /absolute/review --times 4,12,20,28
-node scripts/render_film.mjs --html /absolute/film.html --out /absolute/export --times 4,12,20,28 --video
+node scripts/render_film.mjs --html /absolute/film.html --out /absolute/review
+node scripts/render_film.mjs --html /absolute/film.html --out /absolute/export --video
 ```
 
 适用接口及页面约定：
@@ -127,14 +127,16 @@ node scripts/render_film.mjs --html /absolute/film.html --out /absolute/export -
 | 接口/条件 | 契约 |
 |---|---|
 | `window.__ready === true` | 必需资产、字体和渲染准备完成后置true；不是吞掉模块错误后的占位状态 |
-| `window.__FILM={duration,fps}` | 时长为秒，两者均为有限正数；样本时间位于0至duration之间 |
-| `window.renderAt(seconds)` | 同步、完整地求值并绘制该时刻，包括canvas、DOM标题/字幕与FX；返回Promise会明确失败。异步收敛需另按 [渲染路线](rendering-choices.md) 适配 |
+| `window.__FILM={duration,fps}` | 时长为秒，两者均为有限正数；省略`--times`时取0、duration/2、duration，显式时间须位于此区间 |
+| `window.renderAt(seconds)` | 默认同步、完整地求值并绘制该时刻，包括canvas、DOM标题/字幕与FX；未声明awaited时返回Promise会失败。有限采样/异步渲染采用下述显式完成协议 |
 | `body.render-mode`及`?still=1` | 页面进入静帧导出状态：只保留目标画面，暂停独立RAF、CSS墙钟动画/过渡等，所有可见状态由`t`确定。不得依赖某个canvas ID；支持多个canvas及DOM合成 |
-| MP4及可选统计 | 当前脚本MP4路径要求同步`window.renderWav(22050)`返回WAV Uint8Array；无声作品可提供等时长静音WAV适配或改用无声导出器，不因此增加可听配乐；可选`window.filmMetrics()`提供项目可解释的统计 |
+| 音频与可选统计 | `__FILM.audio="none"`输出无音轨MP4，不调用WAV入口；`"wav"`要求同步`renderWav(22050)`返回WAV Uint8Array。未声明时兼容旧作品：存在WAV入口则用它，否则无音轨；可选`filmMetrics()`提供项目可解释的统计 |
 
-默认视口1280×720、deviceScaleFactor=1，可传`--width/--height`。页面依据该视口与`render-mode`确定布局；导出器添加该class并兼容隐藏旧`#start`入口，但影片自己的控制层由页面负责清理。字体在READY前准备，导出器也等待当前`document.fonts.ready`；按时间才发起的异步资源加载不符合此同步契约。
+异步作品显式设置`__FILM.capture={mode:'awaited',timeoutMs:120000}`。`renderAt(t)`必须在姿势求值、累积重置、固定预算采样及所需GPU/降噪完成后，返回`{complete:true,time:t}`；固定采样实现同时返回正整数`completedSamples`与`requiredSamples`，两者必须相等。导出器await并校验报告后才截图，超时、时间不符或预算未完成即失败，不生成本轮manifest。报告是应用的完成信号，不能代替内部正确的GPU等待或证明视觉已收敛。具体适配见[渲染选择](rendering-choices.md#路径追踪与异步导出)。
 
-脚本检查页面异常、console.error、浏览器错误日志、READY、同步入口和随机访问图像一致性。导出与比较使用同一目标视口PNG，包含canvas及DOM；不依赖canvas.toDataURL。manifest记录源HTML SHA256、样本帧哈希、`determinism.scope="viewport"`、方法和复取样本，MP4模式另含媒体探测信息。
+默认视口1280×720、deviceScaleFactor=1，可传`--width/--height`。页面依据该视口与`render-mode`确定布局；导出器添加该class并兼容隐藏旧`#start`入口，但影片自己的控制层由页面负责清理。字体在READY前准备，导出器也等待当前`document.fonts.ready`；按时间才发起的资源加载也必须在该帧完成信号前结束。
+
+脚本检查页面异常、console.error、浏览器错误日志、READY、声明的渲染完成入口和随机访问图像一致性。导出与比较使用同一目标视口PNG，包含canvas及DOM；不依赖canvas.toDataURL。manifest记录源HTML SHA256、样本帧哈希、`determinism.scope="viewport"`、方法和复取样本，MP4模式另含媒体探测信息与实际音频模式；`captureContract`记录模式、超时和awaited调用的完成/预算报告。
 
 复用输出目录时，开始渲染前撤销旧manifest，只有本轮成功才重新生成；失败目录里的旧帧或视频不能作为本轮完成证据。
 

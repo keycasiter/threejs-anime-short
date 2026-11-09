@@ -57,6 +57,40 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 
 drei是R3F组件，`@pmndrs/vanilla`提供部分非React实现；移植时要同时适配生命周期、scene捕获和资源释放，不能只复制材质定义。多遍渲染必须保存并恢复render target、visibility、background、tone mapping等状态，失败或早退也要恢复。
 
+## 可调用的离线柔和主光
+
+当目标需要柔和投影而实时PCF仍太硬，可选用[直接光采样模块](../assets/rendering/soft-directional.mjs)。这是独立实现的有限采样光栅工具：固定场景/相机/姿势，围绕同一方向光做等面积盘采样，每次重绘阴影和场景，在线平均线性Float32 HDR，末端只做一次tone mapping及输出转换。它改变直接光与投影，不增加间接反弹；设计、材质或结构缺失仍需在各自层修复。
+
+```js
+import * as THREE from 'three';
+import { renderSoftDirectional } from './soft-directional.mjs';
+
+window.__FILM = {
+  duration: 6, fps: 24, audio: 'none',
+  capture: { mode: 'awaited', timeoutMs: 120000 }
+};
+window.renderAt = async t => {
+  evaluateSceneAt(t); // 完整求值姿势、相机、FX和DOM，暂停独立RAF
+  scene.updateMatrixWorld(true);
+  const done = await renderSoftDirectional({
+    THREE, renderer, scene, camera, light: key,
+    samples: 64, angularRadius: 0.10, seed: 123
+  });
+  return {
+    complete: true, time: t,
+    completedSamples: done.completedSamples,
+    requiredSamples: done.requestedSamples
+  };
+};
+// 必需资产/字体准备好后，再置 window.__ready=true。
+```
+
+将模块复制到作品源码并调整相对导入；`THREE`由调用者注入，不自带第二份引擎。已验证路径限定为Three 0.180.0的`WebGLRenderer`、默认canvas target、XR关闭、支持float color attachment、单个可见投影灯的内建颜色链；入口拒绝版本/target/其他投影灯不符。它是可选实现，不能为了使用它强制迁移既有项目。Composer、自定义GLSL、WebGPU、透明canvas及复杂多层透射需另适配。末端统一转换可能改变背景或`toneMapped=false`材质的直出语义，不能预设全场景像素等价；必要时保留独立显示空间合成。
+
+`samples`整数1–256，`angularRadius`弧度0–0.25；N=1取原灯方向，零半径多样本用于管线等价检查。先比原直出与新管线N=1，再比较同一管线N=1与多样本，避免将MSAA/输出差异误记为采样收益。检查投影接触是否保留、半影是否有分层/闪烁、原阴影相机是否仍覆盖扰动方向；不要把64样本或某个角度定为全项目最低品质。
+
+调用期间冻结全部可见状态并串行渲染。模块用WebGL2 fence等待每样本及末端输出，成功或失败均恢复约定的renderer/主灯状态并释放临时资源；`onSample`供进度观察，不得改变场景。它每次分配临时target，适合已测成本的离线帧；先测代表镜头和相邻帧，再估全片耗时。原尺寸审图仍决定是否采用，采样完成本身不证明整场跨品质档。
+
 ## 路径追踪与异步导出
 
 路径追踪器的不同后端可能有不同入口、材质支持和更新API。先核对当前版本的支持列表、场景快照/更新、完成状态和降噪协议；下面列出必须处理的职责，不将特定库版本的命名作为通用契约。
@@ -73,4 +107,4 @@ absoluteTime → 完整求值姿势/矩阵 → 同步对应场景数据并使累
 
 设置有限采样预算；完成信号必须覆盖目标像素的采样预算和附加降噪结束，平均sample数或某次draw完成不足以证明收敛完成。无限渐进模式需显式停止条件。等待需有超时、取消、GPU错误与失败重试边界；稳定噪声也不保证跨设备位级一致。比较几帧的单帧耗时、闪烁、折射细节、降噪残影和可接受噪声后再估全片成本。
 
-现有`scripts/render_film.mjs`使用同步`renderAt(t)`并立即截图，**没有等待渐进收敛的协议**。路径追踪、累计阴影或异步GPU读回需要另做可await的逐帧适配器，先证明“求值→重置→收敛→捕获”完成，不能直接宣称现有导出器支持。线性录制中的`mixer.update(dt)`还需适配为可随机取帧的姿势求值。
+`scripts/render_film.mjs`默认使用同步`renderAt(t)`；显式声明`__FILM.capture.mode="awaited"`时才等待逐帧完成报告与固定预算，再截图，接口见[离线导出](validation.md#可执行离线影片导出)。导出器不替具体库实现场景同步、累积重置、GPU等待或降噪；这些职责由适配器完成。线性录制中的`mixer.update(dt)`还需适配为可随机取帧的姿势求值。

@@ -18,7 +18,7 @@ async function fixture(t,body){
 }
 function exportFilm(f,extra=[],times='0,0.5'){
  return new Promise((resolve,reject)=>{
-  const child=spawn(process.execPath,[script,'--html',f.html,'--out',f.out,'--times',times,'--width','320','--height','180',...extra],{stdio:['ignore','pipe','pipe']});
+  const child=spawn(process.execPath,[script,'--html',f.html,'--out',f.out,...(times===null?[]:['--times',times]),'--width','320','--height','180',...extra],{stdio:['ignore','pipe','pipe']});
   let output='';child.stdout.on('data',d=>output+=d);child.stderr.on('data',d=>output+=d);
   const timer=setTimeout(()=>{child.kill('SIGTERM');reject(Error('Exporter did not finish within 45 seconds'));},45000);
   child.on('error',e=>{clearTimeout(timer);reject(e);});child.on('close',code=>{clearTimeout(timer);resolve({code,output});});
@@ -94,4 +94,59 @@ test('leaves the sampled time before checking a single seek sample',async t=>{
  const f=await fixture(t,`<canvas id="stage" width="320" height="180"></canvas><script>
 let previous=-1,n=0;window.__FILM={duration:2,fps:2};window.renderAt=t=>{if(t!==previous){n++;previous=t;}const c=document.getElementById('stage').getContext('2d');c.fillStyle='rgb('+(n*30)+',0,80)';c.fillRect(0,0,320,180);};window.renderAt(0);window.__ready=true;</script>`);
  const r=await exportFilm(f,[],'1.86');assert.notEqual(r.code,0,r.output);assert.match(r.output,/Random-access frame changed/);
+});
+
+
+test('derives omitted sample times from the actual short film duration',async t=>{
+ const f=await fixture(t,stable);const r=await exportFilm(f,[],null);assert.equal(r.code,0,r.output);
+ const m=JSON.parse(await readFile(join(f.out,'manifest.json'),'utf8'));assert.deepEqual(m.samples.map(s=>s.t),[0,1,2]);
+});
+
+test('exports a short silent MP4 without a renderWav adapter',async t=>{
+ const f=await fixture(t,stable.replace('duration:2,fps:2',"duration:.5,fps:8,audio:'none'"));
+ const r=await exportFilm(f,['--video'],null);assert.equal(r.code,0,r.output);
+ const m=JSON.parse(await readFile(join(f.out,'manifest.json'),'utf8'));assert.equal(m.audioMode,'none');
+ assert.equal(m.video.streams.filter(s=>s.codec_type==='audio').length,0);
+ const video=m.video.streams.find(s=>s.codec_type==='video');assert.equal(video.nb_frames,'4');assert.equal(Number(video.duration),.5);
+});
+
+test('explicit no-audio does not invoke an available legacy WAV function',async t=>{
+ const body=stable.replace('duration:2,fps:2',"duration:.5,fps:8,audio:'none'").replace('window.__ready=true;',"window.renderWav=()=>{throw Error('WAV must not be called')};window.__ready=true;");
+ const f=await fixture(t,body);const r=await exportFilm(f,['--video'],null);assert.equal(r.code,0,r.output);
+});
+
+test('explicit WAV audio requires a producer rather than silently becoming silent',async t=>{
+ const f=await fixture(t,stable.replace('duration:2,fps:2',"duration:2,fps:2,audio:'wav'"));const r=await exportFilm(f,['--video']);
+ assert.notEqual(r.code,0,r.output);assert.match(r.output,/wav requires renderWav/);await assert.rejects(readFile(join(f.out,'manifest.json')),{code:'ENOENT'});
+});
+
+const delayed=`<canvas id="stage" width="320" height="180"></canvas><script>
+window.__FILM={duration:2,fps:2,audio:'none',capture:{mode:'awaited',timeoutMs:2000}};
+window.renderAt=async t=>{await new Promise(r=>setTimeout(r,25));const c=document.getElementById('stage').getContext('2d');c.fillStyle='rgb('+Math.round(t*100)+',80,140)';c.fillRect(0,0,320,180);return {time:t,complete:true,completedSamples:2,requiredSamples:2};};window.__ready=true;
+</script>`;
+
+function centerPixel(path){return new Promise((resolve,reject)=>{
+ const child=spawn('ffmpeg',['-v','error','-i',path,'-vf','crop=1:1:160:90,format=rgb24','-frames:v','1','-f','rawvideo','pipe:1']);const chunks=[];let err='';
+ child.stdout.on('data',b=>chunks.push(b));child.stderr.on('data',b=>err+=b);child.on('error',reject);child.on('close',code=>code===0?resolve([...Buffer.concat(chunks)]):reject(Error(err)));
+});}
+
+test('waits for the declared settled frame before capturing actual pixels',async t=>{
+ const f=await fixture(t,delayed);const r=await exportFilm(f);assert.equal(r.code,0,r.output);
+ const m=JSON.parse(await readFile(join(f.out,'manifest.json'),'utf8'));assert.equal(m.captureContract.mode,'awaited');
+ assert.ok(m.captureContract.calls.length>=5);assert.ok(m.captureContract.calls.every(c=>c.complete&&c.completedSamples===2&&c.requiredSamples===2));
+ for(const s of m.samples)assert.deepEqual(await centerPixel(join(f.out,s.file)),[Math.round(s.t*100),80,140]);
+});
+
+test('does not publish a manifest for an incomplete sample budget',async t=>{
+ const f=await fixture(t,delayed.replace('completedSamples:2','completedSamples:1'));const r=await exportFilm(f);assert.notEqual(r.code,0,r.output);
+ assert.match(r.output,/sample budget incomplete/);await assert.rejects(readFile(join(f.out,'manifest.json')),{code:'ENOENT'});
+});
+
+test('does not accept completion for a different frame time',async t=>{
+ const f=await fixture(t,delayed.replace('time:t,complete:true','time:t+1,complete:true'));const r=await exportFilm(f);assert.notEqual(r.code,0,r.output);assert.match(r.output,/requested time/);
+});
+
+test('bounds an awaited frame that never settles and leaves no success marker',async t=>{
+ const f=await fixture(t,delayed.replace('timeoutMs:2000','timeoutMs:40').replace("window.renderAt=async t=>{",'window.renderAt=async t=>{await new Promise(()=>{});'));
+ const r=await exportFilm(f);assert.notEqual(r.code,0,r.output);assert.match(r.output,/Capture timed out/);await assert.rejects(readFile(join(f.out,'manifest.json')),{code:'ENOENT'});
 });

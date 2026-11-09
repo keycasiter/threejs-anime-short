@@ -11,7 +11,7 @@
 
 ## 内容范围
 
-根目录SKILL.md、references、agents及scripts是当前skill；README.md记录结构说明与版本迭代，不作为普通制作的历史指令加载。来源版权和明确要求保留的声明随实际代码保留。
+根目录SKILL.md、references、agents、scripts及assets中的可复制源码是当前skill；README.md记录结构说明与版本迭代，不作为普通制作的历史指令加载。来源版权和明确要求保留的声明随实际代码保留。
 
 不要提交密钥、个人工作区绝对路径、生成影片、模型、缓存、node_modules或无关项目。同步配置不需要把本机checkout路径写入公开仓库。
 
