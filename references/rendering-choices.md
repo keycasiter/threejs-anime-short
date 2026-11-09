@@ -27,6 +27,17 @@
 
 已有成片升级时，先保留可运行基线。为新后端建立独立入口，验证初始化、一个真实材质、一个MRT消费者、一个目标效果和导出。比较输出及成本后再迁移主项目；仅初始化成功不能证明整条管线兼容。
 
+### 教程迁移时核对实际消费者
+
+| 教程写法/假设 | 当前实现选择 |
+|---|---|
+| 依赖PBR默认值 | 显式写设计值，并查看实际安装版；r180的MeshStandardMaterial默认metalness=0、roughness=1，不照抄教程中的默认0.5 |
+| `texture.encoding`、`renderer.outputEncoding` | 现代版本按`texture.colorSpace`、`renderer.outputColorSpace`及实际末端pass接入；JS对象能添加旧属性不证明renderer读取了它 |
+| EffectComposer末端再加旧GammaCorrectionShader | 先确认当前线性/HDR/tone mapping/输出链；Three原生现代Composer通常用OutputPass，不能与旧校正机械叠加 |
+| 调`shadow.radius`就会变柔 | 按灯型与shadowMap.type确认；r180方向光PCFSoft路径不使用此radius，PCF使用。点光路径不同，不能推广到所有灯 |
+
+用小型真实像素探针核对字段/通道：编码、粗糙度G、法线方向和阴影参数都应追到消费者；再在目标场景里评效果。
+
 ## 色彩、曝光与后期：记录数值所处空间
 
 常规PBR链：颜色输入解码 → Linear-sRGB工作空间 → HDR光照/合成 → 需要的tone mapping → 输出颜色空间。baseColor/emissive颜色贴图通常标sRGB；normal、roughness、metalness、AO、mask等数据贴图不做颜色解码。HDR与渲染目标按真实编码处理，不给所有texture统一设置sRGB。glTFLoader已处理多项语义，勿再覆盖。

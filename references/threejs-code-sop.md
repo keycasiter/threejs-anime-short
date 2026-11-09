@@ -65,7 +65,7 @@ document.body.appendChild(renderer.domElement);
 function renderStill() { renderer.render(scene, camera); }
 ```
 
-先实际运行这个基础入口，用代理几何完成全场景与目标机位，按[生产流程阶段2](production-workflow.md#2-场景资产设计与方案选择)保存真实取帧与审图结论。随后才把决定识别度的部位替换为正式资产。后续用相同目标视口、曝光和相机比较；最小入口成功本身不代表构图成立。
+新场景用此入口或工程既有入口运行代理几何，完成全场景与目标机位，按[生产流程阶段2](production-workflow.md#2-场景资产设计与方案选择)保存真实取帧与审图结论。随后才把决定识别度的部位替换为正式资产。后续用相同目标视口、曝光和相机比较；最小入口成功本身不代表构图成立。已有场景沿用真实入口与布局/形体证据，直接为当前未证瓶颈制作代表样件，不重建代理或覆盖现有渲染管线。
 
 ## 1. 先建可执行规格，不直接照图堆对象
 
@@ -532,35 +532,9 @@ scene.add(fill, key);
 
 灯光量要结合曝光与tone mapping校准。主光用来揭示形体转折，填充光保持暗部层次；避免把所有材质加亮到自发光效果。阴影发脏/漂浮时检查shadow camera范围、bias、接收面和法线，不要统一把阴影调黑。
 
-需要程序化纹理时，用代码从参数化图案生成CanvasTexture，例如网格/条纹/斑点；固定种子与对象UV，让纹理能重复构建且随对象保持位置。普通颜色纹理设为`sRGBColorSpace`；normal、roughness、mask等数据纹理不能当sRGB颜色解码。纹理草图由图像模型生成时，它仍是参考，必须重新编码/绘制，除非用户明确授权直接使用。
+程序化表面先定形成规律、材料坐标、实际尺度和目标像素，再分别编码颜色、高度/法线与粗糙度。需要数据场、方向纹理、磨损分区或排查规则波纹时，先读取[表面细节方法](surface-detail.md)：用物理尺度高度求法线，以独立粗糙度场控制反射；可复制对应数据图模块。颜色图可用确定性的Canvas绘制并标sRGB，数据图不做颜色解码。两者都应随所属表面保持坐标关系。
 
-确定性Canvas纹理示例：用固定公式画一块可平铺的色带纹理；同一参数每次生成相同像素：
-
-```js
-function makeStripeTexture({ size = 256, stripeCount = 8, colors }) {
-  if (!Array.isArray(colors) || colors.length < 2) throw new Error('colors needs at least two entries');
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas 2D context unavailable');
-  ctx.fillStyle = colors[0];
-  ctx.fillRect(0, 0, size, size);
-  const band = size / stripeCount;
-  for (let i = 0; i < stripeCount; i++) {
-    ctx.fillStyle = colors[(i % (colors.length - 1)) + 1];
-    const inset = (i % 2) * band * .16;
-    ctx.fillRect(i * band + inset, 0, band * .48, size);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(2, 1);
-  texture.needsUpdate = true;
-  return texture;
-}
-```
-
-这只生成颜色纹理，不会改变网格轮廓/法线。用于重复表面前检查UV比例、接缝、mipmap和最近景别；纹理过小或对比过高会闪烁，单靠提高分辨率不一定解决，应降低频率/对比或改用解析shader。
+该方法不替代轮廓、凹陷、厚度或宏观褶皱；先用低频材料和实际光区校准，再分配中/微尺度。表面频率与对比超过目标像素时先合并/带限，别让均匀条纹或高频噪声成为默认细节。
 
 环境效果按其物理/美术角色选择代码：
 

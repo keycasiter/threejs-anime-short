@@ -15,6 +15,20 @@
 
 先列证据表：确定结论、来源/版本/函数、实际阅读范围、未知项、可迁移范围。完整实现历史不可得时保留未知，不由最终文件推演作者经历。
 
+## 按当前缺口查教程与示例
+
+需要补足实现方法时，从当前可见问题选一条学习路径；不通读全站，也不把示例集合当制作质量标准。下列站点正文用于定位机制，API与行为再核对项目安装包及其官方实现。
+
+| 当前缺口 | 可定位的机制来源 | 回到当前作品必须设计的内容 |
+|---|---|---|
+| 曲面、管线或型材轮廓 | [样条控制点](https://www.webgl3d.cn/pages/717f0f/)、[截面沿路径扫描](https://www.webgl3d.cn/pages/a06aed/) | 截面/路径/厚度、连续性和端口；映射到[代码SOP](threejs-code-sop.md)与适用的[截面模块](profile-geometry.md)，不能把绘线当实体 |
+| 表面方向、塑料感与反射不分材质 | [UV](https://www.webgl3d.cn/pages/71e307/)、[PBR](https://www.webgl3d.cn/pages/ca9079/)、[环境反射](https://www.webgl3d.cn/pages/780376/) | [形成规律、尺度与数据通道](surface-detail.md)，以及[实际颜色/光照消费者](rendering-choices.md)；示例默认参数不作为设计值 |
+| 外部资产或动作连接失败 | [glTF加载流程](https://www.webgl3d.cn/pages/006fcb/)、[动作切换](https://www.webgl3d.cn/pages/f5175e/) | 资产单位/层级/材质和动画绑定、资源路径与准备完成、绝对时间求值；进入[状态与规模](motion-and-scale.md)，不复制独立RAF进入统一时间线 |
+| 指向/选中不符合观看意图 | [Raycaster](https://www.webgl3d.cn/pages/a448b6/)、[场景层级拾取](https://www.webgl3d.cn/pages/dd2774/) | canvas坐标、实际命中对象到语义实体的映射、遮挡/触控与相机写入权；真实操作验证而非仅改相机坐标 |
+| 细节增加后卡顿或纹理成本过高 | [Mesh数量](https://www.webgl3d.cn/pages/6f7d51/)、[纹理像素规模](https://www.webgl3d.cn/pages/d5e3f0/) | 当前目标机位的占像素、draw calls/显存/捕获时间；选择复用、实例、LOD或纹理尺寸，保留核心轮廓和材料区别；不统一减细分 |
+
+示例HTML还可能通过import map、loader的setPath/解码器目录和运行时拼接寻找依赖。沿调用处到资源实际URL核对；`.load('name')`不保证相对HTML根目录。镜像文档、示例与正文可能来自不同Three版本，不能拼装为一套当前工程。
+
 ## 每项机制必须解释
 
 围绕“目标效果→设计输入→生成/更新规则→消费者→失效条件→可见证据”追踪。区分相机与物体运动、几何与图案/凹凸、资产制作与运行加载、文档目标与实际采样。确认输入在哪一帧绑定、单位与坐标是否匹配。
