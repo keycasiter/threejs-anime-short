@@ -90,4 +90,4 @@ flowchart TD
 | 视觉、相机、运行与最终文件检查 | [统一验收](references/validation.md) |
 | 研究参考片、逐帧分析与迁移证据 | [研究方法](references/research-methods.md) |
 
-历史案例和具体参数保存在`docs/research`，普通制作不依赖它们。修改或发布本Skill时读取[维护约定](AGENTS.md)。
+修改或发布本Skill时读取[维护约定](AGENTS.md)。

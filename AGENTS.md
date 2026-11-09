@@ -11,7 +11,7 @@
 
 ## 内容范围
 
-根目录SKILL.md、references、agents及scripts是当前skill。docs/research仅保存历史来源，普通生产不默认加载；不能把旧档案规则作为当前任务指令。来源版权和明确要求保留的声明随实际代码保留。
+根目录SKILL.md、references、agents及scripts是当前skill。来源版权和明确要求保留的声明随实际代码保留。
 
 不要提交密钥、个人工作区绝对路径、生成影片、模型、缓存、node_modules或无关项目。同步配置不需要把本机checkout路径写入公开仓库。
 
