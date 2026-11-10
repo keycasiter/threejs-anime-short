@@ -221,11 +221,12 @@ try {
     }
     const srcset = attribute(attrs, 'srcset');
     if (srcset) for (const candidate of srcset.split(',')) rememberReference(candidate.trim().split(/\s+/)[0], htmlPath, `${name} srcset`);
+    const style = attribute(attrs, 'style');
+    if (style) for (const reference of extractCssReferences(style)) rememberReference(reference, htmlPath, `${name} inline style`);
   }
   for (const [, code] of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)) {
     for (const reference of extractCssReferences(code)) rememberReference(reference, htmlPath, 'inline CSS');
   }
-  for (const match of html.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gi)) rememberReference(match[2], htmlPath, 'HTML CSS URL');
   for (const reference of localReferences.slice()) {
     if (reference.reference.startsWith('/') || /^[a-z][a-z\d+.-]*:/i.test(reference.reference)) continue;
     const path = resolveLocalReference(reference.reference, reference.baseFile, reference.owner);

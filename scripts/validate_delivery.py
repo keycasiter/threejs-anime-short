@@ -327,23 +327,27 @@ def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids:
         issues.append("visualReview: missing checks: " + ", ".join(sorted(missing)))
 
 
-def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_path: Any, stage: Any, issues: list[str]) -> set[str]:
+def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_path: Any, visual_build_map_path: Any, stage: Any, issues: list[str]) -> set[str]:
     """Require every renderable registered object/route to belong to one reviewed asset family."""
     register_file = _resolve(base, scene_register_path)
     ledger_file = _resolve(base, asset_ledger_path)
+    map_file = _resolve(base, visual_build_map_path)
     if register_file is None:
         issues.append("assetLedger: sceneRegisterPath must reference an existing JSON file")
         return set()
     if ledger_file is None:
         issues.append("assetLedgerPath must reference an existing project JSON file")
         return set()
+    if map_file is None:
+        issues.append("visualBuildMapPath must reference an existing project JSON file")
+        return set()
     ledger_digest = _hash(ledger_file)
     evidence = stage.get("evidence", []) if isinstance(stage, dict) else []
     if not any(isinstance(item, dict) and item.get("path") == asset_ledger_path and item.get("sha256") == ledger_digest for item in evidence):
         issues.append("middleForms evidence must include assetLedgerPath with its SHA-256")
-    register, ledger = _load_json(register_file), _load_json(ledger_file)
-    if register is None or ledger is None:
-        issues.append("assetLedger and sceneRegister must be readable JSON objects")
+    register, ledger, build_map = _load_json(register_file), _load_json(ledger_file), _load_json(map_file)
+    if register is None or ledger is None or build_map is None:
+        issues.append("assetLedger, visualBuildMap, and sceneRegister must be readable JSON objects")
         return set()
     renderables: set[tuple[str, str]] = set()
     for obj in register.get("objects", []):
@@ -356,6 +360,20 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
     if not isinstance(families, list) or not families:
         issues.append("assetLedger.families must be a nonempty list")
         return set()
+    mapped_features: dict[tuple[str, str], set[str]] = {}
+    component_by_target: dict[tuple[str, str], str] = {}
+    for entry in build_map.get("entries", []):
+        if not isinstance(entry, dict) or not isinstance(entry.get("target"), dict):
+            continue
+        target = entry["target"]
+        key = (target.get("type"), target.get("id"))
+        mapped_features[key] = {
+            feature.get("id") for feature in entry.get("features", [])
+            if isinstance(feature, dict) and isinstance(feature.get("id"), str)
+        }
+        plan = entry.get("implementationPlan", {})
+        if isinstance(plan, dict) and isinstance(plan.get("component"), str):
+            component_by_target[key] = plan["component"]
     covered: dict[tuple[str, str], str] = {}
     family_ids: set[str] = set()
     for index, family in enumerate(families):
@@ -409,6 +427,55 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
             issues.append(f"{label} missing required checks: " + ", ".join(sorted(missing_checks)))
         if not family.get("objectIds") and not family.get("routeIds"):
             issues.append(f"{label} must include at least one object or route")
+        family_targets = {("object", item_id) for item_id in family.get("objectIds", []) if isinstance(item_id, str)} | {("route", item_id) for item_id in family.get("routeIds", []) if isinstance(item_id, str)}
+        expected_features = set().union(*(mapped_features.get(key, set()) for key in family_targets)) if family_targets else set()
+        feature_ids = family.get("visualFeatureIds")
+        if not isinstance(feature_ids, list) or any(not isinstance(value, str) or not value.strip() for value in feature_ids):
+            issues.append(f"{label}.visualFeatureIds must list stable IDs from visualBuildMap")
+            feature_ids = []
+        elif len(feature_ids) != len(set(feature_ids)):
+            issues.append(f"{label}.visualFeatureIds contains duplicate IDs")
+        if set(feature_ids) != expected_features:
+            issues.append(f"{label}.visualFeatureIds must cover exactly the mapped features for its scene IDs")
+        prototype = family.get("prototype")
+        if not isinstance(prototype, dict):
+            issues.append(f"{label}.prototype must record the representative-asset quality gate")
+            continue
+        if prototype.get("buildId") != stage.get("buildId"):
+            issues.append(f"{label}.prototype buildId must match middleForms buildId")
+        if prototype.get("status") != "PASS":
+            issues.append(f"{label}.prototype must PASS before the family can release detail production")
+        representative = prototype.get("representativeTarget")
+        representative_key = (representative.get("type"), representative.get("id")) if isinstance(representative, dict) else None
+        if representative_key not in family_targets:
+            issues.append(f"{label}.prototype.representativeTarget must belong to this asset family")
+        component = prototype.get("component")
+        if not isinstance(component, str) or representative_key not in component_by_target or component_by_target.get(representative_key) != component:
+            issues.append(f"{label}.prototype.component must match a visualBuildMap implementation component")
+        capture = prototype.get("capture")
+        if not isinstance(capture, dict) or not isinstance(capture.get("id"), str) or not capture.get("id", "").strip():
+            issues.append(f"{label}.prototype.capture requires a stable sample id")
+        capture_record = _check_file_record(base, capture, f"{label}.prototype.capture", issues)
+        if capture_record:
+            rel, digest = capture_record
+            if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                issues.append(f"{label}.prototype.capture must be hashed in middleForms evidence")
+        reviews = prototype.get("featureReviews")
+        if not isinstance(reviews, list):
+            issues.append(f"{label}.prototype.featureReviews must review every mapped visual feature")
+            continue
+        reviewed: dict[str, dict[str, Any]] = {}
+        for review in reviews:
+            if isinstance(review, dict) and isinstance(review.get("featureId"), str):
+                if review["featureId"] in reviewed:
+                    issues.append(f"{label}.prototype.featureReviews has duplicate feature id {review['featureId']}")
+                reviewed[review["featureId"]] = review
+        if set(reviewed) != set(feature_ids):
+            issues.append(f"{label}.prototype.featureReviews must cover every visualFeatureId exactly")
+        for feature_id in set(feature_ids) & set(reviewed):
+            review = reviewed[feature_id]
+            if review.get("status") != "PASS" or not isinstance(review.get("observation"), str) or len(review["observation"].strip()) < 20:
+                issues.append(f"{label}.prototype feature {feature_id} requires PASS with a concrete visual observation")
     missing_assets = renderables - set(covered)
     unknown_assets = set(covered) - renderables
     if missing_assets:
@@ -440,7 +507,7 @@ def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any]
     for family_id in expected_ids & set(by_id):
         record = by_id[family_id]
         samples = record.get("reviewedSampleIds")
-        if not isinstance(samples, list) or not samples or not set(samples).issubset(capture_ids):
+        if not isinstance(samples, list) or not samples or any(not isinstance(sample, str) for sample in samples) or not set(samples).issubset(capture_ids):
             issues.append(f"visualReview: family {family_id} needs reviewedSampleIds from runtime captures")
         if record.get("status") != "PASS":
             issues.append(f"visualReview: family {family_id} must PASS")
@@ -463,6 +530,27 @@ def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any]
             check = seen[dimension]
             if check.get("status") != "PASS" or not isinstance(check.get("observation"), str) or not check["observation"].strip():
                 issues.append(f"visualReview: family {family_id} {dimension} requires PASS with a concrete observation")
+        feature_ids = family.get("visualFeatureIds", []) if isinstance(family, dict) else []
+        feature_reviews = item.get("featureReviews")
+        if not isinstance(feature_reviews, list):
+            issues.append(f"visualReview: family {family_id} featureReviews must review every mapped visual feature")
+            continue
+        feature_by_id: dict[str, dict[str, Any]] = {}
+        for feature_review in feature_reviews:
+            if isinstance(feature_review, dict) and isinstance(feature_review.get("featureId"), str):
+                feature_id = feature_review["featureId"]
+                if feature_id in feature_by_id:
+                    issues.append(f"visualReview: family {family_id} has duplicate feature review {feature_id}")
+                feature_by_id[feature_id] = feature_review
+        if set(feature_by_id) != set(feature_ids):
+            issues.append(f"visualReview: family {family_id} featureReviews must cover every visualFeatureId exactly")
+        for feature_id in set(feature_ids) & set(feature_by_id):
+            feature_review = feature_by_id[feature_id]
+            sample_ids = feature_review.get("reviewedSampleIds")
+            if feature_review.get("status") != "PASS" or not isinstance(feature_review.get("observation"), str) or len(feature_review["observation"].strip()) < 20:
+                issues.append(f"visualReview: family {family_id} feature {feature_id} requires PASS with a concrete observation")
+            if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(capture_ids):
+                issues.append(f"visualReview: family {family_id} feature {feature_id} needs runtime capture evidence")
 
 
 def validate_visual_reference_index(base: Path, register_path: Any, index_path: Any, stage: Any, issues: list[str]) -> None:
@@ -557,6 +645,123 @@ def validate_visual_reference_index(base: Path, register_path: Any, index_path: 
             issues.append(f"visualReferenceIndex needs an object/route-focused reference for {kind}:{item_id}")
 
 
+def validate_visual_build_map(base: Path, register_path: Any, index_path: Any, map_path: Any, stage: Any, issues: list[str]) -> None:
+    """Require visual observations to become per-asset constraints and a concrete Three.js plan."""
+    register_file, index_file, map_file = (_resolve(base, path) for path in (register_path, index_path, map_path))
+    if register_file is None or index_file is None:
+        return
+    if map_file is None:
+        issues.append("visualBuildMapPath must reference an existing project JSON file")
+        return
+    digest = _hash(map_file)
+    evidence = stage.get("evidence", []) if isinstance(stage, dict) else []
+    if not any(isinstance(item, dict) and item.get("path") == map_path and item.get("sha256") == digest for item in evidence):
+        issues.append("visualAnalysis evidence must include visualBuildMapPath with its SHA-256")
+    register, index, build_map = _load_json(register_file), _load_json(index_file), _load_json(map_file)
+    if register is None or index is None or build_map is None:
+        issues.append("visualBuildMap, visualReferenceIndex, and sceneRegister must be readable JSON objects")
+        return
+    if isinstance(stage, dict) and build_map.get("buildId") != stage.get("buildId"):
+        issues.append("visualBuildMap buildId must match the visualAnalysis stage buildId")
+    references = {item.get("id"): item for item in index.get("references", []) if isinstance(item, dict) and isinstance(item.get("id"), str)}
+    renderables = {
+        ("object", item["id"]) for item in register.get("objects", [])
+        if isinstance(item, dict) and item.get("geometryRole") in RENDERABLE_ROLES and isinstance(item.get("id"), str)
+    } | {
+        ("route", item["id"]) for item in register.get("routes", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    entries = build_map.get("entries")
+    if not isinstance(entries, list) or not entries:
+        issues.append("visualBuildMap.entries must be a nonempty list")
+        return
+    covered: dict[tuple[str, str], str] = {}
+    entry_ids: set[str] = set()
+    feature_ids: set[str] = set()
+    minimum_features = {"focal": 3, "supporting": 2, "ambient": 1}
+    categories = {"silhouette", "proportion", "volume", "connection", "material", "distribution", "spatial-relation", "detail"}
+    for i, entry in enumerate(entries):
+        label = f"visualBuildMap.entries[{i}]"
+        if not isinstance(entry, dict):
+            issues.append(f"{label} must be an object")
+            continue
+        entry_id = entry.get("id")
+        if not isinstance(entry_id, str) or not entry_id.strip():
+            issues.append(f"{label}.id must be a nonempty stable ID")
+        elif entry_id in entry_ids:
+            issues.append(f"visualBuildMap has duplicate entry id {entry_id}")
+        else:
+            entry_ids.add(entry_id)
+        target = entry.get("target")
+        if not isinstance(target, dict) or target.get("type") not in {"object", "route"} or not isinstance(target.get("id"), str):
+            issues.append(f"{label}.target requires type object/route and stable id")
+            continue
+        key = (target["type"], target["id"])
+        if key not in renderables:
+            issues.append(f"{label}.target references unknown/nonrenderable scene ID {key[0]}:{key[1]}")
+        if key in covered:
+            issues.append(f"visualBuildMap has duplicate target {key[0]}:{key[1]}")
+        covered[key] = entry_id if isinstance(entry_id, str) else ""
+        priority = entry.get("priority")
+        if priority not in minimum_features:
+            issues.append(f"{label}.priority must be focal, supporting, or ambient")
+        ref_ids = entry.get("referenceIds")
+        if not isinstance(ref_ids, list) or not ref_ids:
+            issues.append(f"{label}.referenceIds must list one or more references")
+            ref_ids = []
+        valid_ref_ids = {ref_id for ref_id in ref_ids if isinstance(ref_id, str) and ref_id in references}
+        if len(valid_ref_ids) != len(ref_ids):
+            issues.append(f"{label}.referenceIds contains unknown or duplicate reference IDs")
+        if not any(any(isinstance(t, dict) and t.get("type") == key[0] and t.get("id") == key[1] for t in references[ref_id].get("targetIds", [])) for ref_id in valid_ref_ids):
+            issues.append(f"{label} needs a selected reference that targets {key[0]}:{key[1]}")
+        features = entry.get("features")
+        if not isinstance(features, list):
+            issues.append(f"{label}.features must be a list")
+            continue
+        if priority in minimum_features and len(features) < minimum_features[priority]:
+            issues.append(f"{label} needs at least {minimum_features[priority]} visual features for {priority} priority")
+        local_features: set[str] = set()
+        for j, feature in enumerate(features):
+            feature_label = f"{label}.features[{j}]"
+            if not isinstance(feature, dict):
+                issues.append(f"{feature_label} must be an object")
+                continue
+            feature_id = feature.get("id")
+            if not isinstance(feature_id, str) or not feature_id.strip():
+                issues.append(f"{feature_label}.id must be a nonempty stable ID")
+            elif feature_id in feature_ids or feature_id in local_features:
+                issues.append(f"visualBuildMap has duplicate feature id {feature_id}")
+            else:
+                feature_ids.add(feature_id)
+                local_features.add(feature_id)
+            reference_id = feature.get("referenceId")
+            if reference_id not in valid_ref_ids:
+                issues.append(f"{feature_label}.referenceId must resolve through this entry's referenceIds")
+            elif not any(isinstance(t, dict) and t.get("type") == key[0] and t.get("id") == key[1] for t in references[reference_id].get("targetIds", [])):
+                issues.append(f"{feature_label}.referenceId must target {key[0]}:{key[1]}")
+            if feature.get("category") not in categories:
+                issues.append(f"{feature_label}.category is not recognized")
+            for field in ("observation", "designConstraint"):
+                if not isinstance(feature.get(field), str) or len(feature[field].strip()) < 20:
+                    issues.append(f"{feature_label}.{field} must state a specific visible observation/constraint")
+            if feature.get("confidence") not in {"high", "medium", "low"}:
+                issues.append(f"{feature_label}.confidence must be high, medium, or low")
+        plan = entry.get("implementationPlan")
+        if not isinstance(plan, dict):
+            issues.append(f"{label}.implementationPlan must specify the planned Three.js construction")
+        else:
+            plan_min_lengths = {"component": 3, "geometryStrategy": 25, "materialTreatment": 25}
+            for field, minimum_length in plan_min_lengths.items():
+                if not isinstance(plan.get(field), str) or len(plan[field].strip()) < minimum_length:
+                    issues.append(f"{label}.implementationPlan.{field} must be concrete")
+            steps = plan.get("constructionSteps")
+            if not isinstance(steps, list) or len(steps) < 2 or any(not isinstance(step, str) or len(step.strip()) < 20 for step in steps):
+                issues.append(f"{label}.implementationPlan.constructionSteps must contain at least two concrete steps")
+    missing = renderables - set(covered)
+    if missing:
+        issues.append("visualBuildMap has unmapped renderable scene IDs: " + ", ".join(f"{kind}:{item_id}" for kind, item_id in sorted(missing)))
+
+
 def validate_data(data: Any, base: Path, through: str | None = None) -> list[str]:
     issues: list[str] = []
     if not isinstance(data, dict):
@@ -649,10 +854,15 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
             validate_visual_reference_index(
                 base, register_rel, data.get("visualReferenceIndexPath"), by_id.get("visualAnalysis", {}), issues,
             )
+            validate_visual_build_map(
+                base, register_rel, data.get("visualReferenceIndexPath"), data.get("visualBuildMapPath"),
+                by_id.get("visualAnalysis", {}), issues,
+            )
 
         if "middleForms" in required_stages:
             validate_asset_ledger(
-                base, register_rel, data.get("assetLedgerPath"), by_id.get("middleForms", {}), issues,
+                base, register_rel, data.get("assetLedgerPath"), data.get("visualBuildMapPath"),
+                by_id.get("middleForms", {}), issues,
             )
 
         if "spatialProxy" in required_stages:

@@ -12,7 +12,7 @@
 - [统一验收](references/validation.md)：完整性、视觉品质、动作、相机和最终文件分别判断。
 - [阶段交付契约](references/delivery-contract.md)、[交付模板](assets/templates/delivery-manifest.template.json)与[运行预检模板](assets/templates/runtime-preflight.template.json)：按用户任务范围验证阶段顺序、构建证据和最终交付。
 - [渲染选择](references/rendering-choices.md)：色彩、PBR/IBL、版本、软影与异步完成协议；可选[柔和主光源码](assets/rendering/soft-directional.mjs)随作品复制。
-- [视觉分析空间交接](references/visual-analysis-sop.md)由[`validate_scene_register.py`](scripts/validate_scene_register.py)检查来源、ID、坐标、高程和端口交接；图像参考覆盖由交付门禁核对[`视觉参考索引模板`](assets/templates/visual-reference-index.template.json)与阶段哈希；空间搭建放行由`validate_spatial_gate.py`检查证据覆盖。
+- [视觉分析空间交接](references/visual-analysis-sop.md)由[`validate_scene_register.py`](scripts/validate_scene_register.py)检查来源、ID、坐标、高程和端口交接；参考图与可建模特征的映射由[`visual-build-map模板`](assets/templates/visual-build-map.template.json)和交付门禁检查；每个资产族的代表样件及逐特征证据由[`asset-ledger模板`](assets/templates/asset-ledger.template.json)检查；空间搭建放行由`validate_spatial_gate.py`检查证据覆盖。
 - 其他references：渲染契约、状态与规模、AI资产及研究方法，条件适用时读取。
 
 README供维护者了解版本与验证历史，不作为普通制作的额外规则。作品、模型、渲染帧与本地测试工程不随Skill发布。具体使用边界以当前SKILL.md为准。
@@ -24,6 +24,7 @@ README供维护者了解版本与验证历史，不作为普通制作的额外�
 
 | 日期 / 版本 | 内容与依据 | 验证结果及边界 |
 |---|---|---|
+| 2026-11-11 / R49 参考特征到Three.js构建闭环 | 新场景前向构建有多视角图片和有效白模，但最终画面仍是简单管状主体、稀疏重复环境，与参考中的结构、连接和材料层次差距明显。旧流程核对了参考文件及对象覆盖，却没有强制记录“图中可见特征→设计约束→Three.js几何/材质/组件→原型捕获→最终视图复核”。新增逐对象/路径`visual-build-map`、代表资产原型与逐特征审查门禁；同时修复离线HTML校验器误将内联Three.js代码中的`url(...)`字符串当作CSS资源的误报 | 63项Python manifest测试、6项Node离线校验测试、Skill格式校验与`git diff --check`通过。R19旧项目在新视觉分析门禁下因缺少visual-build-map被正确阻断；真实离线HTML校验改为PASS。R19截图的参考一致性与整体画质未达标，且该轮有中途检查，不属于完全独立盲评；当前更新证明映射/证据缺失可被门禁识别，不证明新版Skill的成品画质已提升，需用新题材从零前向验证 |
 | 2026-11-11 / R48 视觉参考证据与防伪通过模板 | R47风暴海岸灯塔完整构建按20个视角运行、359.93°拖拽与缩放/复位均通过，但正式视觉审查发现岛体/植被空旷与重复、背面附属屋未完成、海面泡沫缺失、材光对比弱；全构建未达交付质量。回查发现上一版视觉分析只有文字目标与平剖图，没有可复核的全貌/单体/细节参考图像；此外视觉审查模板默认为`PASS`并填了“Describe…”占位观察，存在照抄即假通过风险。补充可迁移的图像参考包SOP、索引模板及哈希/视角/场景ID覆盖校验；审阅模板改为`NOT_RUN`空观察并加回归测试 | 60项Python manifest测试、5项离线HTML Node测试、Skill格式与差异检查通过；旧R18 manifest在新validator下于`visualAnalysis`即因缺失图像索引被阻断，证明新增门禁能识别该漏项；完整旧manifest另因真实`detailDistribution/lookdev/visualReview/delivery`阻断，未追认通过。图像索引约束尚需一轮从0的新版Skill盲测，以确认Agent实际生成并使用多视角/局部图像，再评估作品质量是否提升 |
 | 2026-11-10 / R47 完整制作前向盲测：运行预检与空间代理 | 新题材“风暴海岸灯塔”从空目录开始执行完整制作。第一次失败记录显示工具环境导致浏览器/服务无法启动；修复受控本地浏览器后，Three.js ESM缺少sidecar被真实请求捕获。本轮将这些失效转化为运行前置检查，并执行冻结的空间代理/相机/构图/支撑门禁。植物种植区与可渲染植被实例分别登记，避免约束包络被误认成资产网格 | Agent用Three.js r180和Chromium 136捕获WebGL2画布、无console/请求错误；登记表8对象/1路径/3剖面通过；proxy-v07的20个全包络视图、路径14/14边缘采样、支撑20/20采样和`validate_spatial_gate.py`、`validate_delivery.py --through spatialProxy`通过。说明新版阶段门禁/真实预检在该案例中被执行；正式资产和整体画质仍在制作，不能据此宣称成品提质 |
 | 2026-11-10 / R46 离线依赖图校验与预检修正 | 独立前向制作选用Three.js r180离线ESM时只复制入口文件，真实Chromium捕获发现缺失的`three.core.js` sidecar导致404/无画布。运行预检分支后补齐通用说明，并增强离线HTML校验器：递归静态ESM导入、import map、CSS/JSON资产URI和本地资源；远端引用/缺失文件会失败，限制仍以真实浏览器检查computed路径/动态请求 | 4项新增Node测试覆盖缺失sidecar阻断、补齐后通过、import map本地路径、data URI、远程与缺失资源；当前盲测最小预检实际WebGL2/canvas通过，控制台和请求错误为空。未验证完整场景画质，作品仍在中性代理阶段 |

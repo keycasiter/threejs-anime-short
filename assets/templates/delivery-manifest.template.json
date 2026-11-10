@@ -4,6 +4,7 @@
   "buildId": "scene-v01",
   "sceneRegisterPath": "design/scene-register.json",
   "visualReferenceIndexPath": "design/visual-reference-index.json",
+  "visualBuildMapPath": "design/visual-build-map.json",
   "assetLedgerPath": "design/asset-ledger.json",
   "spatialGatePath": "qa/spatial-gate.json",
   "cameraContractPath": "design/camera-contract.json",

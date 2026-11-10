@@ -72,3 +72,15 @@ test('offline validation rejects the unresolved __BUNDLE__ replacement token', a
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /Unfilled bundle\/style placeholder found/);
 });
+
+test('offline validation ignores url-like text inside bundled JavaScript but checks inline CSS URLs', async t => {
+  const root = await fixture(t);
+  await writeFile(join(root, 'index.html'), '<script>const shaderNote = "url(image, type = \\\"image/png\\\")";</script>');
+  let result = await run(root);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+
+  await writeFile(join(root, 'index.html'), '<script>void 0;</script><div style="background-image:url(./missing.png)"></div>');
+  result = await run(root);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /missing local file .*missing\.png/);
+});

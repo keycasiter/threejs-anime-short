@@ -4,6 +4,15 @@
 
 Convert a creative brief and visual references into an auditable scene description that the next spatial-blockout stage can build without inventing core placement and connection relationships. This stage specifies **what occupies the scene, where it sits, what it touches/connects to, what evidence supports it, and what remains a design assumption**. It does not create the final Three.js scene or claim engineering dimensions.
 
+## Contents
+
+- [Lock the brief](#1-lock-the-brief-and-coordinate-contract)
+- [Build the evidence set](#2-build-an-evidence-set-that-answers-questions)
+- [Extract features into build constraints](#extract-visual-features-into-build-constraints)
+- [Decompose site to interface](#3-decompose-from-site-to-object-to-interface)
+- [Create the spatial source](#4-produce-a-single-spatial-source-of-truth)
+- [Drawings and handoff](#5-create-cad-like-drawings-from-the-register)
+
 ## 1. Lock the brief and coordinate contract
 
 1. Restate the deliverable, viewing mode, subject, and any hard constraints. Separate user-fixed facts from creative choices.
@@ -22,6 +31,29 @@ Do not target a fixed number of images. Add views until each high-impact uncerta
 3. **Prompt for inspectable structure.** Hold identity, palette, lighting intent, and normalized scale cues constant across a set; vary only the camera or the part being examined. Ask for uncluttered silhouette, visible support/contact, exposed underside/back where orbiting matters, and useful scale cues. Do not ask a generated image to prove dimensions, hidden construction, or geographic truth.
 4. **Separate scene views from object views.** A global beauty view establishes composition and depth, not the exact shape of every participant. Add plan/section or axonometric views for layout and level changes, full views of major objects from sides they must expose, then close details for openings, joints, edges, and material transitions. For free-orbit work, include the far side, top, and relevant underside where the camera can reach them.
 5. **Annotate, compare, and freeze.** For every file record its source or generation prompt, direction/coverage, the question it answers, target object/route IDs, what it cannot prove, and confidence. Mark generated images as design proposals. Resolve disagreements by selecting one design or recording the remaining uncertainty; do not silently combine conflicting dimensions or shapes. Hash the reference index as visual-analysis evidence. Use `assets/templates/visual-reference-index.template.json` and set `visualReferenceIndexPath` in the manifest.
+
+### Extract visual features into build constraints
+
+The image index proves that images exist and are locatable. It does not explain which visible properties the model must preserve or how Three.js will create them. Before handoff, create `design/visual-build-map.json` from `assets/templates/visual-build-map.template.json` and record it as `visualBuildMapPath` in the manifest.
+
+Create one entry for every renderable registered object and route. Extract the features that define recognition and quality; avoid generic descriptions such as “detailed, realistic, cinematic.” Choose the feature families that apply:
+
+| Feature | Convert the observation into |
+|---|---|
+| Silhouette / proportion | Relative width, height, taper, curvature, overhang, voids and dominant profile stations |
+| Volume / construction | Primary masses, cross-sections, thickness, panel breaks, transitions, recesses and openings |
+| Connection / support | Named attachment points, bearing faces, brace direction, embedment, clearance and visible contact |
+| Material | Separate material regions, grain/roughness scale, edge wear, translucency, metal response and their locations |
+| Distribution / relation | Host surface, clustering rule, density gradient, scale variation, exclusion zones and relation to focal forms |
+| Detail | Repeated unit, physical scale, orientation, placement rule and distance where it must remain readable |
+
+For each feature, record `referenceId → visible observation → design constraint → confidence`. A constraint tells the next stage what to preserve and how to check it. For example, “the shell narrows through its upper third and the lower rim projects beyond it” becomes “keep an upper taper and a projecting rim in front and three-quarter views”; it does not become “add more cylinders.” Include dimensions only when sourced or clearly label them as design estimates.
+
+Specify a concrete Three.js construction for each object/route: named component function, geometry representation (such as a lathe profile, custom `BufferGeometry`, swept tube, layered shell, truss or instanced family), construction order, parameters, material regions and the view that exposes the result. Pick a representation because it can express the observed form and transitions. A group of unrelated `BoxGeometry`, `SphereGeometry` and `CylinderGeometry` primitives is not an adequate plan for a form whose identity depends on continuous curvature, custom openings, layered edges or articulated joints.
+
+Record intentional changes separately from observed features. Later stages may refine the implementation, but must not silently discard high-salience silhouette, material breakup, joints, density or spatial relations. A deliberate deviation names its reason, affected views and the replacement feature that preserves the design intent.
+
+The map validator checks IDs, source references, target coverage and plan fields. It cannot decide whether an observation is correct or a form is attractive; later rendered prototypes and final review compare the actual image against these constraints.
 
 Reference images are for analysis and design. The final asset remains code/model geometry assembled, lit, animated, and rendered by Three.js unless the user explicitly requests image planes or image textures.
 
@@ -131,13 +163,13 @@ For terrain that carries objects or paths, define a surface/mass envelope and sa
 
 ## 7. Make the handoff executable by the next stage
 
-Stage 1 hands off the brief, evidence index, relationship register, shared spatial JSON, dimensioned plan/elevations/sections, uncertainty list, and checks for Stage 2. Stage 2 builds a neutral Three.js whitebox from that exact JSON and reports objective failures: missing IDs, unresolved endpoints, unsupported objects, route gaps, terrain intersections, clearance violations, inconsistent levels, and orbit-view holes. Any failure on a high-impact relationship returns to Stage 1 for evidence or an explicit design decision.
+Stage 1 hands off the brief, image index, visual-build map, relationship register, shared spatial JSON, dimensioned plan/elevations/sections, uncertainty list, and checks for Stage 2. Stage 2 builds a neutral Three.js whitebox from that exact JSON and reports objective failures: missing IDs, unresolved endpoints, unsupported objects, route gaps, terrain intersections, clearance violations, inconsistent levels, and orbit-view holes. Any failure on a high-impact relationship returns to Stage 1 for evidence or an explicit design decision.
 
 The next production stages consume the same IDs and spatial source:
 
-`Stage 2 whitebox placement/support → Stage 3 middle-form volume and interfaces → Stage 4 asset detail and distribution → Stage 5 material/light response`
+`Stage 2 whitebox placement/support → Stage 3 representative-asset prototype gate → Stage 3 middle-form volume and interfaces → Stage 4 asset detail and distribution → Stage 5 material/light response`
 
-Stage 3 may change geometry within the chosen bounds but must preserve named interfaces, supports, circulation and silhouette constraints. Stage 4 distributes detail using host surfaces, slope/height/distance and exclusion zones from the register. Stage 5 maps mood to light/material signals without moving the scene. If a downstream stage changes a relation or core placement, update the source register and regenerated drawings; do not let two “truths” drift.
+Before expanding the full asset set, Stage 3 builds one complete representative asset for every distinct asset family: characteristic profile, major transition, a real connection, material regions and the context needed to judge scale. Capture an actual close view at the target output size and compare it with the mapped reference features. Record capture IDs, feature-by-feature observations, gaps and a PASS/BLOCK decision. A blocked feature returns to form design or its geometry representation, not generic detail accumulation. Expand only after focal/supporting families and each distinct ambient morphology have readable prototypes. Stage 3 may change geometry within the chosen bounds but must preserve named interfaces, supports, circulation and silhouette constraints. Stage 4 distributes detail using host surfaces, slope/height/distance and exclusion zones from the register. Stage 5 maps mood to light/material signals without moving the scene. If a downstream stage changes a relation or core placement, update the source register and regenerated drawings; do not let two “truths” drift.
 
 ## 8. Deliver and gate
 
@@ -150,6 +182,7 @@ A Stage 1 package is ready only when:
 - Drawings and register agree; axes, units, dimensions and statuses are unambiguous.
 - Unknowns/conflicts remain visible and identify what decision or evidence would resolve them.
 - Stage 2 can construct the whitebox without inventing any high-impact location or connection.
+- Every renderable object/route has reference-linked observations, explicit design constraints and a technically plausible Three.js construction plan in `visual-build-map.json`.
 
 If the user requested only visual analysis, stop at this handoff. Do not make the Three.js scene unless asked. A passing Stage 1 package is not proof of final visual quality; it is a reliable input contract for subsequent stages.
 

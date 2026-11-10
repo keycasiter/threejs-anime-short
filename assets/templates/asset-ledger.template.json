@@ -6,6 +6,19 @@
       "priority": "supporting",
       "objectIds": ["ground"],
       "routeIds": [],
+      "visualFeatureIds": ["ground-profile", "ground-layer", "ground-material"],
+      "prototype": {
+        "status": "NOT_RUN",
+        "buildId": "forms-v1",
+        "representativeTarget": {"type": "object", "id": "ground"},
+        "component": "buildGroundSurface",
+        "capture": {"id": "terrain-prototype-close", "path": "qa/prototypes/terrain-close.png", "sha256": "replace-with-file-sha256"},
+        "featureReviews": [
+          {"featureId": "ground-profile", "status": "NOT_RUN", "observation": ""},
+          {"featureId": "ground-layer", "status": "NOT_RUN", "observation": ""},
+          {"featureId": "ground-material", "status": "NOT_RUN", "observation": ""}
+        ]
+      },
       "requiredChecks": [
         {"dimension": "silhouette", "criterion": "Terrain profile reads clearly in side and oblique views."},
         {"dimension": "volume-transition", "criterion": "Grade transitions have no visible steps or accidental seams."},

@@ -24,6 +24,11 @@
         {"dimension": "material-response", "status": "NOT_RUN", "observation": ""},
         {"dimension": "spatial-relation", "status": "NOT_RUN", "observation": ""},
         {"dimension": "detail-scale", "status": "NOT_RUN", "observation": ""}
+      ],
+      "featureReviews": [
+        {"featureId": "ground-profile", "status": "NOT_RUN", "observation": "", "reviewedSampleIds": []},
+        {"featureId": "ground-layer", "status": "NOT_RUN", "observation": "", "reviewedSampleIds": []},
+        {"featureId": "ground-material", "status": "NOT_RUN", "observation": "", "reviewedSampleIds": []}
       ]
     }
   ]

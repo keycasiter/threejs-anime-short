@@ -9,10 +9,36 @@
       "sha256": "REPLACE_WITH_FILE_SHA256",
       "viewFamily": "global",
       "viewDirection": "high oblique, north-east looking south-west",
-      "targetIds": [],
+      "targetIds": [{"type": "object", "id": "ground"}],
       "purpose": "State the composition or spatial question this image helps resolve.",
       "limits": ["Generated proposal; does not establish factual dimensions or hidden construction."],
       "confidence": "medium"
+    },
+    {
+      "id": "global-overview-opposite",
+      "sourceType": "generated-design",
+      "source": "Reuse the selected master design and record the generation prompt and tool.",
+      "path": "references/global-overview-opposite.png",
+      "sha256": "REPLACE_WITH_FILE_SHA256",
+      "viewFamily": "global",
+      "viewDirection": "opposite-side elevated view exposing the rear relationships",
+      "targetIds": [{"type": "object", "id": "ground"}],
+      "purpose": "Reveal rear-side composition, hidden components, and environmental depth.",
+      "limits": ["Generated proposal; does not establish factual dimensions or hidden construction."],
+      "confidence": "medium"
+    },
+    {
+      "id": "site-plan",
+      "sourceType": "generated-diagram",
+      "source": "Generated from the scene register; name the script or CAD tool.",
+      "path": "design/site-plan.svg",
+      "sha256": "REPLACE_WITH_FILE_SHA256",
+      "viewFamily": "plan",
+      "viewDirection": "top view along negative Y",
+      "targetIds": [{"type": "object", "id": "ground"}],
+      "purpose": "Resolve footprints, spacing, paths, boundaries and adjacency.",
+      "limits": ["Schematic unless sourced dimensions are recorded."],
+      "confidence": "high"
     },
     {
       "id": "asset-primary-detail",
@@ -22,7 +48,7 @@
       "sha256": "REPLACE_WITH_FILE_SHA256",
       "viewFamily": "asset-detail",
       "viewDirection": "front elevation and joint close-up",
-      "targetIds": [{"type": "object", "id": "replace-with-scene-register-id"}],
+      "targetIds": [{"type": "object", "id": "ground"}],
       "purpose": "State which silhouette, construction, connection, or material question this image answers.",
       "limits": ["Perspective prevents exact dimension inference."],
       "confidence": "medium"

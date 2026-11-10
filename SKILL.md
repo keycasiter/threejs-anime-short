@@ -27,13 +27,15 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 **从任务开始记录可验证交接。**按用户的实际交付范围选择 `mechanism-test`、`analysis-only`、`spatial-handoff` 或 `full-production`，从[阶段交付契约](references/delivery-contract.md)和模板创建 `delivery-manifest.json`。每阶段记录真实输入/产物路径、SHA-256与该阶段`buildId`；后续阶段必须引用前序产物。场景制作先完成视觉分析和登记表校验；在空间代理前运行最小Three.js运行预检。完整制作在代理图阶段从Skill安装目录调用`<skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through spatialProxy`。仅该前置门禁通过后才开始正式资产。若运行预检或空间门禁为`BLOCKED`、`FAIL`或`NOT_RUN`，停在当前阶段，修复根因并重跑；环境无法恢复时交付当前阶段与阻塞证据，不继续造正式资产或把项目标成完整成品。最终按选定scope运行同一脚本；专项空间校验、真实浏览器运行和视觉审图仍需各自执行，总门禁不代替画面判断。
 
-视觉分析必须交接可复核的参考图像索引：为用户/事实来源和设计生成图记录实际文件、SHA-256、视角覆盖、用途、限制及被覆盖的场景ID。全貌图不能代替单体、连接和材质细节图。使用[视觉分析SOP](references/visual-analysis-sop.md#build-the-visual-reference-packet)和`assets/templates/visual-reference-index.template.json`，并在manifest填写`visualReferenceIndexPath`；该产物需进入`visualAnalysis`阶段证据。
+视觉分析必须交接两份互补证据：参考图像索引记录实际文件、SHA-256、视角覆盖、用途、限制及被覆盖的场景ID；视觉到构建映射则把每个可渲染对象/路径的可见特征转为可检查的设计约束和具体Three.js建造方案。全貌图不能代替单体、连接和材质细节图；索引通过也不代表Agent已把参考落实到几何。使用[视觉分析SOP](references/visual-analysis-sop.md#build-the-visual-reference-packet)、`assets/templates/visual-reference-index.template.json`和`assets/templates/visual-build-map.template.json`，在manifest填写`visualReferenceIndexPath`及`visualBuildMapPath`并纳入`visualAnalysis`证据。
 
 完整制作进入中层形体时，按[资产族台账](references/delivery-contract.md#runtime-and-review-evidence)把场景登记表中的每个可渲染对象和路径映射到焦点、支撑或环境资产族；逐族定义适用的形体、连接、材质、空间关系和细节检查。最终审图必须用当前运行截图覆盖每个资产族，总体构图通过不能代替逐族审查。按交付契约的模板和manifest字段记录，完整制作门禁会检查覆盖与证据关联。
 
 新场景先实际渲染完整代理；已有场景可继承同目标、相同构建的有效部分。保留第一次完整代表画面，后续在相同关键机位查看局部改善是否仍保住全场关系。每批以实际产物衔接；按当前工项读取技术参考，工具输出截断时续读缺失段。
 
 **阶段门槛：** 新场景必须先交付实际运行的全场中性代理画面和审图结论，冻结源码快照与代理资产清单，并运行`<skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through spatialProxy`。记录必须证明同一代理构建使用中性材质、没有正式资产/细节生成，并覆盖当前承诺的观看范围；关键构图、空间层次或可达视向仍有空读时，先返回设计阶段。门禁通过前不得开始正式资产，也不得用已细化的最终图追认代理阶段。自由环绕任务还须先通过完整观看环的灰盒检查，具体检查按阶段2执行。
+
+规模化细节前，先逐资产族完成代表样件：在目标尺寸下实际捕获形体、连接、材料与承托，并逐项对照`visual-build-map`特征。`asset-ledger.json`记录代表对象、命名组件、截图哈希和逐特征观察；运行`validate_delivery.py ... --through middleForms`，确认映射覆盖和原型证据齐全后，才进入细节扩展。最终`visual-review.json`继续按同一组特征绑定运行截图，代码中存在某个构件不代表它在画面里可读。
 
 ```mermaid
 flowchart TD
