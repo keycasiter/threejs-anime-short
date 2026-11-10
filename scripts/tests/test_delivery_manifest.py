@@ -599,11 +599,15 @@ class DeliveryManifestTests(unittest.TestCase):
             "stage": "spatial-proxy", "buildId": "proxy-v1", "renderMode": "neutral",
             "sourceSha256": source_hash, "formalAssetsStarted": False, "formalAssetCount": 0,
             "detailedMaterialCount": 0, "detailGeneratorCount": 0,
-            "components": [{"id": "ground", "role": "proxy"}],
+            "components": [{"id": "ground", "role": "proxy", "proxyRepresentation": "low-resolution central crest and continuous edge band", "visualFeatureIds": ["ground-profile", "ground-layer"]}],
         })
         put_json("proxy-review.json", {
             "result": "PASS", "buildId": "proxy-v1", "reviewedSourceSha256": source_hash,
             "formalAssetsStarted": False, "reviewedSampleIds": ["main"], "reviewer": "visual reviewer",
+            "featureChecks": [
+                {"featureId": "ground-profile", "status": "PASS", "observation": "The proxy retains the wide central crest in the target view.", "evidence": ["qa/proxy.png"]},
+                {"featureId": "ground-layer", "status": "PASS", "observation": "The proxy shows the continuous outer edge band in the side view.", "evidence": ["qa/proxy.png"]},
+            ],
         })
         consumer_check = put_json("qa/consumer-check.json", {"status": "no shared drivers declared"})
         gate_data = {
@@ -623,7 +627,7 @@ class DeliveryManifestTests(unittest.TestCase):
         gate_data["proxyStage"] = {
             "status": "PASS", "buildId": "proxy-v1", "method": "freeze and review proxy before assets",
             "evidence": ["qa/proxy.png"], "sourceSnapshot": "proxy-source.html", "sourceSha256": source_hash,
-            "inventory": "proxy-inventory.json", "reviewRecord": "proxy-review.json",
+            "inventory": "proxy-inventory.json", "reviewRecord": "proxy-review.json", "visualBuildMap": "visual-build-map.json",
         }
         gate = put_json("spatial-gate.json", gate_data)
         proxy = self.root / "proxy.html"
@@ -642,10 +646,12 @@ class DeliveryManifestTests(unittest.TestCase):
                 {"id": "direction", "status": "PASS", "buildId": "proxy-v1", "inputs": [], "evidence": [ref(brief)]},
                 {"id": "visualAnalysis", "status": "PASS", "buildId": "analysis-v1", "inputs": [ref(brief)], "evidence": [ref(simple_register), ref(self.reference_index), ref(self.visual_build_map), *diagram_evidence]},
                 {"id": "runtimePreflight", "status": "PASS", "buildId": "preflight-v1", "inputs": [ref(simple_register)], "evidence": [ref(preflight_report), ref(preflight_capture)], "preflightReport": "qa/preflight.json"},
-                {"id": "spatialProxy", "status": "PASS", "buildId": "proxy-v1", "inputs": [ref(simple_register)], "evidence": [ref(gate), ref(proxy)]},
+                {"id": "spatialProxy", "status": "PASS", "buildId": "proxy-v1", "inputs": [ref(simple_register), ref(self.visual_build_map)], "evidence": [ref(gate), ref(proxy)]},
             ],
         }
         self.assertEqual([], validate_delivery.validate_data(data, self.root))
+        data["stages"][-1]["inputs"] = [ref(simple_register)]
+        self.assertTrue(any("spatialProxy inputs must include visualBuildMapPath" in issue for issue in validate_delivery.validate_data(data, self.root)))
 
     def runtime_fixture(self, sample_count: int = 20) -> tuple[dict, dict]:
         samples = []

@@ -28,9 +28,19 @@ class ProxyStageGateTests(unittest.TestCase):
                 "formalAssetCount": 0,
                 "detailedMaterialCount": 0,
                 "detailGeneratorCount": 0,
-                "components": [{"id": "terrain-envelope", "role": "proxy"}, {"id": "route-network", "role": "proxy"}],
+                "components": [
+                    {"id": "terrain-envelope", "role": "proxy", "proxyRepresentation": "low-resolution asymmetric ridge profile", "visualFeatureIds": ["terrain-profile"]},
+                    {"id": "route-network", "role": "proxy", "proxyRepresentation": "registered centerline and deck-width ribbons", "visualFeatureIds": ["route-link"]},
+                ],
             }
             (base / "proxy-inventory.json").write_text(json.dumps(inventory), encoding="utf-8")
+            visual_map = {
+                "entries": [
+                    {"target": {"type": "object", "id": "terrain-envelope"}, "features": [{"id": "terrain-profile", "category": "silhouette"}, {"id": "terrain-material", "category": "material"}]},
+                    {"target": {"type": "route", "id": "route-network"}, "features": [{"id": "route-link", "category": "connection"}, {"id": "route-detail", "category": "detail"}]},
+                ]
+            }
+            (base / "visual-build-map.json").write_text(json.dumps(visual_map), encoding="utf-8")
             review = {
                 "result": "PASS",
                 "buildId": "proxy-v1",
@@ -38,6 +48,10 @@ class ProxyStageGateTests(unittest.TestCase):
                 "formalAssetsStarted": False,
                 "reviewedSampleIds": ["target-main"],
                 "reviewer": "independent visual review",
+                "featureChecks": [
+                    {"featureId": "terrain-profile", "status": "PASS", "observation": "The neutral proxy retains the asymmetric ridge profile.", "evidence": ["proxy-gray.png"]},
+                    {"featureId": "route-link", "status": "PASS", "observation": "The route ribbon visibly reaches both registered landings.", "evidence": ["proxy-gray.png"]},
+                ],
             }
             (base / "proxy-review.json").write_text(json.dumps(review), encoding="utf-8")
             (base / "proxy-gray.png").write_bytes(b"neutral proxy view")
@@ -54,6 +68,7 @@ class ProxyStageGateTests(unittest.TestCase):
                 "sourceSha256": digest,
                 "inventory": "proxy-inventory.json",
                 "reviewRecord": "proxy-review.json",
+                "visualBuildMap": "visual-build-map.json",
             }
             if mutate:
                 mutate(record, inventory, review, source, digest)
@@ -105,6 +120,16 @@ class ProxyStageGateTests(unittest.TestCase):
         def mutate(record, inventory, review, source, digest):
             record["viewEnvelope"] = {"status": "PASS", "buildId": "proxy-v1", "views": [{"sampleId": "unreviewed-angle"}]}
         self.assertIn("reviewedSampleIds must match", self.run_gate(mutate))
+
+    def test_proxy_inventory_must_cover_upstream_spatial_features(self):
+        def mutate(record, inventory, review, source, digest):
+            inventory["components"][0]["visualFeatureIds"] = []
+        self.assertIn("visualFeatureIds must cover exactly", self.run_gate(mutate))
+
+    def test_proxy_review_must_observe_each_upstream_spatial_feature(self):
+        def mutate(record, inventory, review, source, digest):
+            review["featureChecks"].pop()
+        self.assertIn("featureChecks must match visualBuildMap spatial features", self.run_gate(mutate))
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ A tool name alone is not a solution. State the bottleneck it addresses, the data
 2. **Prove one source of truth.** Generate plan, sections, route geometry, supports and object placement from the register. Record the register path and renderer consumer. Change one nontrivial register value and verify the expected rendered geometry/diagram moves; hard-coded duplicate coordinates or an unused JSON file do not pass data integrity.
 3. **Set composition targets before geometry expansion.** Name the primary spatial read, secondary read and environmental frame. For the target view, specify screen-space goals for the primary group, route legibility, negative space and intended crop; select a reasoned occupancy band for this scene rather than using a universal percentage. Check a no-label thumbnail and full frame. If terrain/environment bounds make focal assets too small, adjust camera/layout organization without shrinking away required landform or changing measured dimensions.
 4. **Choose geometry representation.** For each terrain region and route, record the representation, input controls, downstream consumers and reason. Separate major landform guides (ridge, valley, shoreline, terrace, breakline) from low-amplitude surface variation.
-5. **Construct the spatial skeleton.** Build the full terrain/water envelope, major support surfaces, object proxy volumes, routes, platforms, ports and camera envelope from the register. Project walkable/support geometry separately from overhead eaves, canopies and foliage envelopes. Use neutral materials. Keep the complete environment and its negative spaces; do not build a hero object in isolation.
+5. **Construct the spatial skeleton.** Build the full terrain/water envelope, major support surfaces, object proxy volumes, routes, platforms, ports and camera envelope from the register. Project walkable/support geometry separately from overhead eaves, canopies and foliage envelopes. A proxy may omit small structure and finish, but every mapped high-salience silhouette, proportion, volume, connection, spatial relation and broad distribution must remain visibly represented. Use simplified custom contours/volumes where a box, cone, disk or point marker would erase the intended form or depth pattern. Use neutral materials. Keep the complete environment and its negative spaces; do not build a hero object in isolation.
 6. **Make routes and supports consume the final host geometry.** After the host mesh is final, sample the path at its final geometry spacing and across its full width. Derive route elevations, local frames and support contacts from the actual host surface or an explicit bridge/deck rule. A matching endpoint or centerline alone is insufficient.
 7. **Review and repair before middle forms.** Render the target framing and the applicable plan, sections and orbit envelope. Fix topology, terrain silhouette, route fit, scale hierarchy and occlusion before adding middle-form structure or fine detail. Freeze and review this neutral spatial-only build using the proxy-stage contract below. If a gate fails, continue the spatial pass or report the specific blocker; do not label the stage released.
 
@@ -30,9 +30,9 @@ A tool name alone is not a solution. State the bottleneck it addresses, the data
 The spatial review must be verifiably earlier than formal asset construction. Do not call a detailed, shaded first build a “proxy” after the fact. Before implementing formal asset meshes, detailed surface materials, or high-frequency scatter:
 
 1. Build the complete scene envelope from proxies: terrain/major volumes, routes, support regions, camera targets, and negative spaces. Simple proxy geometry may encode spatially important curvature or height breaks; it must not contain the final asset's small structural forms or material finish.
-2. Force a neutral gray material override. Disable detailed material maps, lookdev lighting, ornamental geometry, and fine scatter generators. Record every major spatial component in `proxy-inventory.json` with a stable `id` and `role: "proxy"`; record zero formal assets, detailed materials, and detail generators.
+2. Force a neutral gray material override. Disable detailed material maps, lookdev lighting, ornamental geometry, and fine scatter generators. Record every major spatial component in `proxy-inventory.json` with a stable `id`, `role: "proxy"`, its proxy representation and the spatial feature IDs from `visual-build-map.json` that the proxy preserves; record zero formal assets, detailed materials, and detail generators. Spatial features are silhouette, proportion, volume, connection, distribution and spatial-relation. Material and fine-detail features are deferred to their later stages.
 3. Freeze the exact source file used for this capture. In `spatial-gate.json`, record its path and SHA-256; use a stable `buildId` shared by the source inventory, review record, and composition evidence.
-4. Capture the actual running proxy build at the target view, plan/sections as applicable, and the full declared orbit envelope. Store a SHA-256 for every view image. Review these images while still in the proxy stage. `proxy-review.json` records the same build/hash, the exact reviewed sample IDs, the review result, reviewer, and `formalAssetsStarted: false`.
+4. Capture the actual running proxy build at the target view, plan/sections as applicable, and the full declared orbit envelope. Store a SHA-256 for every view image. Review these images while still in the proxy stage. `proxy-review.json` records the same build/hash, the exact reviewed sample IDs, the review result, reviewer, and `formalAssetsStarted: false`; it also records one image-linked observation for every spatial feature from the visual-build map. Do not use the composition review as a substitute for feature-level checks: “ridge is present” does not prove the registered crest profile or layered mass is represented.
 5. Run the scope gate: `python3 <skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through spatialProxy`. This invokes the register and spatial-gate validators against the current project evidence. Only a passing record releases formal asset work. If geometry/layout/camera envelope changes afterward, regenerate dependent proxy evidence and repeat the gate before continuing.
 
 The inventory and review are evidence records, not self-proving claims: visually inspect the referenced proxy images and compare the frozen source against its inventory. A file called “proxy” that contains formal asset code, final materials, or finished details is not a spatial-only build. When the project uses version control, preserve the frozen snapshot as a commit or immutable archive as well as the hash.
@@ -50,9 +50,9 @@ Example `proxy-inventory.json`:
   "detailedMaterialCount": 0,
   "detailGeneratorCount": 0,
   "components": [
-    {"id": "main-landform", "role": "proxy"},
-    {"id": "circulation-network", "role": "proxy"},
-    {"id": "primary-volume", "role": "proxy"}
+    {"id": "main-landform", "role": "proxy", "proxyRepresentation": "low-resolution asymmetric ridge surface with stepped edge profile", "visualFeatureIds": ["ridge-profile"]},
+    {"id": "circulation-network", "role": "proxy", "proxyRepresentation": "continuous route ribbons with named landings", "visualFeatureIds": ["route-continuity"]},
+    {"id": "primary-volume", "role": "proxy", "proxyRepresentation": "stacked massing preserving the outer silhouette and major openings", "visualFeatureIds": ["primary-silhouette"]}
   ]
 }
 ```
@@ -66,9 +66,16 @@ Example `proxy-review.json`:
   "reviewedSourceSha256": "<same sha256 as proxy-inventory.json>",
   "reviewedSampleIds": ["target-main", "orbit-000", "orbit-045"],
   "reviewer": "reviewer name or role",
-  "formalAssetsStarted": false
+  "formalAssetsStarted": false,
+  "featureChecks": [
+    {"featureId":"ridge-profile", "status":"PASS", "observation":"The neutral proxy retains the asymmetric crest and its falloff.", "evidence":["qa/orbit-045.png"]},
+    {"featureId":"route-continuity", "status":"PASS", "observation":"The route ribbon reaches both landing proxies and remains visible through the bend.", "evidence":["qa/target-main.png"]},
+    {"featureId":"primary-silhouette", "status":"PASS", "observation":"The major roof mass and opening remain distinct from the secondary volume.", "evidence":["qa/target-main.png"]}
+  ]
 }
 ```
+
+When the manifest includes `spatialProxy`, its stage inputs must hash the same `visualBuildMapPath` produced by `visualAnalysis`; `proxyStage.visualBuildMap` must point to that file. The gate matches each component's `visualFeatureIds` and each review `featureChecks` entry to the map. This catches omitted requirements and stale handoffs; it does not judge whether the captured shape truly resembles the feature, so the reviewer must inspect the linked render.
 
 ## 3. Run two separate acceptance passes
 

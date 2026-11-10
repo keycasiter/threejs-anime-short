@@ -17,6 +17,7 @@ COMPOSITION_DIMENSIONS = {
     "focus-and-hierarchy", "environment-and-depth", "negative-space-and-crop",
     "critical-relations", "scale-and-occupancy", "task-specific",
 }
+PROXY_FEATURE_CATEGORIES = {"silhouette", "proportion", "volume", "connection", "distribution", "spatial-relation"}
 
 
 def nonempty(value: Any) -> bool:
@@ -43,6 +44,63 @@ def load_json(base: Path, value: Any) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return result if isinstance(result, dict) else None
+
+
+def validate_proxy_feature_coverage(base: Path, map_path: Any, inventory: dict[str, Any], review: dict[str, Any] | None, issues: list[str]) -> None:
+    """Bind spatial proxy shapes to upstream buildable features, not only scene IDs."""
+    build_map = load_json(base, map_path)
+    if build_map is None:
+        issues.append("proxyStage: visualBuildMap must point to an existing visual-build-map JSON")
+        return
+    entries = build_map.get("entries")
+    if not isinstance(entries, list) or not entries:
+        issues.append("proxyStage: visualBuildMap requires entries")
+        return
+    components = inventory.get("components", [])
+    by_id = {item.get("id"): item for item in components if isinstance(item, dict) and isinstance(item.get("id"), str)}
+    expected_feature_ids: set[str] = set()
+    for entry in entries:
+        target = entry.get("target", {}) if isinstance(entry, dict) else {}
+        target_id = target.get("id") if isinstance(target, dict) else None
+        if not isinstance(target_id, str):
+            continue
+        features = [feature for feature in entry.get("features", []) if isinstance(feature, dict) and feature.get("category") in PROXY_FEATURE_CATEGORIES]
+        expected = {feature.get("id") for feature in features if isinstance(feature.get("id"), str)}
+        expected_feature_ids.update(expected)
+        component = by_id.get(target_id)
+        if component is None:
+            if expected:
+                issues.append(f"proxyStage: inventory is missing feature-bearing component {target_id}")
+            continue
+        actual = component.get("visualFeatureIds")
+        if not isinstance(actual, list) or set(actual) != expected or len(actual) != len(set(actual)):
+            issues.append(f"proxyStage: {target_id}.visualFeatureIds must cover exactly the spatial features from visualBuildMap")
+        if not nonempty(component.get("proxyRepresentation")):
+            issues.append(f"proxyStage: {target_id}.proxyRepresentation must describe how its major silhouette/volume is represented")
+    if review is None:
+        return
+    checks = review.get("featureChecks")
+    if not isinstance(checks, list):
+        issues.append("proxyStage: reviewRecord.featureChecks must review mapped spatial features")
+        return
+    checked_ids: set[str] = set()
+    for index, check in enumerate(checks):
+        if not isinstance(check, dict) or not isinstance(check.get("featureId"), str):
+            issues.append(f"proxyStage: featureChecks[{index}] needs a stable featureId")
+            continue
+        feature_id = check["featureId"]
+        if feature_id in checked_ids:
+            issues.append(f"proxyStage: duplicate feature review {feature_id}")
+        checked_ids.add(feature_id)
+        if check.get("status") != "PASS" or not nonempty(check.get("observation")):
+            issues.append(f"proxyStage: feature review {feature_id} must PASS with an observed comparison")
+        evidence = check.get("evidence")
+        if not isinstance(evidence, list) or not evidence or any(not resolve_file(base, file) for file in evidence):
+            issues.append(f"proxyStage: feature review {feature_id} requires current proxy image evidence")
+    if checked_ids != expected_feature_ids:
+        missing = sorted(expected_feature_ids - checked_ids)
+        extra = sorted(checked_ids - expected_feature_ids)
+        issues.append(f"proxyStage: featureChecks must match visualBuildMap spatial features (missing={missing}, extra={extra})")
 
 
 def check_pass_record(key: str, item: dict[str, Any], base: Path) -> list[str]:
@@ -192,6 +250,9 @@ def check_pass_record(key: str, item: dict[str, Any], base: Path) -> list[str]:
             reviewed = review.get("reviewedSampleIds")
             if not isinstance(reviewed, list) or not reviewed or any(not nonempty(sample_id) for sample_id in reviewed) or len(set(reviewed)) != len(reviewed):
                 issues.append(f"{key}: reviewRecord requires unique reviewedSampleIds")
+            map_path = item.get("visualBuildMap")
+            if map_path is not None:
+                validate_proxy_feature_coverage(base, map_path, inventory, review, issues)
     elif key == "viewEnvelope":
         if not nonempty(item.get("buildId")):
             issues.append(f"{key}: PASS requires a buildId tied to the captured spatial proxy")

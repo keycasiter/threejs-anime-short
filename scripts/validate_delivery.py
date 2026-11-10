@@ -982,6 +982,17 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                     gate_proxy = gate_data.get("proxyStage") if gate_data else None
                     if isinstance(gate_proxy, dict) and proxy_stage.get("buildId") != gate_proxy.get("buildId"):
                         issues.append("spatialProxy stage buildId must match the gate's frozen proxy buildId")
+                    visual_map_rel = data.get("visualBuildMapPath")
+                    visual_map_file = _resolve(base, visual_map_rel)
+                    visual_map_digest = _hash(visual_map_file) if visual_map_file else None
+                    proxy_inputs = {
+                        (item.get("path"), item.get("sha256"))
+                        for item in proxy_stage.get("inputs", []) if isinstance(item, dict)
+                    }
+                    if not visual_map_file or (visual_map_rel, visual_map_digest) not in proxy_inputs:
+                        issues.append("spatialProxy inputs must include visualBuildMapPath with its current SHA-256")
+                    if isinstance(gate_proxy, dict) and gate_proxy.get("visualBuildMap") != visual_map_rel:
+                        issues.append("proxyStage must review the same visualBuildMapPath produced by visualAnalysis")
                     _run_specialist("validate_spatial_gate.py", gate, base, "spatialProxy", issues)
 
     if mode == "full-production" and "runtime" in required_stages:
