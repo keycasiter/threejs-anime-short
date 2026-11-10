@@ -11,6 +11,7 @@
   "lookdevReportPath": "qa/lookdev-report.json",
   "spatialGatePath": "qa/spatial-gate.json",
   "cameraContractPath": "design/camera-contract.json",
+  "cameraInteractionReportPath": "qa/camera-interaction-report.json",
   "runtimeReport": "qa/runtime-report.json",
   "visualReviewReport": "qa/visual-review.json",
   "deliverables": [

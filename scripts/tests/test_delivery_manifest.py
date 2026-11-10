@@ -258,6 +258,46 @@ class DeliveryManifestTests(unittest.TestCase):
         }
         return ledger_path, report_path, stage
 
+    def camera_interaction_fixture(self) -> tuple[Path, Path, dict]:
+        contract_path = self.root / "camera-contract.json"
+        contract_path.write_text(json.dumps({
+            "mode": "interactive-orbit",
+            "bounds": {"azimuthDeg": [0, 360], "polarDeg": [35, 85], "distance": [5, 30]},
+        }), encoding="utf-8")
+        page_path = self.root / "index.html"
+        page_path.write_text("<!doctype html><canvas></canvas>\n", encoding="utf-8")
+        captures = []
+        evidence = [{"path": page_path.name, "sha256": hashlib.sha256(page_path.read_bytes()).hexdigest()}]
+        states = {
+            "initial": {"azimuthDeg": 0, "polarDeg": 65, "distance": 20, "settled": True},
+            "afterOrbit": {"azimuthDeg": 360, "polarDeg": 65, "distance": 20, "settled": True},
+            "afterZoom": {"azimuthDeg": 360, "polarDeg": 65, "distance": 25, "settled": True},
+            "afterReset": {"azimuthDeg": 0, "polarDeg": 65, "distance": 20, "settled": True},
+        }
+        for capture_id, state in states.items():
+            capture_path = self.root / f"camera-{capture_id}.png"
+            capture_path.write_bytes(png_bytes(800, 600))
+            digest = hashlib.sha256(capture_path.read_bytes()).hexdigest()
+            captures.append({"id": capture_id, "path": capture_path.name, "sha256": digest, "state": state})
+            evidence.append({"path": capture_path.name, "sha256": digest})
+        report = {
+            "schemaVersion": 1, "status": "PASS", "buildId": "camera-v1",
+            "method": "Playwright mouse drag, wheel zoom, and reset on the delivered page",
+            "inputModality": "mouse", "browser": "Chromium", "pageErrors": [],
+            "testedArtifact": {"path": page_path.name, "sha256": hashlib.sha256(page_path.read_bytes()).hexdigest()},
+            "actions": [
+                {"type": "orbit", "input": "mouse drag", "travelDegrees": 360, "azimuthTraceDeg": [0, 90, 180, 270, 360]},
+                {"type": "zoom", "input": "wheel"},
+                {"type": "reset", "input": "reset button"},
+            ],
+            "captures": captures,
+        }
+        report_path = self.root / "camera-interaction-report.json"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        evidence.append({"path": report_path.name, "sha256": hashlib.sha256(report_path.read_bytes()).hexdigest()})
+        stage = {"buildId": "camera-v1", "evidence": evidence}
+        return contract_path, report_path, stage
+
     def minimal_analysis_manifest(self) -> dict:
         return {
             "schemaVersion": 1,
@@ -526,6 +566,83 @@ class DeliveryManifestTests(unittest.TestCase):
         joined = "\n".join(issues)
         self.assertIn("missing mapped material features", joined)
         self.assertIn("frozenControls must lock", joined)
+
+    def test_camera_interaction_report_passes_for_real_orbit_zoom_reset_evidence(self) -> None:
+        contract_path, report_path, stage = self.camera_interaction_fixture()
+        issues: list[str] = []
+        validate_delivery.validate_camera_interaction_report(
+            self.root, report_path.name, contract_path.name, stage, issues,
+        )
+        self.assertEqual([], issues)
+
+    def test_camera_interaction_report_blocks_incomplete_rotation_and_reset(self) -> None:
+        contract_path, report_path, stage = self.camera_interaction_fixture()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["actions"][0]["azimuthTraceDeg"] = [0, 90, 180, 270, 330]
+        report["actions"][0]["travelDegrees"] = 330
+        report["captures"][3]["state"]["distance"] = 24
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stage["evidence"][-1]["sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        issues: list[str] = []
+        validate_delivery.validate_camera_interaction_report(
+            self.root, report_path.name, contract_path.name, stage, issues,
+        )
+        joined = "\n".join(issues)
+        self.assertIn("at least 359 degrees", joined)
+        self.assertIn("reset must restore initial distance", joined)
+
+    def test_interactive_orbit_manifest_requires_camera_interaction_report(self) -> None:
+        contract_path, _report_path, _stage = self.camera_interaction_fixture()
+        contract_digest = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+        data = self.minimal_analysis_manifest()
+        data["mode"] = "full-production"
+        data["buildId"] = "scene-v1"
+        data["cameraContractPath"] = contract_path.name
+        data["stages"].extend([
+            {"id": "runtimePreflight", "status": "BLOCKED", "buildId": "preflight-v1", "inputs": [], "evidence": [], "preflightReport": "missing-preflight.json"},
+            {"id": "spatialProxy", "status": "NOT_RUN", "buildId": "proxy-v1", "inputs": [], "evidence": []},
+            {"id": "middleForms", "status": "NOT_RUN", "buildId": "forms-v1", "inputs": [], "evidence": []},
+            {"id": "detailDistribution", "status": "NOT_RUN", "buildId": "detail-v1", "inputs": [], "evidence": []},
+            {"id": "lookdev", "status": "NOT_RUN", "buildId": "lookdev-v1", "inputs": [], "evidence": []},
+            {"id": "cameraMotion", "status": "PASS", "buildId": "camera-v1", "inputs": [{"path": "brief.md", "sha256": self.digest}], "evidence": [{"path": contract_path.name, "sha256": contract_digest}]},
+            {"id": "runtime", "status": "NOT_RUN", "buildId": "scene-v1", "inputs": [{"path": contract_path.name, "sha256": contract_digest}], "evidence": [], "runtimeReport": "missing-runtime.json"},
+        ])
+        issues = validate_delivery.validate_data(data, self.root, through="runtime")
+        self.assertTrue(any("cameraInteractionReportPath must reference an existing project JSON file" in issue for issue in issues))
+
+    def test_interactive_orbit_final_deliverable_must_match_tested_page_hash(self) -> None:
+        contract_path, report_path, camera_stage = self.camera_interaction_fixture()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["buildId"] = "scene-v1"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        report_digest = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        camera_stage["buildId"] = "scene-v1"
+        for item in camera_stage["evidence"]:
+            if item.get("path") == report_path.name:
+                item["sha256"] = report_digest
+
+        final_page = self.root / "final.html"
+        final_page.write_text("<!doctype html><canvas>changed after interaction test</canvas>\n", encoding="utf-8")
+        final_digest = hashlib.sha256(final_page.read_bytes()).hexdigest()
+        data = self.minimal_analysis_manifest()
+        data["mode"] = "full-production"
+        data["buildId"] = "scene-v1"
+        data["cameraContractPath"] = contract_path.name
+        data["cameraInteractionReportPath"] = report_path.name
+        data["deliverables"] = [{"kind": "runnable-html", "path": final_page.name, "sha256": final_digest}]
+        data["stages"].extend([
+            {"id": "runtimePreflight", "status": "BLOCKED", "buildId": "preflight-v1", "inputs": [], "evidence": [], "preflightReport": "missing-preflight.json"},
+            {"id": "spatialProxy", "status": "NOT_RUN", "buildId": "proxy-v1", "inputs": [], "evidence": []},
+            {"id": "middleForms", "status": "NOT_RUN", "buildId": "forms-v1", "inputs": [], "evidence": []},
+            {"id": "detailDistribution", "status": "NOT_RUN", "buildId": "detail-v1", "inputs": [], "evidence": []},
+            {"id": "lookdev", "status": "NOT_RUN", "buildId": "lookdev-v1", "inputs": [], "evidence": []},
+            {"id": "cameraMotion", "status": "PASS", "buildId": "scene-v1", "inputs": [{"path": "brief.md", "sha256": self.digest}], "evidence": camera_stage["evidence"]},
+            {"id": "runtime", "status": "NOT_RUN", "buildId": "scene-v1", "inputs": [{"path": contract_path.name, "sha256": hashlib.sha256(contract_path.read_bytes()).hexdigest()}], "evidence": [], "runtimeReport": "missing-runtime.json"},
+            {"id": "visualReview", "status": "NOT_RUN", "buildId": "scene-v1", "inputs": [], "evidence": [], "visualReviewReport": "missing-visual-review.json"},
+            {"id": "delivery", "status": "NOT_RUN", "buildId": "scene-v1", "inputs": [], "evidence": [{"path": final_page.name, "sha256": final_digest}]},
+        ])
+        issues = validate_delivery.validate_data(data, self.root)
+        self.assertTrue(any("testedArtifact must match a hashed final HTML deliverable exactly" in issue for issue in issues))
 
     def test_distribution_report_accepts_streamable_csv_for_large_placement_sets(self) -> None:
         ledger_path, report_path, stage = self.distribution_fixture()

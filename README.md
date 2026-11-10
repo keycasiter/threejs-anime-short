@@ -10,9 +10,10 @@
 - [构图、空间与中层](references/composition-and-form.md)：屏幕关系到视点/透视、空间分组与真实体积过渡，含可执行投影诊断。
 - [细节与分布SOP](references/detail-distribution.md)：从空间分布目标到实际实例、热区图和分组验收。
 - [材质与灯光校准SOP](references/lookdev-calibration.md)：把材料目标连到Three.js消费者，并做固定条件配对对照。
+- [可交互相机验收SOP](references/camera-interaction.md)：以最终页面实操校验完整环绕、缩放、复位和视角完整性。
 - [代码方法](references/threejs-code-sop.md)：几何、生成器、材料/FX及时间函数；按问题选读。
 - [统一验收](references/validation.md)：完整性、视觉品质、动作、相机和最终文件分别判断。
-- [阶段交付契约](references/delivery-contract.md)、[交付模板](assets/templates/delivery-manifest.template.json)、[分布报告模板](assets/templates/distribution-report.template.json)、[材光校准报告模板](assets/templates/lookdev-report.template.json)与[运行预检模板](assets/templates/runtime-preflight.template.json)：按用户任务范围验证阶段顺序、构建证据和最终交付。
+- [阶段交付契约](references/delivery-contract.md)、[交付模板](assets/templates/delivery-manifest.template.json)、[分布报告模板](assets/templates/distribution-report.template.json)、[材光校准报告模板](assets/templates/lookdev-report.template.json)、[相机交互报告模板](assets/templates/camera-interaction-report.template.json)与[运行预检模板](assets/templates/runtime-preflight.template.json)：按用户任务范围验证阶段顺序、构建证据和最终交付。
 - [渲染选择](references/rendering-choices.md)：色彩、PBR/IBL、版本、软影与异步完成协议；可选[柔和主光源码](assets/rendering/soft-directional.mjs)随作品复制。
 - [视觉分析空间交接](references/visual-analysis-sop.md)由[`validate_scene_register.py`](scripts/validate_scene_register.py)检查来源、ID、坐标、高程和端口交接；参考图与可建模特征的映射由[`visual-build-map模板`](assets/templates/visual-build-map.template.json)和交付门禁检查；每个资产族的代表样件及逐特征证据由[`asset-ledger模板`](assets/templates/asset-ledger.template.json)检查；空间搭建放行由`validate_spatial_gate.py`检查证据覆盖。
 - 其他references：渲染契约、状态与规模、AI资产及研究方法，条件适用时读取。
@@ -26,6 +27,7 @@ README供维护者了解版本与验证历史，不作为普通制作的额外�
 
 | 日期 / 版本 | 内容与依据 | 验证结果及边界 |
 |---|---|---|
+| 2026-11-11 / R27 交互相机运行证据闭环 | R18相机阶段记录了20个视角和359.93°拖动、缩放、复位；但交互报告中的截图路径与哈希没有一一关联，也没有相机复位状态，manifest门禁没有核查该报告。新增 interactive-orbit 专用交互报告：绑定被测最终HTML及其哈希、实际相机方位采样轨迹、orbit/zoom/reset前后稳定相机状态、页面错误和四张状态截图；验证旋转覆盖、缩放改变距离、复位回初始状态以及所有哈希/构建关系 | 92项Python用例、Skill格式、模板JSON和相对链接检查通过；新增正例/负例覆盖交互报告、旋转不足、复位误差、interactive-orbit缺报告以及交付HTML与测试页哈希不一致。检查证明所声明的状态/文件关系完整，不会代替真实页面操作和逐视角视觉审查。旧R18交互报告无法满足新格式，不能据其旧PASS直接放行。 |
 | 2026-11-11 / R26 最终审图逐项绑定运行视角 | R18最终复核记录了全量样本，但总维度结论和资产族checks没有各自指向相关截图；只有逐特征记录带view IDs。扩大`reviewedSampleIds`只能证明截图被列入审片范围，不能证明“材质/连接/互动”等判断来自能看见对应问题的视角。现要求全局每项PASS列`sampleIds`，资产族维度和特征只能引用该族实际纳入审查且可见的运行视角 | 88项Python用例、Skill格式、模板JSON和相对链接检查通过；新增负例确认PASS不能缺样本ID，资产族检查不能引用未纳入族审查的全局截图。门禁只验证ID关联，仍需人工判断所选截图是否真能展示对应维度。 |
 | 2026-11-11 / R25 材质与灯光校准交接 | R18最终复核发现地形与海面低对比、岸边泡沫在最终镜头不可见；现有材光资料讲了很多实现方式，但lookdev阶段只要求“固定视角比较”，未强制逐项材料目标对应到真实绑定/受光/输出消费者，也未锁定几何、相机、曝光和颜色输出条件。新增配对校准报告、逐族SOP及门禁：覆盖全部material特征；哈希绑定实现符号、冻结控制、baseline/selected真实PNG和可见选择理由 | 86项Python用例、Skill格式、模板JSON与内部链接检查通过；正例放行，漏特征与未锁定几何的负例拦截。门禁仅检查结构、哈希、符号声明和截图格式；不证明函数被运行或画面更好。R18缺少对应报告，不能回填成通过，也不据此声称画质提升。 |
 | 2026-11-11 / R24 细节分布的可执行交接 | R18灯塔最终审查发现植被集中在单一区域、岛冠大面积空缺、灌木/岩块形态重复；但`detailDistribution`只有源码、最终审查和一个泡沫调试图，没有区域密度目标、实际落点、候选/拒绝统计或分布诊断图。新增独立细节/分布SOP、`distribution-report`模板和阶段门禁：分组连回目标特征/资产族/生成器；实际世界锚点和变体按登记分布域、孔洞/净空及分区目标校验；上下文、分布图和近景绑定覆盖/节奏/变化/屏幕尺度/支撑净空审查；大群体支持流式CSV放置表 | 83项Python用例、Skill格式和内部相对链接检查通过；正例可放行，分区欠量、越界/孔洞/净空、统计不一致、缺视图和错误生成器符号负例被拦截。R18运行至`detailDistribution`仍因缺上游visualBuildMap及分布报告被阻断，与其原始BLOCK一致；无法用该旧项目证明新门禁端到端通过。脚本校验数据/证据完整性，不替代人工判断分布节奏与视觉品质，也不证明Agent自主遵循或画质提升。 |

@@ -312,6 +312,148 @@ def _check_full_orbit_matrix(samples: dict[str, dict[str, Any]], bounds: dict[st
                 issues.append(f"runtime: orbit matrix missing distance endpoint {endpoint:g} at azimuth {cardinal:g}")
 
 
+def validate_camera_interaction_report(
+    base: Path, report_path: Any, contract_path: Any, stage: Any, issues: list[str],
+) -> None:
+    """Require real-page orbit, zoom, and reset actions with state-linked captures."""
+    report_file = _resolve(base, report_path)
+    contract_file = _resolve(base, contract_path)
+    if report_file is None:
+        issues.append("cameraInteractionReportPath must reference an existing project JSON file")
+        return
+    if contract_file is None:
+        issues.append("camera interaction requires an existing camera contract")
+        return
+    report = _load_json(report_file)
+    contract = _load_json(contract_file)
+    if report is None or contract is None:
+        issues.append("camera interaction report and camera contract must be readable JSON objects")
+        return
+    stage = stage if isinstance(stage, dict) else {}
+    evidence = stage.get("evidence", [])
+    report_hash = _hash(report_file)
+    if not any(isinstance(item, dict) and item.get("path") == report_path and item.get("sha256") == report_hash for item in evidence):
+        issues.append("cameraMotion evidence must include cameraInteractionReportPath with its SHA-256")
+    if report.get("schemaVersion") != 1 or report.get("status") != "PASS" or report.get("buildId") != stage.get("buildId"):
+        issues.append("camera interaction report must use schemaVersion 1, PASS, and match cameraMotion buildId")
+    for field in ("method", "inputModality", "browser"):
+        if not isinstance(report.get(field), str) or not report[field].strip():
+            issues.append(f"camera interaction report requires {field}")
+    errors = report.get("pageErrors")
+    if not isinstance(errors, list) or errors:
+        issues.append("camera interaction pageErrors must be an empty list for PASS")
+
+    tested_artifact = _check_file_record(base, report.get("testedArtifact"), "camera interaction testedArtifact", issues)
+    if tested_artifact:
+        if Path(tested_artifact[0]).suffix.lower() not in {".html", ".htm"}:
+            issues.append("camera interaction testedArtifact must be the actual delivered HTML page")
+        if not any(
+            isinstance(item, dict) and item.get("path") == tested_artifact[0] and item.get("sha256") == tested_artifact[1]
+            for item in evidence
+        ):
+            issues.append("cameraMotion evidence must include the exact testedArtifact source and SHA-256")
+
+    bounds = contract.get("bounds") if contract.get("mode") == "interactive-orbit" else None
+    if not isinstance(bounds, dict):
+        issues.append("camera interaction requires an interactive-orbit camera contract with bounds")
+        return
+    normalized: dict[str, tuple[float, float]] = {}
+    for field in ("azimuthDeg", "polarDeg", "distance"):
+        pair = bounds.get(field)
+        if not isinstance(pair, list) or len(pair) != 2 or any(not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) for value in pair) or pair[0] >= pair[1]:
+            issues.append(f"camera interaction requires ordered bounds.{field}")
+        else:
+            normalized[field] = (float(pair[0]), float(pair[1]))
+    if len(normalized) != 3:
+        return
+
+    captures = report.get("captures")
+    required_ids = {"initial", "afterOrbit", "afterZoom", "afterReset"}
+    capture_by_id: dict[str, dict[str, Any]] = {}
+    if not isinstance(captures, list):
+        issues.append("camera interaction captures must list initial/orbit/zoom/reset screenshots")
+        captures = []
+    for index, capture in enumerate(captures):
+        label = f"cameraInteraction.captures[{index}]"
+        if not isinstance(capture, dict) or not isinstance(capture.get("id"), str) or not capture["id"].strip():
+            issues.append(f"{label}.id must be a stable capture identifier")
+            continue
+        capture_id = capture["id"]
+        if capture_id in capture_by_id:
+            issues.append(f"camera interaction has duplicate capture id {capture_id}")
+        capture_by_id[capture_id] = capture
+        record = _check_file_record(base, capture, label, issues)
+        if record:
+            rel, digest = record
+            if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                issues.append(f"{label} must be hashed in cameraMotion evidence")
+            _check_capture_png(base, rel, label, issues)
+        state = capture.get("state")
+        if not isinstance(state, dict) or state.get("settled") is not True:
+            issues.append(f"{label}.state must record a settled camera state")
+            continue
+        for field in ("azimuthDeg", "polarDeg", "distance"):
+            value = state.get(field)
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+                issues.append(f"{label}.state requires finite {field}")
+                continue
+            lower, upper = normalized[field]
+            if field == "azimuthDeg":
+                full_circle = upper - lower >= 359.0
+                equivalent_in_bounds = any(lower - 1.0 <= value + 360.0 * turn <= upper + 1.0 for turn in range(-2, 3))
+                if not full_circle and not equivalent_in_bounds:
+                    issues.append(f"{label}.state.{field} lies outside the declared camera bounds")
+            elif not lower <= value <= upper:
+                issues.append(f"{label}.state.{field} lies outside the declared camera bounds")
+    if set(capture_by_id) != required_ids:
+        issues.append("camera interaction captures must cover exactly initial, afterOrbit, afterZoom, and afterReset")
+    if not required_ids.issubset(capture_by_id):
+        return
+    def angle_gap(a: Any, b: Any) -> float:
+        if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+            return math.inf
+        return abs((float(a) - float(b) + 180.0) % 360.0 - 180.0)
+
+    actions = report.get("actions")
+    action_types = {item.get("type") for item in actions if isinstance(item, dict) and isinstance(item.get("type"), str)} if isinstance(actions, list) else set()
+    if action_types != {"orbit", "zoom", "reset"}:
+        issues.append("camera interaction actions must declare orbit, zoom, and reset exactly")
+    if not isinstance(actions, list) or len(actions) != 3 or any(not isinstance(item, dict) or not isinstance(item.get("input"), str) or not item["input"].strip() for item in actions):
+        issues.append("camera interaction actions must each name the real input used")
+    orbit = next((item for item in actions if isinstance(item, dict) and item.get("type") == "orbit"), {}) if isinstance(actions, list) else {}
+    travel = orbit.get("travelDegrees")
+    trace = orbit.get("azimuthTraceDeg")
+    if not isinstance(trace, list) or len(trace) < 3 or any(not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) for value in trace):
+        issues.append("camera interaction orbit must include at least three finite read-back azimuths from the actual drag")
+        computed_travel = 0.0
+    else:
+        computed_travel = sum(abs(float(right) - float(left)) for left, right in zip(trace, trace[1:]))
+        if computed_travel < 359.0:
+            issues.append("camera interaction azimuthTraceDeg must prove at least 359 degrees of actual input travel")
+        if angle_gap(trace[0], trace[-1]) > 2.0:
+            issues.append("camera interaction azimuthTraceDeg must end near its starting direction after a full orbit")
+    if not isinstance(travel, (int, float)) or isinstance(travel, bool) or not math.isfinite(travel) or abs(float(travel) - computed_travel) > 1.0:
+        issues.append("camera interaction travelDegrees must reconcile with the read-back azimuth trace")
+
+    initial = capture_by_id["initial"].get("state", {})
+    after_orbit = capture_by_id["afterOrbit"].get("state", {})
+    after_zoom = capture_by_id["afterZoom"].get("state", {})
+    after_reset = capture_by_id["afterReset"].get("state", {})
+    if angle_gap(initial.get("azimuthDeg"), after_orbit.get("azimuthDeg")) > 2.0:
+        issues.append("camera interaction afterOrbit must complete a near-full horizontal rotation and return to the initial azimuth")
+    start_distance, orbit_distance = initial.get("distance"), after_orbit.get("distance")
+    if isinstance(start_distance, (int, float)) and isinstance(orbit_distance, (int, float)) and abs(start_distance - orbit_distance) > max(0.02, abs(start_distance) * 0.02):
+        issues.append("camera interaction afterOrbit must preserve zoom distance during the horizontal orbit check")
+    zoom_distance, after_zoom_distance = after_orbit.get("distance"), after_zoom.get("distance")
+    if isinstance(zoom_distance, (int, float)) and isinstance(after_zoom_distance, (int, float)) and abs(zoom_distance - after_zoom_distance) <= max(0.02, abs(zoom_distance) * 0.01):
+        issues.append("camera interaction zoom action must visibly change camera distance")
+    if angle_gap(initial.get("azimuthDeg"), after_reset.get("azimuthDeg")) > 1.0 or angle_gap(initial.get("polarDeg"), after_reset.get("polarDeg")) > 1.0:
+        issues.append("camera interaction reset must restore initial azimuth and polar angle within 1 degree")
+    start_distance, reset_distance = initial.get("distance"), after_reset.get("distance")
+    if isinstance(start_distance, (int, float)) and isinstance(reset_distance, (int, float)) and abs(start_distance - reset_distance) > max(0.02, abs(start_distance) * 0.01):
+        issues.append("camera interaction reset must restore initial distance within 1 percent or 0.02 units")
+
+
 def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids: set[str], camera_mode: str, issues: list[str]) -> None:
     if not isinstance(record, str) or not record.strip():
         issues.append("visualReview: full-production requires visualReviewReport path")
@@ -1681,11 +1823,18 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
         }
         if camera_contract_file and (camera_contract_path, camera_contract_hash) not in runtime_inputs:
             issues.append("runtime inputs must reference the final camera contract artifact")
+        camera_contract_data = _load_json(camera_contract_file) if camera_contract_file else None
+        if camera_contract_data and camera_contract_data.get("mode") == "interactive-orbit":
+            if camera_stage.get("buildId") != build_id:
+                issues.append("cameraMotion buildId must match the final build for interactive-orbit delivery")
+            validate_camera_interaction_report(
+                base, data.get("cameraInteractionReportPath"), camera_contract_path,
+                camera_stage, issues,
+            )
         runtime_ids = _validate_runtime_report(base, runtime_stage.get("runtimeReport"), runtime_stage.get("buildId", ""), camera_contract_path, issues)
         if "visualReview" in required_stages:
             review_stage = by_id.get("visualReview", {})
-            camera_contract = _load_json(camera_contract_file) if camera_contract_file else None
-            _validate_visual_review(base, review_stage.get("visualReviewReport"), review_stage.get("buildId", ""), runtime_ids, camera_contract.get("mode", "") if camera_contract else "", issues)
+            _validate_visual_review(base, review_stage.get("visualReviewReport"), review_stage.get("buildId", ""), runtime_ids, camera_contract_data.get("mode", "") if camera_contract_data else "", issues)
             ledger_path = _resolve(base, data.get("assetLedgerPath"))
             review_path = _resolve(base, review_stage.get("visualReviewReport"))
             ledger_data = _load_json(ledger_path) if ledger_path else None
@@ -1708,6 +1857,14 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                         delivered.add(result)
                 if not delivered.issubset(stage_outputs.get("delivery", set())):
                     issues.append("delivery stage evidence must hash every final deliverable")
+                camera_contract = _load_json(camera_contract_file) if camera_contract_file else None
+                if camera_contract and camera_contract.get("mode") == "interactive-orbit":
+                    interaction_path = _resolve(base, data.get("cameraInteractionReportPath"))
+                    interaction = _load_json(interaction_path) if interaction_path else None
+                    tested = interaction.get("testedArtifact") if interaction else None
+                    tested_record = _check_file_record(base, tested, "camera interaction final testedArtifact", issues) if tested else None
+                    if tested_record and tested_record not in delivered:
+                        issues.append("camera interaction testedArtifact must match a hashed final HTML deliverable exactly")
     return issues
 
 
