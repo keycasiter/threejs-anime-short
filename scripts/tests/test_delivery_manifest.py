@@ -982,6 +982,32 @@ class DeliveryManifestTests(unittest.TestCase):
         joined = "\n".join(issues)
         for stage_id in ("spatialProxy", "runtime", "visualReview", "delivery"):
             self.assertIn(stage_id, joined)
+        self.assertIn("full-production runInstructions: must contain path and sha256", joined)
+
+    def test_final_html_static_gate_checks_offline_and_networked_deliverables(self) -> None:
+        page = self.root / "index.html"
+        page.write_text('<script src="https://cdn.example/three.js"></script>\n', encoding="utf-8")
+        offline_issues: list[str] = []
+        validate_delivery._validate_html_deliverable("offline-html", page, self.root, offline_issues)
+        self.assertTrue(any("non-local dependency" in issue for issue in offline_issues))
+
+        networked_issues: list[str] = []
+        validate_delivery._validate_html_deliverable("runnable-html", page, self.root, networked_issues)
+        self.assertEqual([], networked_issues)
+
+    def test_run_instructions_must_ship_with_final_deliverables_and_evidence(self) -> None:
+        data = self.minimal_analysis_manifest()
+        data["mode"] = "full-production"
+        instructions = self.root / "README.md"
+        instructions.write_text("Open index.html in a current browser.\n", encoding="utf-8")
+        data["runInstructions"] = {
+            "path": instructions.name,
+            "sha256": hashlib.sha256(instructions.read_bytes()).hexdigest(),
+        }
+        issues = validate_delivery.validate_data(data, self.root)
+        joined = "\n".join(issues)
+        self.assertIn("runInstructions must be included in final deliverables", joined)
+        self.assertIn("delivery stage evidence must hash runInstructions", joined)
 
     def test_stage_order_must_follow_declared_pipeline(self) -> None:
         data = self.minimal_analysis_manifest()

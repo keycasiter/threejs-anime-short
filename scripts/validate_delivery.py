@@ -143,6 +143,21 @@ def _run_specialist(script_name: str, target: Path, base: Path, label: str, issu
         issues.append(f"{label}: {script_name} blocked ({detail})")
 
 
+def _validate_html_deliverable(kind: str, target: Path, base: Path, issues: list[str]) -> None:
+    script = Path(__file__).resolve().with_name("validate_offline_html.mjs")
+    command = ["node", str(script), str(target)]
+    if kind == "offline-html":
+        command.append("--require-offline")
+    try:
+        result = subprocess.run(command, cwd=base, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        issues.append(f"deliverable {target.name}: could not run validate_offline_html.mjs: {exc}")
+        return
+    if result.returncode != 0:
+        detail = (result.stdout + result.stderr).strip().replace("\n", " | ")
+        issues.append(f"deliverable {target.name}: final HTML static check blocked ({detail})")
+
+
 def _validate_runtime_report(base: Path, record: Any, build_id: str, camera_contract_path: Any, stage: Any, issues: list[str]) -> set[str]:
     if not isinstance(record, str) or not record.strip():
         issues.append("runtime: full-production requires runtimeReport path")
@@ -1866,23 +1881,33 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                     result = _check_file_record(base, item, f"deliverable[{index}]", issues)
                     if result:
                         delivered.add(result)
+                        if item["kind"] in {"runnable-html", "offline-html"}:
+                            target = _resolve(base, item["path"])
+                            if target:
+                                _validate_html_deliverable(item["kind"], target, base, issues)
                 if not delivered.issubset(stage_outputs.get("delivery", set())):
                     issues.append("delivery stage evidence must hash every final deliverable")
-                runtime_report_path = _resolve(base, runtime_stage.get("runtimeReport"))
-                runtime_report_data = _load_json(runtime_report_path) if runtime_report_path else None
-                runtime_tested = _check_file_record(base, runtime_report_data.get("testedArtifact"), "runtime final testedArtifact", issues) if runtime_report_data and runtime_report_data.get("testedArtifact") else None
-                if runtime_tested and runtime_tested not in stage_outputs.get("delivery", set()):
-                    issues.append("delivery evidence must include the exact HTML page tested by runtime")
-                camera_contract = _load_json(camera_contract_file) if camera_contract_file else None
-                if camera_contract and camera_contract.get("mode") == "interactive-orbit":
-                    interaction_path = _resolve(base, data.get("cameraInteractionReportPath"))
-                    interaction = _load_json(interaction_path) if interaction_path else None
-                    tested = interaction.get("testedArtifact") if interaction else None
-                    tested_record = _check_file_record(base, tested, "camera interaction final testedArtifact", issues) if tested else None
-                    if tested_record and tested_record not in delivered:
-                        issues.append("camera interaction testedArtifact must match a hashed final HTML deliverable exactly")
-                    if runtime_tested and tested_record and runtime_tested != tested_record:
-                        issues.append("runtime and camera interaction must test the exact same HTML path and SHA-256")
+            run_instructions = _check_file_record(base, data.get("runInstructions"), "full-production runInstructions", issues)
+            if run_instructions:
+                if run_instructions not in delivered:
+                    issues.append("runInstructions must be included in final deliverables")
+                if run_instructions not in stage_outputs.get("delivery", set()):
+                    issues.append("delivery stage evidence must hash runInstructions")
+            runtime_report_path = _resolve(base, runtime_stage.get("runtimeReport"))
+            runtime_report_data = _load_json(runtime_report_path) if runtime_report_path else None
+            runtime_tested = _check_file_record(base, runtime_report_data.get("testedArtifact"), "runtime final testedArtifact", issues) if runtime_report_data and runtime_report_data.get("testedArtifact") else None
+            if runtime_tested and runtime_tested not in stage_outputs.get("delivery", set()):
+                issues.append("delivery evidence must include the exact HTML page tested by runtime")
+            camera_contract = _load_json(camera_contract_file) if camera_contract_file else None
+            if camera_contract and camera_contract.get("mode") == "interactive-orbit":
+                interaction_path = _resolve(base, data.get("cameraInteractionReportPath"))
+                interaction = _load_json(interaction_path) if interaction_path else None
+                tested = interaction.get("testedArtifact") if interaction else None
+                tested_record = _check_file_record(base, tested, "camera interaction final testedArtifact", issues) if tested else None
+                if tested_record and tested_record not in delivered:
+                    issues.append("camera interaction testedArtifact must match a hashed final HTML deliverable exactly")
+                if runtime_tested and tested_record and runtime_tested != tested_record:
+                    issues.append("runtime and camera interaction must test the exact same HTML path and SHA-256")
     return issues
 
 

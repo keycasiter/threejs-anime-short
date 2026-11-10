@@ -14,9 +14,11 @@
   "cameraInteractionReportPath": "qa/camera-interaction-report.json",
   "runtimeReport": "qa/runtime-report.json",
   "visualReviewReport": "qa/visual-review.json",
+  "runInstructions": {"path": "README.md", "sha256": "replace-with-file-sha256"},
   "deliverables": [
     {"kind": "runnable-html", "path": "dist/index.html", "sha256": "replace-with-file-sha256"},
-    {"kind": "source", "path": "src/scene.js", "sha256": "replace-with-file-sha256"}
+    {"kind": "source", "path": "src/scene.js", "sha256": "replace-with-file-sha256"},
+    {"kind": "run-instructions", "path": "README.md", "sha256": "replace-with-file-sha256"}
   ],
   "stages": [
     {"id": "direction", "status": "NOT_RUN", "buildId": "direction-v1", "inputs": [], "evidence": []},
