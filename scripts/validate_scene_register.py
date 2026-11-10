@@ -11,12 +11,48 @@ from typing import Any
 STATUSES = {"Observed", "Inferred", "Designed", "Unknown"}
 GEOMETRY_ROLES = {"solid", "surface", "path", "distribution-envelope", "clearance-envelope"}
 TOLERANCE = 0.02  # meters/design units; only for endpoint and extent arithmetic
+PLAN_ROLES = {
+    "occupied-footprint", "support-footprint", "walkable-surface",
+    "overhead-overhang", "distribution-envelope", "clearance-envelope",
+}
 
 
 def vec3(value: Any) -> bool:
     return isinstance(value, list) and len(value) == 3 and all(
         isinstance(v, (int, float)) and math.isfinite(v) for v in value
     )
+
+
+def point_in_polygon_xz(point: Any, outline: Any) -> bool:
+    """Return whether an XZ point lies in a polygon, including its boundary."""
+    if not isinstance(point, list) or len(point) != 2 or not isinstance(outline, list) or len(outline) < 3:
+        return False
+    x, z = point
+    inside = False
+    for index, current in enumerate(outline):
+        following = outline[(index + 1) % len(outline)]
+        if not isinstance(current, list) or len(current) != 2 or not isinstance(following, list) or len(following) != 2:
+            return False
+        x1, z1 = current
+        x2, z2 = following
+        if not all(isinstance(value, (int, float)) and math.isfinite(value) for value in (x1, z1, x2, z2)):
+            return False
+        dx, dz = x2 - x1, z2 - z1
+        cross = (x - x1) * dz - (z - z1) * dx
+        if abs(cross) <= TOLERANCE and min(x1, x2) - TOLERANCE <= x <= max(x1, x2) + TOLERANCE and min(z1, z2) - TOLERANCE <= z <= max(z1, z2) + TOLERANCE:
+            return True
+        if (z1 > z) != (z2 > z):
+            crossing_x = x1 + (z - z1) * dx / dz
+            if x < crossing_x:
+                inside = not inside
+    return inside
+
+
+def point_in_plan_shape_xz(point: Any, shape: dict[str, Any]) -> bool:
+    if not point_in_polygon_xz(point, shape.get("outlineXZ")):
+        return False
+    holes = shape.get("holesXZ", [])
+    return not any(point_in_polygon_xz(point, hole) for hole in holes if isinstance(hole, list))
 
 
 def main() -> int:
@@ -123,6 +159,62 @@ def main() -> int:
             table[port["id"]] = port
             check_evidence(f"{oid}.{port['id']}", port.get("evidence"))
         object_ports[oid] = table
+        plan_geometry = item.get("planGeometry", [])
+        if not isinstance(plan_geometry, list):
+            issues.append(f"{oid}: planGeometry must be a list when present")
+            plan_geometry = []
+        plan_by_id: dict[str, dict[str, Any]] = {}
+        for shape_index, shape in enumerate(plan_geometry):
+            if not isinstance(shape, dict) or not isinstance(shape.get("id"), str) or not shape["id"].strip():
+                issues.append(f"{oid}: planGeometry[{shape_index}] requires a stable id")
+                continue
+            shape_id = shape["id"]
+            if shape_id in plan_by_id:
+                issues.append(f"{oid}: duplicate planGeometry id {shape_id}")
+            plan_by_id[shape_id] = shape
+            if shape.get("role") not in PLAN_ROLES:
+                issues.append(f"{oid}.{shape_id}: role must be one of {sorted(PLAN_ROLES)}")
+            outline = shape.get("outlineXZ")
+            if not isinstance(outline, list) or len(outline) < 3 or any(
+                not isinstance(point, list) or len(point) != 2 or any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in point)
+                for point in outline
+            ):
+                issues.append(f"{oid}.{shape_id}: outlineXZ must contain at least three finite world-space [x,z] points")
+            holes = shape.get("holesXZ", [])
+            if not isinstance(holes, list) or any(
+                not isinstance(hole, list) or len(hole) < 3 or any(
+                    not isinstance(point, list) or len(point) != 2 or any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in point)
+                    for point in hole
+                )
+                for hole in holes
+            ):
+                issues.append(f"{oid}.{shape_id}: holesXZ must contain valid world-space polygons when present")
+            if "elevationY" in shape and (not isinstance(shape["elevationY"], (int, float)) or not math.isfinite(shape["elevationY"])):
+                issues.append(f"{oid}.{shape_id}: elevationY must be finite")
+            if "elevationRangeY" in shape:
+                span = shape["elevationRangeY"]
+                if not isinstance(span, list) or len(span) != 2 or any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in span) or span[0] > span[1]:
+                    issues.append(f"{oid}.{shape_id}: elevationRangeY must be an ordered finite pair")
+            check_evidence(f"{oid}.{shape_id}", shape.get("evidence"))
+        for port_id, port in table.items():
+            shape_id = port.get("planGeometryId")
+            if shape_id is None:
+                continue
+            shape = plan_by_id.get(shape_id)
+            if shape is None:
+                issues.append(f"{oid}.{port_id}: unresolved planGeometryId {shape_id}")
+                continue
+            if shape.get("role") not in {"walkable-surface", "support-footprint"}:
+                issues.append(f"{oid}.{port_id}: route contact must map to a walkable-surface or support-footprint")
+            if not point_in_plan_shape_xz([port["at"][0], port["at"][2]], shape):
+                issues.append(f"{oid}.{port_id}: port lies outside plan geometry {shape_id}")
+            if "elevationY" in shape and abs(port["at"][1] - shape["elevationY"]) > TOLERANCE:
+                issues.append(f"{oid}.{port_id}: port elevation does not match plan geometry {shape_id}")
+            span = shape.get("elevationRangeY")
+            if isinstance(span, list) and len(span) == 2 and all(isinstance(value, (int, float)) and math.isfinite(value) for value in span) and span[0] <= span[1]:
+                low, high = span
+                if not low - TOLERANCE <= port["at"][1] <= high + TOLERANCE:
+                    issues.append(f"{oid}.{port_id}: port elevation lies outside plan geometry {shape_id}")
         for relation in item.get("relations", []):
             target = relation.get("targetId") if isinstance(relation, dict) else None
             if target not in object_by_id:

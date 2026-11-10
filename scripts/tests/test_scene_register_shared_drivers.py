@@ -74,6 +74,41 @@ class SharedDriverRegisterTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("system and output", output)
 
+    def test_plan_geometry_distinguishes_walkable_surface_and_checks_linked_port(self):
+        def mutate(data):
+            ground = data["objects"][0]
+            ground["ports"] = [{"id": "landing", "space": "world", "at": [0, 1, 0], "role": "route-entry", "planGeometryId": "landing-deck", "evidence": ["ref-1"]}]
+            ground["planGeometry"] = [{"id": "landing-deck", "role": "walkable-surface", "outlineXZ": [[-2, -2], [2, -2], [2, 2], [-2, 2]], "elevationY": 1, "evidence": ["ref-1"]}]
+        code, output = self.run_validator(mutate)
+        self.assertEqual(code, 0, output)
+
+    def test_plan_geometry_rejects_route_port_outside_walkable_surface(self):
+        def mutate(data):
+            ground = data["objects"][0]
+            ground["ports"] = [{"id": "landing", "space": "world", "at": [4, 1, 0], "role": "route-entry", "planGeometryId": "landing-deck", "evidence": ["ref-1"]}]
+            ground["planGeometry"] = [{"id": "landing-deck", "role": "walkable-surface", "outlineXZ": [[-2, -2], [2, -2], [2, 2], [-2, 2]], "elevationY": 1, "evidence": ["ref-1"]}]
+        code, output = self.run_validator(mutate)
+        self.assertNotEqual(code, 0)
+        self.assertIn("port lies outside plan geometry", output)
+
+    def test_plan_geometry_rejects_port_inside_walkable_hole(self):
+        def mutate(data):
+            ground = data["objects"][0]
+            ground["ports"] = [{"id": "blocked-center", "space": "world", "at": [0, 1, 0], "role": "route-entry", "planGeometryId": "ring-deck", "evidence": ["ref-1"]}]
+            ground["planGeometry"] = [{"id": "ring-deck", "role": "walkable-surface", "outlineXZ": [[-3, -3], [3, -3], [3, 3], [-3, 3]], "holesXZ": [[[-1, -1], [1, -1], [1, 1], [-1, 1]]], "elevationY": 1, "evidence": ["ref-1"]}]
+        code, output = self.run_validator(mutate)
+        self.assertNotEqual(code, 0)
+        self.assertIn("port lies outside plan geometry", output)
+
+    def test_plan_geometry_rejects_port_at_wrong_elevation(self):
+        def mutate(data):
+            ground = data["objects"][0]
+            ground["ports"] = [{"id": "floating-entry", "space": "world", "at": [0, 5, 0], "role": "route-entry", "planGeometryId": "landing-deck", "evidence": ["ref-1"]}]
+            ground["planGeometry"] = [{"id": "landing-deck", "role": "walkable-surface", "outlineXZ": [[-2, -2], [2, -2], [2, 2], [-2, 2]], "elevationY": 1, "evidence": ["ref-1"]}]
+        code, output = self.run_validator(mutate)
+        self.assertNotEqual(code, 0)
+        self.assertIn("port elevation does not match", output)
+
 
 if __name__ == "__main__":
     unittest.main()

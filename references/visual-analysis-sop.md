@@ -77,6 +77,7 @@ Use a hierarchy that survives handoff:
 For every major item, give a stable ID and a role. Describe bounding form and orientation, not just appearance. Distinguish:
 
 - **Placement:** center/anchor, footprint or bounds, heading, base/top elevation, and level.
+- **Plan meaning:** whenever a broad bound contains semantically different regions, split its plan representation into occupied, support, walkable, overhead, distribution, or clearance areas. Do not use a conservative object AABB as if its entire area were occupied floor or traversable deck.
 - **Support:** what bears it, where support contacts occur, whether it is embedded, perched, suspended, or floating.
 - **Connection:** start/end IDs and named ports, port coordinates/directions, connection type, and continuity requirements.
 - **Adjacency/clearance:** required neighbor, side, gap, access corridor, opening, or exclusion zone.
@@ -101,7 +102,8 @@ Create one machine-readable scene register (JSON/YAML/CSV) consumed by the plan,
     "anchor":{"space":"world","xyz":[0,0,0]}, "headingDeg":0,
     "geometryRole":"solid",
     "bounds":{"size":[1,1,1],"center":"anchor"}, "baseY":-0.5,"topY":0.5,
-    "ports":[{"id":"out","space":"world","at":[0,0,0],"direction":[0,0,1],"role":"route-start","evidence":["view-id"]}],
+    "planGeometry":[{"id":"entry-deck","role":"walkable-surface","outlineXZ":[[-1,-1],[1,-1],[1,1],[-1,1]],"elevationY":0,"evidence":["view-id"]}],
+    "ports":[{"id":"out","space":"world","at":[0,0,0],"direction":[0,0,1],"role":"route-start","planGeometryId":"entry-deck","evidence":["view-id"]}],
     "fieldEvidence":{"anchor":{"status":"Designed","sourceIds":["view-id"],"confidence":"high"}},
     "relations":[]
   }, {
@@ -109,7 +111,8 @@ Create one machine-readable scene register (JSON/YAML/CSV) consumed by the plan,
     "anchor":{"space":"world","xyz":[1,0,3]}, "headingDeg":0,
     "geometryRole":"solid",
     "bounds":{"size":[1,1,1],"center":"anchor"}, "baseY":-0.5,"topY":0.5,
-    "ports":[{"id":"in","space":"world","at":[1,0,3],"direction":[0,0,-1],"role":"route-end","evidence":["view-id"]}],
+    "planGeometry":[{"id":"landing","role":"walkable-surface","outlineXZ":[[0,2],[2,2],[2,4],[0,4]],"elevationY":0,"evidence":["view-id"]}],
+    "ports":[{"id":"in","space":"world","at":[1,0,3],"direction":[0,0,-1],"role":"route-end","planGeometryId":"landing","evidence":["view-id"]}],
     "fieldEvidence":{"anchor":{"status":"Designed","sourceIds":["view-id"],"confidence":"high"}},
     "relations":[]
   }],
@@ -138,7 +141,9 @@ For each perturbation, name the actual source file and producer/consumer functio
 
 ### Coordinate and connection semantics
 
-- `anchor.xyz` is the **center of the object's axis-aligned bounds** in the declared world coordinate system. `bounds.size` is a positive full extent in X/Y/Z; `baseY` and `topY` must equal `anchor.y ± bounds.size[1]/2` within a small numeric tolerance. For non-box or asymmetric objects, keep this as a conservative envelope and add a separately named placement datum or profile; do not overload the anchor to mean both center and base.
+- `anchor.xyz` is the **center of the object's axis-aligned bounds** in the declared world coordinate system. `bounds.size` is a positive full extent in X/Y/Z; `baseY` and `topY` must equal `anchor.y ± bounds.size[1]/2` within a small numeric tolerance. For non-box or asymmetric objects, keep this as a conservative envelope and add a separately named placement datum or profile; do not overload the anchor to mean both center and base. Bounds answer “where might this object extend?”; they do not by themselves define ground occupancy, bearing contact, accessible floor, or route clearance.
+- When those regions differ materially, add `planGeometry` records in world-space XZ with an explicit role (`occupied-footprint`, `support-footprint`, `walkable-surface`, `overhead-overhang`, `distribution-envelope`, or `clearance-envelope`), `outlineXZ`, optional `holesXZ`, elevation where relevant, and evidence. Use holes for courtyards, atria, shafts, rings or other non-traversable voids; a bounding rectangle or filled outer polygon must not imply walkable space through an opening. Use separate outlines for supports and the structure above them when a roof/eave, canopy, balcony, vegetation crown, or irregular mass would make the overall bounds misleading. Keep this optional for objects whose footprint and all functional plan areas genuinely coincide.
+- A route landing or access port that depends on a deck, platform, stair landing, or entry apron names its `planGeometryId`. The port coordinate must lie within that registered area, and the plan must draw the functional surface separately from any overhead overhang or broad envelope. For non-walkable contacts, identify the actual support/attachment surface in the same way where plan overlap affects interpretation. A route line touching an object's AABB is not proof of a usable connection.
 - Every object or route port has a stable local ID and a finite world-space coordinate. A route's `connects` lists its start and end targets in path order. Each target uses `ownerId.portId`, where owner can be an object or another route. The first/last route point must coincide with those ports within the declared tolerance; a visually close endpoint is not a connection.
 - If a route joins another route at an interior junction, declare a named route port at the exact sampled point. Do not invent `.start`, `.end`, or junction port names only inside a sentence.
 - Every high-impact modeled field, port, and relation carries `status`, `sourceIds`, and confidence. Sources must resolve to the evidence index. A generated design reference may support a `Designed` proposal, but cannot support a claim that a hidden object or dimension was observed.
@@ -151,9 +156,9 @@ Provide a dimensioned plan, at least one cross-section through the most importan
 
 Use actual CAD only when available and useful. Otherwise generate clean SVG/PDF drawings from the same spatial register and label them **design/blockout diagrams, not engineering CAD**. Do not manually redraw numbers independently of the register. Avoid making an unlabeled beauty sketch stand in for a plan or section.
 
-The generator must read coordinates, extents, object IDs, section stations, and route samples from the register. A hand-drawn illustrative section is not accepted as a measured view of the registered scene. Each section must name the plane/station and list intersected objects or sampled route IDs. If a diagram deliberately simplifies geometry, label it as a schematic and retain a separate projected view from the register so the receiver can distinguish explanation from spatial evidence.
+The generator must read coordinates, extents, `planGeometry`, object IDs, section stations, and route samples from the register. In plan view, render occupied/support/walkable outlines separately from overhead overhangs and distribution/clearance envelopes; use line style or fill conventions and a legend so a viewer cannot mistake a roof or vegetation envelope for ground-level floor. A hand-drawn illustrative section is not accepted as a measured view of the registered scene. Each section must name the plane/station and list intersected objects or sampled route IDs. If a diagram deliberately simplifies geometry, label it as a schematic and retain a separate projected view from the register so the receiver can distinguish explanation from spatial evidence.
 
-After generating drawings, render every plan/section SVG or PDF to a target-size image and inspect the image itself. Verify that the site footprint and route are inside the frame; labels, dimensions and elevations are legible and do not collide; section profiles cross the registered terrain and named objects; and route endpoints/supports appear where the register says they do. Compare each preview against the source register, not only against the generator code. Keep the rendered previews and their hashes in the `visualAnalysis` evidence. If a preview cannot be produced or visually read, mark diagram review `NOT_RUN`; the validator checks file/hash/PNG signature and dimensions, while the reviewer checks legibility and spatial correctness. A valid file, hash, or parseable SVG is not visual evidence.
+After generating drawings, render every plan/section SVG or PDF to a target-size image and inspect the image itself. Verify that the site footprint and route are inside the frame; labels, dimensions and elevations are legible and do not collide; section profiles cross the registered terrain and named objects; and route endpoints/supports appear on the functional surface where the register says they do. Check that no route appears to pass through a building solely because a roof/eave AABB was drawn as a filled floor, and that no access route terminates outside its actual deck/landing. Compare each preview against the source register, not only against the generator code. Keep the rendered previews and their hashes in the `visualAnalysis` evidence. If a preview cannot be produced or visually read, mark diagram review `NOT_RUN`; the validator checks file/hash/PNG signature and dimensions, while the reviewer checks legibility and spatial correctness. A valid file, hash, or parseable SVG is not visual evidence.
 
 ## 6. Specify continuous terrain and routes
 
