@@ -107,8 +107,14 @@ class DeliveryManifestTests(unittest.TestCase):
         targets = {("object", value) for value in object_ids} | {("route", value) for value in route_ids}
         entries = [entry for entry in build_map["entries"] if (entry["target"]["type"], entry["target"]["id"]) in targets]
         feature_ids = [feature["id"] for entry in entries for feature in entry["features"]]
-        capture_path = self.root / f"{family_id}-prototype.png"
-        capture_path.write_bytes(b"prototype image capture")
+        prototype_views = []
+        for view_id, view_role in (("primary", "primary"), ("oblique", "oblique"), ("side", "side"), ("joint", "joint"), ("context", "context")):
+            capture_path = self.root / f"{family_id}-prototype-{view_id}.png"
+            capture_path.write_bytes(png_bytes(800, 600))
+            prototype_views.append({
+                "id": view_id, "viewRole": view_role, "path": capture_path.name,
+                "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest(),
+            })
         source_path = self.root / "asset.js"
         source_path.write_text("export function buildGroundSurface(){ return true; }\n", encoding="utf-8")
         return {
@@ -119,15 +125,19 @@ class DeliveryManifestTests(unittest.TestCase):
                 "representativeTarget": {"type": "object", "id": object_ids[0]} if object_ids else {"type": "route", "id": route_ids[0]},
                 "component": entries[0]["implementationPlan"]["component"],
                 "implementationSource": {"path": source_path.name, "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(), "symbol": "buildGroundSurface"},
-                "capture": {"id": f"{family_id}-prototype", "path": capture_path.name, "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest()},
-                "featureReviews": [{"featureId": feature_id, "status": "PASS", "observation": f"Observed the mapped {feature_id} feature in the prototype capture."} for feature_id in feature_ids],
+                "views": prototype_views,
+                "featureReviews": [
+                    {"featureId": feature_id, "status": "PASS", "observation": f"Observed the mapped {feature_id} feature in linked prototype views.",
+                     "viewIds": (["primary", "side"] if feature_id == "ground-profile" else ["primary", "oblique"] if feature_id == "ground-layer" else ["primary"])}
+                    for feature_id in feature_ids
+                ],
             },
             "requiredChecks": [{"dimension": dimension, "criterion": f"Inspect {dimension} in applicable views"} for dimension in validate_delivery.ASSET_CHECKS_BY_PRIORITY[priority]],
         }
 
     def asset_stage(self, ledger_path: Path) -> dict:
         evidence = [{"path": ledger_path.relative_to(self.root).as_posix(), "sha256": hashlib.sha256(ledger_path.read_bytes()).hexdigest()}]
-        for capture in self.root.glob("*-prototype.png"):
+        for capture in self.root.glob("*-prototype-*.png"):
             evidence.append({"path": capture.name, "sha256": hashlib.sha256(capture.read_bytes()).hexdigest()})
         source_path = self.root / "asset.js"
         evidence.append({"path": source_path.name, "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest()})
@@ -326,6 +336,47 @@ class DeliveryManifestTests(unittest.TestCase):
             self.asset_stage(ledger_path), issues,
         )
         self.assertTrue(any("featureReviews must cover every visualFeatureId exactly" in issue for issue in issues))
+
+    def test_asset_prototype_requires_complementary_feature_linked_views(self) -> None:
+        family = self.asset_family("terrain-family", "supporting", ["ground"], [])
+        family["prototype"]["featureReviews"][0]["viewIds"] = ["primary"]
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        issues: list[str] = []
+        validate_delivery.validate_asset_ledger(
+            self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
+            self.asset_stage(ledger_path), issues,
+        )
+        self.assertTrue(any("ground-profile (silhouette) needs complementary view roles" in issue for issue in issues))
+
+    def test_asset_prototype_requires_distinct_view_roles(self) -> None:
+        family = self.asset_family("terrain-family", "supporting", ["ground"], [])
+        for view in family["prototype"]["views"]:
+            view["viewRole"] = "primary"
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        issues: list[str] = []
+        validate_delivery.validate_asset_ledger(
+            self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
+            self.asset_stage(ledger_path), issues,
+        )
+        self.assertTrue(any("must use at least two distinct viewRole values" in issue for issue in issues))
+
+    def test_asset_prototype_rejects_unlinked_or_non_image_view_evidence(self) -> None:
+        family = self.asset_family("terrain-family", "supporting", ["ground"], [])
+        family["prototype"]["featureReviews"][1]["viewIds"] = ["missing-view"]
+        family["prototype"]["views"][0]["path"] = "asset.js"
+        family["prototype"]["views"][0]["sha256"] = hashlib.sha256((self.root / "asset.js").read_bytes()).hexdigest()
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        issues: list[str] = []
+        validate_delivery.validate_asset_ledger(
+            self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
+            self.asset_stage(ledger_path), issues,
+        )
+        joined = "\n".join(issues)
+        self.assertIn("requires viewIds linked to its hashed prototype views", joined)
+        self.assertIn("must be a real PNG capture", joined)
 
     def test_asset_ledger_cannot_omit_a_renderable_scene_object(self) -> None:
         ledger = {"families": [{

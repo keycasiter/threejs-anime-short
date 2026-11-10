@@ -46,6 +46,14 @@ ASSET_INTEGRITY_CHECKS = (
     "material-response", "spatial-relation", "detail-scale",
 )
 ASSET_CHECKS_BY_PRIORITY = {priority: ASSET_INTEGRITY_CHECKS for priority in ("focal", "supporting", "ambient")}
+PROTOTYPE_VIEW_ROLES = {"primary", "oblique", "side", "back", "top", "underside", "joint", "context"}
+FEATURE_VIEW_REQUIREMENTS = {
+    "silhouette": ({"primary"}, {"oblique", "side", "back", "top", "underside"}),
+    "proportion": ({"primary"}, {"oblique", "side", "back", "top", "underside"}),
+    "volume": ({"primary"}, {"oblique", "side", "back", "top", "underside"}),
+    "connection": ({"joint"}, {"oblique", "side", "back", "underside"}),
+    "spatial-relation": ({"context"}, {"oblique", "side", "back"}),
+}
 
 
 def _resolve(base: Path, value: Any) -> Path | None:
@@ -96,6 +104,20 @@ def _check_file_record(base: Path, record: Any, label: str, issues: list[str]) -
         issues.append(f"{label}: SHA-256 mismatch for {relative}")
         return None
     return str(relative), digest
+
+
+def _check_capture_png(base: Path, path: str, label: str, issues: list[str]) -> None:
+    image_path = _resolve(base, path)
+    try:
+        header = image_path.read_bytes()[:24] if image_path else b""
+    except OSError:
+        header = b""
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        issues.append(f"{label} must be a real PNG capture with an IHDR header")
+        return
+    width, height = struct.unpack(">II", header[16:24])
+    if max(width, height) < 640 or min(width, height) < 320:
+        issues.append(f"{label} must be at least 640px on its long edge and 320px on its short edge")
 
 
 def _run_specialist(script_name: str, target: Path, base: Path, label: str, issues: list[str]) -> None:
@@ -363,6 +385,7 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
         return set()
     mapped_features: dict[tuple[str, str], set[str]] = {}
     component_by_target: dict[tuple[str, str], str] = {}
+    category_by_feature: dict[str, str] = {}
     for entry in build_map.get("entries", []):
         if not isinstance(entry, dict) or not isinstance(entry.get("target"), dict):
             continue
@@ -372,6 +395,11 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
             feature.get("id") for feature in entry.get("features", [])
             if isinstance(feature, dict) and isinstance(feature.get("id"), str)
         }
+        category_by_feature.update({
+            feature["id"]: feature.get("category")
+            for feature in entry.get("features", [])
+            if isinstance(feature, dict) and isinstance(feature.get("id"), str)
+        })
         plan = entry.get("implementationPlan", {})
         if isinstance(plan, dict) and isinstance(plan.get("component"), str):
             component_by_target[key] = plan["component"]
@@ -474,14 +502,33 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
                 declaration = rf"\b(?:function|class)\s+{re.escape(symbol)}\b|\b(?:const|let|var)\s+{re.escape(symbol)}\s*="
                 if source_text and not re.search(declaration, source_text):
                     issues.append(f"{label}.prototype.implementationSource does not declare {symbol}")
-        capture = prototype.get("capture")
-        if not isinstance(capture, dict) or not isinstance(capture.get("id"), str) or not capture.get("id", "").strip():
-            issues.append(f"{label}.prototype.capture requires a stable sample id")
-        capture_record = _check_file_record(base, capture, f"{label}.prototype.capture", issues)
-        if capture_record:
-            rel, digest = capture_record
-            if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
-                issues.append(f"{label}.prototype.capture must be hashed in middleForms evidence")
+        views = prototype.get("views")
+        if not isinstance(views, list) or len(views) < 2:
+            issues.append(f"{label}.prototype.views must include at least two complementary captures")
+            views = []
+        view_ids: set[str] = set()
+        role_by_view: dict[str, str] = {}
+        for view_index, view in enumerate(views):
+            view_label = f"{label}.prototype.views[{view_index}]"
+            if not isinstance(view, dict) or not isinstance(view.get("id"), str) or not view.get("id", "").strip():
+                issues.append(f"{view_label} requires a stable id")
+                continue
+            view_id, role = view["id"], view.get("viewRole")
+            if view_id in view_ids:
+                issues.append(f"{label}.prototype.views has duplicate id {view_id}")
+            view_ids.add(view_id)
+            if not isinstance(role, str) or role not in PROTOTYPE_VIEW_ROLES:
+                issues.append(f"{view_label}.viewRole must be one of: " + ", ".join(sorted(PROTOTYPE_VIEW_ROLES)))
+            else:
+                role_by_view[view_id] = role
+            capture_record = _check_file_record(base, view, view_label, issues)
+            if capture_record:
+                rel, digest = capture_record
+                if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                    issues.append(f"{view_label} must be hashed in middleForms evidence")
+                _check_capture_png(base, rel, view_label, issues)
+        if len(set(role_by_view.values())) < 2:
+            issues.append(f"{label}.prototype.views must use at least two distinct viewRole values")
         reviews = prototype.get("featureReviews")
         if not isinstance(reviews, list):
             issues.append(f"{label}.prototype.featureReviews must review every mapped visual feature")
@@ -498,6 +545,17 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
             review = reviewed[feature_id]
             if review.get("status") != "PASS" or not isinstance(review.get("observation"), str) or len(review["observation"].strip()) < 20:
                 issues.append(f"{label}.prototype feature {feature_id} requires PASS with a concrete visual observation")
+            linked_views = review.get("viewIds")
+            if not isinstance(linked_views, list) or not linked_views or any(not isinstance(value, str) for value in linked_views) or len(linked_views) != len(set(linked_views)) or not set(linked_views).issubset(view_ids):
+                issues.append(f"{label}.prototype feature {feature_id} requires viewIds linked to its hashed prototype views")
+                continue
+            category = category_by_feature.get(feature_id)
+            required_roles = FEATURE_VIEW_REQUIREMENTS.get(category) if isinstance(category, str) else None
+            if required_roles:
+                roles = {role_by_view.get(view_id) for view_id in linked_views}
+                required_primary, required_complement = required_roles
+                if not roles.intersection(required_primary) or not roles.intersection(required_complement):
+                    issues.append(f"{label}.prototype feature {feature_id} ({category}) needs complementary view roles: one of [{', '.join(sorted(required_primary))}] and one of [{', '.join(sorted(required_complement))}]")
     missing_assets = renderables - set(covered)
     unknown_assets = set(covered) - renderables
     if missing_assets:

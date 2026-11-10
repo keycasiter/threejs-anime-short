@@ -17,11 +17,15 @@
           "sha256": "replace-with-source-sha256",
           "symbol": "buildGroundSurface"
         },
-        "capture": {"id": "terrain-prototype-close", "path": "qa/prototypes/terrain-close.png", "sha256": "replace-with-file-sha256"},
+        "views": [
+          {"id": "terrain-primary", "viewRole": "primary", "path": "qa/prototypes/terrain-primary.png", "sha256": "replace-with-file-sha256"},
+          {"id": "terrain-side", "viewRole": "side", "path": "qa/prototypes/terrain-side.png", "sha256": "replace-with-file-sha256"},
+          {"id": "terrain-context", "viewRole": "context", "path": "qa/prototypes/terrain-context.png", "sha256": "replace-with-file-sha256"}
+        ],
         "featureReviews": [
-          {"featureId": "ground-profile", "status": "NOT_RUN", "observation": ""},
-          {"featureId": "ground-layer", "status": "NOT_RUN", "observation": ""},
-          {"featureId": "ground-material", "status": "NOT_RUN", "observation": ""}
+          {"featureId": "ground-profile", "status": "NOT_RUN", "observation": "", "viewIds": ["terrain-primary", "terrain-side"]},
+          {"featureId": "ground-layer", "status": "NOT_RUN", "observation": "", "viewIds": ["terrain-primary", "terrain-side"]},
+          {"featureId": "ground-material", "status": "NOT_RUN", "observation": "", "viewIds": ["terrain-primary"]}
         ]
       },
       "requiredChecks": [
