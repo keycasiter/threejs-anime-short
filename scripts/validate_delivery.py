@@ -229,7 +229,7 @@ def _validate_probe_contract(probe: Any, contract: dict[str, Any], label: str, i
         issues.append(f"{label}: audioMode must be none or wav")
 
 
-def _validate_video_deliverable(base: Path, item: dict[str, Any], runtime_tested: tuple[str, str] | None, delivery_outputs: set[tuple[str, str]], issues: list[str]) -> None:
+def _validate_video_deliverable(base: Path, item: dict[str, Any], build_id: str, runtime_tested: tuple[str, str] | None, delivery_outputs: set[tuple[str, str]], issues: list[str]) -> None:
     report_record = item.get("exportReport")
     report_path = _resolve(base, report_record)
     if report_path is None:
@@ -266,6 +266,102 @@ def _validate_video_deliverable(base: Path, item: dict[str, Any], runtime_tested
         return
     _validate_probe_contract(actual_probe, contract, "MP4 deliverable", issues)
     _validate_probe_contract(report.get("video"), contract, "MP4 export report probe", issues)
+    if report.get("audioMode") == "wav":
+        try:
+            duration = math.ceil(float(report.get("duration")) * float(report.get("fps"))) / float(report.get("fps"))
+        except (TypeError, ValueError, ZeroDivisionError):
+            duration = 0
+        _validate_audio_review(base, item.get("audioReviewReport"), item, build_id, duration, delivery_outputs, issues)
+
+
+def _validate_audio_review(base: Path, record: Any, item: dict[str, Any], build_id: str, duration: float, delivery_outputs: set[tuple[str, str]], issues: list[str]) -> None:
+    if not isinstance(record, str) or not record.strip():
+        issues.append("audio-bearing MP4 deliverable requires audioReviewReport")
+        return
+    path = _resolve(base, record)
+    report = _load_json(path) if path else None
+    if report is None:
+        issues.append("audioReviewReport must reference an existing project JSON file")
+        return
+    report_hash = _hash(path)
+    report_relative = path.relative_to(base.resolve()).as_posix()
+    if (report_relative, report_hash) not in delivery_outputs:
+        issues.append("delivery evidence must hash the audio review report")
+    if report.get("status") != "PASS" or report.get("buildId") != build_id:
+        issues.append("audio review report must PASS and match the final buildId")
+    reviewer = report.get("reviewer")
+    playback = report.get("playback")
+    if not isinstance(reviewer, str) or not reviewer.strip():
+        issues.append("audio review report requires a named reviewer")
+    if not isinstance(playback, dict):
+        issues.append("audio review report requires playback method, device, and completion status")
+        playback = {}
+    for key in ("method", "device"):
+        if not isinstance(playback.get(key), str) or not playback[key].strip():
+            issues.append(f"audio review playback requires {key}")
+    if playback.get("completePlayback") is not True:
+        issues.append("audio review must record completePlayback=true for the final short film")
+    reviewed = _check_file_record(base, report.get("reviewedArtifact"), "audio review reviewedArtifact", issues)
+    deliverable = _check_file_record(base, item, "audio review MP4 deliverable", issues)
+    if reviewed and deliverable and reviewed != deliverable:
+        issues.append("audio review reviewedArtifact must match the exact final MP4 path and SHA-256")
+
+    required_checks = {"sync", "level-balance", "clipping-distortion", "noise-floor", "transitions-tail"}
+    checks = report.get("checks")
+    if not isinstance(checks, dict):
+        issues.append("audio review checks must be an object")
+        checks = {}
+    missing = required_checks - set(checks)
+    extra = set(checks) - required_checks
+    if missing:
+        issues.append("audio review is missing checks: " + ", ".join(sorted(missing)))
+    if extra:
+        issues.append("audio review has unknown checks: " + ", ".join(sorted(extra)))
+    for check_id in sorted(required_checks & set(checks)):
+        check = checks[check_id]
+        if not isinstance(check, dict):
+            issues.append(f"audio review {check_id} must be an object")
+            continue
+        status = check.get("status")
+        if status == "PASS":
+            observation = check.get("observation")
+            if not isinstance(observation, str) or len(observation.strip()) < 16:
+                issues.append(f"audio review {check_id} PASS requires a concrete observation")
+        elif status == "NOT_APPLICABLE":
+            reason = check.get("reason")
+            if not isinstance(reason, str) or len(reason.strip()) < 12:
+                issues.append(f"audio review {check_id} NOT_APPLICABLE requires a reason")
+        else:
+            issues.append(f"audio review {check_id} must PASS or be explicitly NOT_APPLICABLE")
+
+    segments = report.get("timedSegments")
+    if not isinstance(segments, list) or len(segments) < 3:
+        issues.append("audio review must cite at least three timed listening observations")
+        return
+    normalized: list[tuple[float, float]] = []
+    for index, segment in enumerate(segments):
+        if not isinstance(segment, dict):
+            issues.append(f"audio review timedSegments[{index}] must be an object")
+            continue
+        try:
+            start, end = float(segment.get("startSeconds")), float(segment.get("endSeconds"))
+        except (TypeError, ValueError):
+            issues.append(f"audio review timedSegments[{index}] requires numeric startSeconds/endSeconds")
+            continue
+        if start < 0 or end <= start or end > duration + 1e-6:
+            issues.append(f"audio review timedSegments[{index}] must be an ordered range inside the final MP4")
+        if not isinstance(segment.get("focus"), str) or not segment["focus"].strip():
+            issues.append(f"audio review timedSegments[{index}] requires a listening focus")
+        if not isinstance(segment.get("observation"), str) or len(segment["observation"].strip()) < 16:
+            issues.append(f"audio review timedSegments[{index}] requires a concrete listening observation")
+        normalized.append((start, end))
+    normalized.sort()
+    if normalized and normalized[0][0] > 0.05:
+        issues.append("audio review timed observations must include the opening")
+    if normalized and not any(start <= duration / 2 <= end for start, end in normalized):
+        issues.append("audio review timed observations must include the midpoint")
+    if normalized and normalized[-1][1] < duration - 0.05:
+        issues.append("audio review timed observations must include the ending")
 
 
 def _validate_runtime_report(base: Path, record: Any, build_id: str, camera_contract_path: Any, stage: Any, issues: list[str]) -> set[str]:
@@ -2011,7 +2107,7 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
             if isinstance(deliverables, list):
                 for item in deliverables:
                     if isinstance(item, dict) and item.get("kind") == "mp4":
-                        _validate_video_deliverable(base, item, runtime_tested, stage_outputs.get("delivery", set()), issues)
+                        _validate_video_deliverable(base, item, build_id, runtime_tested, stage_outputs.get("delivery", set()), issues)
             camera_contract = _load_json(camera_contract_file) if camera_contract_file else None
             if camera_contract and camera_contract.get("mode") == "interactive-orbit":
                 interaction_path = _resolve(base, data.get("cameraInteractionReportPath"))

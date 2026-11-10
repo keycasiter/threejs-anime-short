@@ -1042,7 +1042,7 @@ class DeliveryManifestTests(unittest.TestCase):
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
         with patch.object(validate_delivery.subprocess, "run", return_value=result):
-            validate_delivery._validate_video_deliverable(self.root, item, runtime_tested, delivery_outputs, issues)
+            validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, delivery_outputs, issues)
         self.assertEqual([], issues)
 
     def test_mp4_delivery_blocks_source_or_encoded_metadata_mismatch(self) -> None:
@@ -1053,10 +1053,83 @@ class DeliveryManifestTests(unittest.TestCase):
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
         with patch.object(validate_delivery.subprocess, "run", return_value=result):
-            validate_delivery._validate_video_deliverable(self.root, item, runtime_tested, delivery_outputs, issues)
+            validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, delivery_outputs, issues)
         joined = "\n".join(issues)
         self.assertIn("sourceHash must match runtime testedArtifact", joined)
         self.assertIn("encoded dimensions do not match the declared 640x360", joined)
+
+    def _audio_review_fixture(self) -> tuple[dict, dict, set[tuple[str, str]], tuple[str, str], dict]:
+        export, item, runtime_tested, evidence, _probe = self._film_export_fixture()
+        export_path = self.root / item["exportReport"]
+        old_export_hash = hashlib.sha256(export_path.read_bytes()).hexdigest()
+        evidence.discard(("exports/manifest.json", old_export_hash))
+        export["audioMode"] = "wav"
+        audio_stream = {"codec_type": "audio", "sample_rate": "22050", "duration": "1"}
+        export["video"]["streams"].append(audio_stream)
+        export_path.write_text(json.dumps(export), encoding="utf-8")
+        evidence.add(("exports/manifest.json", hashlib.sha256(export_path.read_bytes()).hexdigest()))
+        probe = export["video"]
+        item["audioReviewReport"] = "exports/audio-review.json"
+        review = {
+            "status": "PASS", "buildId": "scene-v1", "reviewer": "Audio reviewer",
+            "reviewedArtifact": {"path": item["path"], "sha256": item["sha256"]},
+            "playback": {"method": "Complete playback on studio monitors", "device": "Studio monitors", "completePlayback": True},
+            "timedSegments": [
+                {"startSeconds": 0, "endSeconds": .2, "focus": "opening", "observation": "Opening cue starts cleanly without a clipped transient."},
+                {"startSeconds": .45, "endSeconds": .55, "focus": "midpoint", "observation": "Music remains below the spoken cue and does not mask it."},
+                {"startSeconds": .9, "endSeconds": 1, "focus": "ending", "observation": "Final cue resolves naturally and the tail is not abruptly cut."},
+            ],
+            "checks": {key: {"status": "PASS", "observation": f"Reviewed final mix for {key} on the exported MP4."}
+                       for key in ("sync", "level-balance", "clipping-distortion", "noise-floor", "transitions-tail")},
+        }
+        path = self.root / item["audioReviewReport"]
+        path.write_text(json.dumps(review), encoding="utf-8")
+        evidence.add(("exports/audio-review.json", hashlib.sha256(path.read_bytes()).hexdigest()))
+        return review, item, evidence, runtime_tested, probe
+
+    def test_audio_review_must_bind_complete_listening_to_final_mp4(self) -> None:
+        _review, item, evidence, _runtime_tested, _probe = self._audio_review_fixture()
+        issues: list[str] = []
+        validate_delivery._validate_audio_review(
+            self.root, item["audioReviewReport"], item, "scene-v1", 1, evidence, issues,
+        )
+        self.assertEqual([], issues)
+
+    def test_audio_bearing_mp4_delivery_requires_and_accepts_linked_listening_review(self) -> None:
+        _review, item, evidence, runtime_tested, probe = self._audio_review_fixture()
+        result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+            validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
+        self.assertEqual([], issues)
+
+    def test_audio_bearing_mp4_without_listening_report_is_blocked(self) -> None:
+        _review, item, evidence, runtime_tested, probe = self._audio_review_fixture()
+        item.pop("audioReviewReport")
+        result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+            validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
+        self.assertIn("audio-bearing MP4 deliverable requires audioReviewReport", "\n".join(issues))
+
+    def test_audio_review_blocks_wrong_file_missing_segments_and_unreviewed_checks(self) -> None:
+        review, item, evidence, _runtime_tested, _probe = self._audio_review_fixture()
+        review["reviewedArtifact"]["sha256"] = "0" * 64
+        review["playback"]["completePlayback"] = False
+        review["timedSegments"].pop(1)
+        review["checks"]["clipping-distortion"]["status"] = "NOT_RUN"
+        report_path = self.root / item["audioReviewReport"]
+        report_path.write_text(json.dumps(review), encoding="utf-8")
+        evidence.add(("exports/audio-review.json", hashlib.sha256(report_path.read_bytes()).hexdigest()))
+        issues: list[str] = []
+        validate_delivery._validate_audio_review(
+            self.root, item["audioReviewReport"], item, "scene-v1", 1, evidence, issues,
+        )
+        joined = "\n".join(issues)
+        self.assertIn("audio review reviewedArtifact: SHA-256 mismatch", joined)
+        self.assertIn("completePlayback=true", joined)
+        self.assertIn("at least three timed listening observations", joined)
+        self.assertIn("must PASS or be explicitly NOT_APPLICABLE", joined)
 
     def test_stage_order_must_follow_declared_pipeline(self) -> None:
         data = self.minimal_analysis_manifest()

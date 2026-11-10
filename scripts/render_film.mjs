@@ -24,6 +24,7 @@ function receive(e){const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id
 function failOnErrors(){if(errors.length)throw Error('Film runtime errors: '+JSON.stringify(errors))}
 async function command(file,a){const p=spawn(file,a,{stdio:['ignore','pipe','pipe']});let result='',err='';p.stdout.on('data',d=>result+=d);p.stderr.on('data',d=>err+=d);const code=await new Promise((r,j)=>{p.on('error',j);p.on('close',r)});if(code!==0)throw Error(`${file}: ${err}`);return result}
 const sha256=data=>createHash('sha256').update(data).digest('hex');
+function chromeStartFailure(){const state=proc?.signalCode?`signal ${proc.signalCode}`:`exit code ${proc?.exitCode}`;return `Chrome failed before DevTools startup (${state}): ${stderr.trim()||'no stderr output; inspect the OS crash report'}`}
 async function captureAt(t){
  if(captureMode==='sync') {
   await evaluate(`(()=>{const result=window.renderAt(${t});if(result&&typeof result.then==='function')throw Error('renderAt must be synchronous unless __FILM.capture.mode is awaited');return true})()`);
@@ -42,8 +43,8 @@ async function captureAt(t){
 }
 async function frame(t,path){const png=await captureAt(t);await writeFile(path,png);return png}
 try{
- proc=spawn(chrome,['--headless=new','--no-first-run','--disable-background-networking','--remote-debugging-port=0',`--user-data-dir=${join(temp,'profile')}`,'--force-device-scale-factor=1','--autoplay-policy=no-user-gesture-required','about:blank'],{stdio:['ignore','ignore','pipe']});proc.stderr.on('data',d=>{stderr=(stderr+d).slice(-6000)});
- let port,route;for(let n=0;n<200;n++){if(proc.exitCode!==null)throw Error(`Chrome failed: ${stderr}`);try{[port,route]=(await readFile(join(temp,'profile/DevToolsActivePort'),'utf8')).trim().split(/\r?\n/);break}catch{}await delay(100)}if(!port)throw Error('Chrome port unavailable: '+stderr);
+ proc=spawn(chrome,['--headless=new','--no-first-run','--disable-background-networking','--remote-debugging-port=0',`--user-data-dir=${join(temp,'profile')}`,'--force-device-scale-factor=1','--autoplay-policy=no-user-gesture-required','about:blank'],{stdio:['ignore','ignore','pipe']});proc.on('error',error=>{stderr=(stderr+error.message).slice(-6000)});proc.stderr.on('data',d=>{stderr=(stderr+d).slice(-6000)});
+ let port,route;for(let n=0;n<200;n++){if(proc.exitCode!==null||proc.signalCode!==null)throw Error(chromeStartFailure());try{[port,route]=(await readFile(join(temp,'profile/DevToolsActivePort'),'utf8')).trim().split(/\r?\n/);break}catch{}await delay(100)}if(!port)throw Error(chromeStartFailure());
  ws=new WebSocket(`ws://127.0.0.1:${port}${route}`);await new Promise((r,j)=>{ws.addEventListener('open',r,{once:true});ws.addEventListener('error',j,{once:true})});ws.addEventListener('message',receive);
  const target=await send('Target.createTarget',{url:'about:blank'},null);({sessionId}=await send('Target.attachToTarget',{targetId:target.targetId,flatten:true},null));
  await send('Runtime.enable');await send('Page.enable');await send('Log.enable');await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
