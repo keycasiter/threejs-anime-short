@@ -143,7 +143,7 @@ def _run_specialist(script_name: str, target: Path, base: Path, label: str, issu
         issues.append(f"{label}: {script_name} blocked ({detail})")
 
 
-def _validate_runtime_report(base: Path, record: Any, build_id: str, camera_contract_path: Any, issues: list[str]) -> set[str]:
+def _validate_runtime_report(base: Path, record: Any, build_id: str, camera_contract_path: Any, stage: Any, issues: list[str]) -> set[str]:
     if not isinstance(record, str) or not record.strip():
         issues.append("runtime: full-production requires runtimeReport path")
         return set()
@@ -154,6 +154,17 @@ def _validate_runtime_report(base: Path, record: Any, build_id: str, camera_cont
         return set()
     if report.get("status") != "PASS" or report.get("buildId") != build_id:
         issues.append("runtime: report must PASS and match the current buildId")
+    tested_artifact = _check_file_record(base, report.get("testedArtifact"), "runtime testedArtifact", issues)
+    stage = stage if isinstance(stage, dict) else {}
+    if tested_artifact:
+        if Path(tested_artifact[0]).suffix.lower() not in {".html", ".htm"}:
+            issues.append("runtime testedArtifact must be the exact HTML page opened in the target browser")
+        runtime_inputs = {
+            (item.get("path"), item.get("sha256"))
+            for item in stage.get("inputs", []) if isinstance(item, dict)
+        }
+        if tested_artifact not in runtime_inputs:
+            issues.append("runtime inputs must include the exact testedArtifact path and SHA-256")
     for key in ("threeVersion", "browser"):
         if not isinstance(report.get(key), str) or not report[key].strip():
             issues.append(f"runtime: report requires {key}")
@@ -1831,7 +1842,7 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                 base, data.get("cameraInteractionReportPath"), camera_contract_path,
                 camera_stage, issues,
             )
-        runtime_ids = _validate_runtime_report(base, runtime_stage.get("runtimeReport"), runtime_stage.get("buildId", ""), camera_contract_path, issues)
+        runtime_ids = _validate_runtime_report(base, runtime_stage.get("runtimeReport"), runtime_stage.get("buildId", ""), camera_contract_path, runtime_stage, issues)
         if "visualReview" in required_stages:
             review_stage = by_id.get("visualReview", {})
             _validate_visual_review(base, review_stage.get("visualReviewReport"), review_stage.get("buildId", ""), runtime_ids, camera_contract_data.get("mode", "") if camera_contract_data else "", issues)
@@ -1857,6 +1868,11 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                         delivered.add(result)
                 if not delivered.issubset(stage_outputs.get("delivery", set())):
                     issues.append("delivery stage evidence must hash every final deliverable")
+                runtime_report_path = _resolve(base, runtime_stage.get("runtimeReport"))
+                runtime_report_data = _load_json(runtime_report_path) if runtime_report_path else None
+                runtime_tested = _check_file_record(base, runtime_report_data.get("testedArtifact"), "runtime final testedArtifact", issues) if runtime_report_data and runtime_report_data.get("testedArtifact") else None
+                if runtime_tested and runtime_tested not in stage_outputs.get("delivery", set()):
+                    issues.append("delivery evidence must include the exact HTML page tested by runtime")
                 camera_contract = _load_json(camera_contract_file) if camera_contract_file else None
                 if camera_contract and camera_contract.get("mode") == "interactive-orbit":
                     interaction_path = _resolve(base, data.get("cameraInteractionReportPath"))
@@ -1865,6 +1881,8 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                     tested_record = _check_file_record(base, tested, "camera interaction final testedArtifact", issues) if tested else None
                     if tested_record and tested_record not in delivered:
                         issues.append("camera interaction testedArtifact must match a hashed final HTML deliverable exactly")
+                    if runtime_tested and tested_record and runtime_tested != tested_record:
+                        issues.append("runtime and camera interaction must test the exact same HTML path and SHA-256")
     return issues
 
 

@@ -13,7 +13,7 @@ Start with the user's requested deliverable. Do not force a full production when
 | `spatial-handoff` | `direction`, `visualAnalysis`, `runtimePreflight`, `spatialProxy` | Delivering a validated spatial plan and neutral Three.js proxy |
 | `full-production` | all eleven stages | Delivering a finished Three.js scene, interactive page, animation, or film |
 
-Use `../assets/templates/delivery-manifest.template.json` as the starting point for full production, `../assets/templates/asset-ledger.template.json` for the per-family review inventory, and `../assets/templates/visual-review.template.json` for the final review record. Replace every example ID and observation with evidence from the current build. Remove stages outside the chosen mode. The user may define a narrower deliverable explicitly; record that scope and validate its matching mode.
+Use `../assets/templates/delivery-manifest.template.json` as the starting point for full production, `../assets/templates/asset-ledger.template.json` for the per-family review inventory, `../assets/templates/visual-review.template.json` for the final review record, and `../assets/templates/runtime-report.template.json` for browser runtime evidence. Replace every example ID and observation with evidence from the current build. Remove stages outside the chosen mode. The user may define a narrower deliverable explicitly; record that scope and validate its matching mode.
 
 ## Stage order and handoff rules
 
@@ -27,7 +27,7 @@ The ordered stage IDs are:
 6. `detailDistribution` — constrained placement and scale/density evidence for detail families. `distributionReportPath` points to the machine-readable group report; each group maps visual-build-map features to an asset family, registered allowed zones and optional clearance holes, method/seed, a hashed placement-source file and declared code symbol, target count ranges, actual world placement anchors/variants (inline `placements` or a streamable CSV `placementTable`), reconciled candidate/accept/rejection counts, and reviewed context/plan/detail images. Surface-hosted zones require an exact `planGeometryId`; a surface AABB cannot stand in for its usable region. Groups record review for `coverage`, `spacing-rhythm`, `variation`, `screen-scale`, and `support-clearance`. `validate_delivery.py ... --through detailDistribution` checks IDs, project paths, hashes, declared source symbol, placement/count reconciliation, zone containment/exclusions, target ranges and evidence links; it cannot decide whether the selected density or rhythm looks right.
 7. `lookdev` — material/light setup and fixed-view comparisons on the current build. `lookdevReportPath` points to a per-asset-family calibration report: every visual-build-map `material` feature maps to its asset family, target response, hashed material-binding and lighting/render-output code symbols, changed variable with baseline/selected values, frozen geometry/camera/resolution/renderer/exposure/tone-mapping/output-space controls, paired baseline/selected PNGs and a concrete selection observation. Every mapped material feature must be covered once.
 8. `cameraMotion` — final camera domain, animation/interactivity samples and control behavior. For an `interactive-orbit` contract, `cameraInteractionReportPath` points to an interaction report tied to the final tested HTML; it records read-back orbit input trace, settled initial/after-orbit/after-zoom/after-reset states, page errors and a hashed target-page PNG for each state.
-9. `runtime` — runtime report for the exact final build and target Three.js/browser versions.
+9. `runtime` — runtime report for the exact final build and target Three.js/browser versions; name the HTML page actually opened in the browser and its SHA-256, include that exact record among runtime inputs, and carry it as evidence into final delivery. Interactive camera evidence must test the same page.
 10. `visualReview` — visual inspection of every runtime sample across required dimensions.
 11. `delivery` — final runnable output, source, dependencies and run instructions.
 
@@ -59,7 +59,7 @@ The validator checks file existence, project-relative paths, SHA-256 values, sta
 
 ## Runtime and review evidence
 
-`runtimeReport` points to JSON with this minimum shape; `cameraContractPath` points to the exact contract produced by `cameraMotion` and consumed as an input by `runtime`:
+`runtimeReport` points to JSON with this minimum shape; `cameraContractPath` points to the exact contract produced by `cameraMotion` and consumed as an input by `runtime`. `testedArtifact` is the project-relative path and SHA-256 of the HTML page actually opened for the captures; the `runtime` stage inputs must include that exact file/hash and the final `delivery` stage must retain it as package evidence:
 
 ```json
 {
@@ -67,6 +67,7 @@ The validator checks file existence, project-relative paths, SHA-256 values, sta
   "buildId": "scene-v01",
   "threeVersion": "0.180.0",
   "browser": "Chromium 140",
+  "testedArtifact": {"path": "dist/index.html", "sha256": "<sha256>"},
   "consoleErrors": [],
   "failedRequests": [],
   "captures": [
@@ -76,7 +77,7 @@ The validator checks file existence, project-relative paths, SHA-256 values, sta
 }
 ```
 
-Use the actual bundled/imported Three.js version and browser. Every capture ID must match a declared `requiredSamples` ID and include its image hash; when sample coordinates are present, the capture coordinates must match. The snippet shows one capture record; list every required capture in the report. A full 360-degree contract requires at least 20 envelope samples: eight roughly even azimuths, pitch endpoints at four cardinal azimuths, and near/far distance endpoints. Extra views are required for undersides, backs, transparent elements, narrow passages and other scene-specific risks. A capture list establishes sampling coverage, not visual quality.
+Use the actual bundled/imported Three.js version and browser. Every capture ID must match a declared `requiredSamples` ID and include its image hash; when sample coordinates are present, the capture coordinates must match. The snippet shows one capture record; list every required capture in the report. A full 360-degree contract requires at least 20 envelope samples: eight roughly even azimuths, pitch endpoints at four cardinal azimuths, and near/far distance endpoints. Extra views are required for undersides, backs, transparent elements, narrow passages and other scene-specific risks. A capture list establishes sampling coverage, not visual quality. If an interactive camera report is present, its `testedArtifact` must also match this runtime record exactly.
 
 `visualReviewReport` points to JSON with the same `buildId`, a named reviewer, the exact set of runtime `reviewedSampleIds`, and concrete observations for each dimension: `composition`, `spatial-depth`, `middle-form`, `detail-distribution`, `material-lighting`, `orbit-coverage`, and `interaction`. Every PASS names its `sampleIds` from the runtime captures; the cited views must visibly answer that dimension. A fixed-camera delivery may mark `orbit-coverage` and `interaction` `NOT_APPLICABLE` with a reason; an interactive-orbit delivery must pass both. Review images remain linked by the runtime capture IDs and hashes.
 

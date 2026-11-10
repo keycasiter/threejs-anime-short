@@ -1133,7 +1133,7 @@ class DeliveryManifestTests(unittest.TestCase):
         data["stages"][-1]["inputs"] = [ref(simple_register)]
         self.assertTrue(any("spatialProxy inputs must include visualBuildMapPath" in issue for issue in validate_delivery.validate_data(data, self.root)))
 
-    def runtime_fixture(self, sample_count: int = 20) -> tuple[dict, dict]:
+    def runtime_fixture(self, sample_count: int = 20) -> tuple[dict, dict, dict]:
         samples = []
         for azimuth in range(0, 360, 45):
             samples.append({"id": f"az-{azimuth}", "azimuthDeg": azimuth, "polarDeg": 90, "distance": 5})
@@ -1152,39 +1152,65 @@ class DeliveryManifestTests(unittest.TestCase):
             captures.append({**sample, "path": image.name, "sha256": hashlib.sha256(image.read_bytes()).hexdigest()})
         contract_path = self.root / "camera-contract.json"
         contract_path.write_text(json.dumps(contract), encoding="utf-8")
+        page_path = self.root / "runtime-tested.html"
+        page_path.write_text("<!doctype html><canvas></canvas>\n", encoding="utf-8")
         runtime = {
             "status": "PASS", "buildId": "final-v1", "threeVersion": "0.180.0", "browser": "Chromium",
+            "testedArtifact": {"path": page_path.name, "sha256": hashlib.sha256(page_path.read_bytes()).hexdigest()},
             "consoleErrors": [], "failedRequests": [], "captures": captures,
         }
         runtime_path = self.root / "runtime-report.json"
         runtime_path.write_text(json.dumps(runtime), encoding="utf-8")
-        return contract, runtime
+        stage = {"inputs": [
+            {"path": contract_path.name, "sha256": hashlib.sha256(contract_path.read_bytes()).hexdigest()},
+            {"path": page_path.name, "sha256": hashlib.sha256(page_path.read_bytes()).hexdigest()},
+        ]}
+        return contract, runtime, stage
 
     def test_runtime_captures_match_all_final_orbit_contract_samples(self) -> None:
-        self.runtime_fixture()
+        _contract, _runtime, stage = self.runtime_fixture()
         issues: list[str] = []
         captures = validate_delivery._validate_runtime_report(
-            self.root, "runtime-report.json", "final-v1", "camera-contract.json", issues,
+            self.root, "runtime-report.json", "final-v1", "camera-contract.json", stage, issues,
         )
         self.assertEqual([], issues)
         self.assertEqual(20, len(captures))
 
+    def test_runtime_requires_the_exact_tested_html_in_runtime_inputs(self) -> None:
+        _contract, _runtime, stage = self.runtime_fixture()
+        stage["inputs"] = [item for item in stage["inputs"] if item["path"] != "runtime-tested.html"]
+        issues: list[str] = []
+        validate_delivery._validate_runtime_report(
+            self.root, "runtime-report.json", "final-v1", "camera-contract.json", stage, issues,
+        )
+        self.assertTrue(any("runtime inputs must include the exact testedArtifact" in issue for issue in issues))
+
+    def test_runtime_report_requires_the_exact_tested_html_record(self) -> None:
+        _contract, runtime, stage = self.runtime_fixture()
+        runtime.pop("testedArtifact")
+        (self.root / "runtime-report.json").write_text(json.dumps(runtime), encoding="utf-8")
+        issues: list[str] = []
+        validate_delivery._validate_runtime_report(
+            self.root, "runtime-report.json", "final-v1", "camera-contract.json", stage, issues,
+        )
+        self.assertTrue(any("runtime testedArtifact: must contain path and sha256" in issue for issue in issues))
+
     def test_runtime_missing_orbit_sample_blocks_release(self) -> None:
-        _, runtime = self.runtime_fixture()
+        _, runtime, stage = self.runtime_fixture()
         runtime["captures"].pop()
         (self.root / "runtime-report.json").write_text(json.dumps(runtime), encoding="utf-8")
         issues: list[str] = []
-        validate_delivery._validate_runtime_report(self.root, "runtime-report.json", "final-v1", "camera-contract.json", issues)
+        validate_delivery._validate_runtime_report(self.root, "runtime-report.json", "final-v1", "camera-contract.json", stage, issues)
         self.assertTrue(any("cover every final camera contract" in issue for issue in issues))
 
     def test_full_360_runtime_contract_needs_envelope_samples(self) -> None:
-        self.runtime_fixture(sample_count=8)
+        _contract, _runtime, stage = self.runtime_fixture(sample_count=8)
         issues: list[str] = []
-        validate_delivery._validate_runtime_report(self.root, "runtime-report.json", "final-v1", "camera-contract.json", issues)
+        validate_delivery._validate_runtime_report(self.root, "runtime-report.json", "final-v1", "camera-contract.json", stage, issues)
         self.assertTrue(any("at least 20 envelope samples" in issue for issue in issues))
 
     def test_full_orbit_samples_must_cover_pitch_and_distance_endpoints(self) -> None:
-        _, runtime = self.runtime_fixture()
+        _, runtime, stage = self.runtime_fixture()
         contract_path = self.root / "camera-contract.json"
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         sample = next(item for item in contract["requiredSamples"] if item["id"] == "pitch-0-18")
@@ -1194,7 +1220,7 @@ class DeliveryManifestTests(unittest.TestCase):
         contract_path.write_text(json.dumps(contract), encoding="utf-8")
         (self.root / "runtime-report.json").write_text(json.dumps(runtime), encoding="utf-8")
         issues: list[str] = []
-        validate_delivery._validate_runtime_report(self.root, "runtime-report.json", "final-v1", "camera-contract.json", issues)
+        validate_delivery._validate_runtime_report(self.root, "runtime-report.json", "final-v1", "camera-contract.json", stage, issues)
         self.assertTrue(any("missing pitch endpoint" in issue for issue in issues))
 
 

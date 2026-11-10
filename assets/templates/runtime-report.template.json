@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "status": "NOT_RUN",
+  "buildId": "scene-v01",
+  "threeVersion": "0.180.0",
+  "browser": "Chromium 140",
+  "testedArtifact": {"path": "dist/index.html", "sha256": "replace-with-tested-page-sha256"},
+  "consoleErrors": [],
+  "failedRequests": [],
+  "captures": [
+    {"id": "hero-front", "azimuthDeg": 0, "polarDeg": 90, "distance": 5, "path": "qa/hero-front.png", "sha256": "replace-with-capture-sha256"}
+  ]
+}
