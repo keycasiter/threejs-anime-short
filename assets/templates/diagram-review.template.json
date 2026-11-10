@@ -1,0 +1,22 @@
+{
+  "buildId": "analysis-v1",
+  "reviewer": "replace-with-reviewer",
+  "drawings": [
+    {
+      "id": "site-plan",
+      "kind": "plan",
+      "status": "NOT_RUN",
+      "source": {"path": "design/site-plan.svg", "sha256": "replace-with-file-sha256"},
+      "preview": {"path": "qa/diagram-previews/site-plan.png", "sha256": "replace-with-file-sha256"},
+      "observation": ""
+    },
+    {
+      "id": "section-main",
+      "kind": "section",
+      "status": "NOT_RUN",
+      "source": {"path": "design/section-main.svg", "sha256": "replace-with-file-sha256"},
+      "preview": {"path": "qa/diagram-previews/section-main.png", "sha256": "replace-with-file-sha256"},
+      "observation": ""
+    }
+  ]
+}

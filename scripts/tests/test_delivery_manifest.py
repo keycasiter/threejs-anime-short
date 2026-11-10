@@ -4,12 +4,22 @@ import hashlib
 import json
 import sys
 import tempfile
+import struct
+import zlib
 import unittest
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 import validate_delivery  # noqa: E402
+
+
+def png_bytes(width: int, height: int) -> bytes:
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff)
+    raw = b"".join(b"\x00" + b"\x80\x80\x80" * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 class DeliveryManifestTests(unittest.TestCase):
@@ -28,6 +38,7 @@ class DeliveryManifestTests(unittest.TestCase):
                 "anchor": {"xyz": [0, 0, 0], "space": "world"},
                 "bounds": {"center": "anchor", "size": [4, 1, 4]}, "baseY": -0.5, "topY": 0.5,
             }],
+            "sections": [{"id": "section-main", "plane": "vertical", "station": "x=0", "points": [[0, 0, -2], [0, 0.5, 0], [0, 0, 2]], "objectIds": ["ground"]}],
         }), encoding="utf-8")
         self.register_digest = hashlib.sha256(self.register.read_bytes()).hexdigest()
         references = []
@@ -68,6 +79,20 @@ class DeliveryManifestTests(unittest.TestCase):
             }]
         }), encoding="utf-8")
         self.visual_build_map_digest = hashlib.sha256(self.visual_build_map.read_bytes()).hexdigest()
+        drawings = []
+        for drawing_id, kind, filebase in (("site-plan", "plan", "drawing-site-plan"), ("section-main", "section", "drawing-section-main")):
+            source = self.root / f"{filebase}.svg"
+            source.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M16 16h224v224H16z" fill="none" stroke="black"/></svg>', encoding="utf-8")
+            preview = self.root / f"{filebase}.png"
+            preview.write_bytes(png_bytes(640, 360))
+            drawings.append({
+                "id": drawing_id, "kind": kind, "status": "PASS",
+                "source": {"path": source.name, "sha256": hashlib.sha256(source.read_bytes()).hexdigest()},
+                "preview": {"path": preview.name, "sha256": hashlib.sha256(preview.read_bytes()).hexdigest()},
+                "observation": f"The rendered {kind} is in frame and matches the registered spatial positions and annotations."
+            })
+        self.diagram_report = self.root / "diagram-review.json"
+        self.diagram_report.write_text(json.dumps({"buildId": "design-v1", "reviewer": "test reviewer", "drawings": drawings}), encoding="utf-8")
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -84,6 +109,8 @@ class DeliveryManifestTests(unittest.TestCase):
         feature_ids = [feature["id"] for entry in entries for feature in entry["features"]]
         capture_path = self.root / f"{family_id}-prototype.png"
         capture_path.write_bytes(b"prototype image capture")
+        source_path = self.root / "asset.js"
+        source_path.write_text("export function buildGroundSurface(){ return true; }\n", encoding="utf-8")
         return {
             "id": family_id, "priority": priority, "objectIds": object_ids, "routeIds": route_ids,
             "visualFeatureIds": feature_ids,
@@ -91,6 +118,7 @@ class DeliveryManifestTests(unittest.TestCase):
                 "status": "PASS", "buildId": "forms-v1",
                 "representativeTarget": {"type": "object", "id": object_ids[0]} if object_ids else {"type": "route", "id": route_ids[0]},
                 "component": entries[0]["implementationPlan"]["component"],
+                "implementationSource": {"path": source_path.name, "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(), "symbol": "buildGroundSurface"},
                 "capture": {"id": f"{family_id}-prototype", "path": capture_path.name, "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest()},
                 "featureReviews": [{"featureId": feature_id, "status": "PASS", "observation": f"Observed the mapped {feature_id} feature in the prototype capture."} for feature_id in feature_ids],
             },
@@ -101,6 +129,8 @@ class DeliveryManifestTests(unittest.TestCase):
         evidence = [{"path": ledger_path.relative_to(self.root).as_posix(), "sha256": hashlib.sha256(ledger_path.read_bytes()).hexdigest()}]
         for capture in self.root.glob("*-prototype.png"):
             evidence.append({"path": capture.name, "sha256": hashlib.sha256(capture.read_bytes()).hexdigest()})
+        source_path = self.root / "asset.js"
+        evidence.append({"path": source_path.name, "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest()})
         return {"buildId": "forms-v1", "evidence": evidence}
 
     def minimal_analysis_manifest(self) -> dict:
@@ -111,6 +141,7 @@ class DeliveryManifestTests(unittest.TestCase):
             "sceneRegisterPath": "scene-register.json",
             "visualReferenceIndexPath": "visual-reference-index.json",
             "visualBuildMapPath": "visual-build-map.json",
+            "diagramReviewReportPath": "diagram-review.json",
             "stages": [
                 {
                     "id": "direction",
@@ -127,6 +158,8 @@ class DeliveryManifestTests(unittest.TestCase):
                         {"path": "scene-register.json", "sha256": self.register_digest},
                         {"path": "visual-reference-index.json", "sha256": self.reference_index_digest},
                         {"path": "visual-build-map.json", "sha256": self.visual_build_map_digest},
+                        {"path": "diagram-review.json", "sha256": hashlib.sha256(self.diagram_report.read_bytes()).hexdigest()},
+                        *[{"path": name, "sha256": hashlib.sha256((self.root / name).read_bytes()).hexdigest()} for name in ("drawing-site-plan.svg", "drawing-site-plan.png", "drawing-section-main.svg", "drawing-section-main.png")],
                     ],
                     "inputs": [{"path": "brief.md", "sha256": self.digest}],
                 },
@@ -248,6 +281,29 @@ class DeliveryManifestTests(unittest.TestCase):
         joined = "\n".join(issues)
         self.assertIn("stage runtimePreflight must be PASS", joined)
         self.assertNotIn("spatialGatePath must reference", joined)
+
+    def test_asset_prototype_requires_a_hashed_declared_implementation_symbol(self) -> None:
+        family = self.asset_family("terrain-family", "supporting", ["ground"], [])
+        source_path = self.root / "asset.js"
+        source_path.write_text("export function unrelatedBuilder(){ return true; }\n", encoding="utf-8")
+        family["prototype"]["implementationSource"]["sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        issues: list[str] = []
+        validate_delivery.validate_asset_ledger(
+            self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
+            self.asset_stage(ledger_path), issues,
+        )
+        self.assertTrue(any("does not declare buildGroundSurface" in issue for issue in issues))
+
+    def test_visual_build_map_requires_component_to_be_a_code_symbol(self) -> None:
+        data = json.loads(self.visual_build_map.read_text(encoding="utf-8"))
+        data["entries"][0]["implementationPlan"]["component"] = "terrain plus trim construction"
+        self.visual_build_map.write_text(json.dumps(data), encoding="utf-8")
+        stage = {"buildId": "design-v1", "evidence": [{"path": self.visual_build_map.name, "sha256": hashlib.sha256(self.visual_build_map.read_bytes()).hexdigest()}]}
+        issues: list[str] = []
+        validate_delivery.validate_visual_build_map(self.root, self.register.name, self.reference_index.name, self.visual_build_map.name, stage, issues)
+        self.assertTrue(any("must be one concrete code symbol" in issue for issue in issues))
 
     def test_asset_ledger_maps_every_renderable_registered_object_to_a_quality_family(self) -> None:
         ledger = {"families": [self.asset_family("terrain-family", "supporting", ["ground"], [])]}
@@ -377,6 +433,35 @@ class DeliveryManifestTests(unittest.TestCase):
         }]
         self.assertEqual([], validate_delivery.validate_data(data, self.root))
 
+    def test_diagram_review_blocks_when_a_registered_section_has_no_rendered_review(self) -> None:
+        data = self.minimal_analysis_manifest()
+        report_path = self.root / "diagram-review.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["drawings"] = [item for item in report["drawings"] if item["kind"] != "section"]
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stage = next(item for item in data["stages"] if item["id"] == "visualAnalysis")
+        for evidence in stage["evidence"]:
+            if evidence["path"] == report_path.name:
+                evidence["sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        issues = validate_delivery.validate_data(data, self.root)
+        self.assertTrue(any("requires at least one visually reviewed section" in issue for issue in issues))
+
+    def test_diagram_review_requires_png_signature_and_size(self) -> None:
+        data = self.minimal_analysis_manifest()
+        preview = self.root / "drawing-site-plan.png"
+        preview.write_bytes(b"not a PNG")
+        report_path = self.root / "diagram-review.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        plan = next(item for item in report["drawings"] if item["kind"] == "plan")
+        plan["preview"]["sha256"] = hashlib.sha256(preview.read_bytes()).hexdigest()
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stage = next(item for item in data["stages"] if item["id"] == "visualAnalysis")
+        for evidence in stage["evidence"]:
+            if evidence["path"] == "drawing-site-plan.png": evidence["sha256"] = hashlib.sha256(preview.read_bytes()).hexdigest()
+            if evidence["path"] == report_path.name: evidence["sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        issues = validate_delivery.validate_data(data, self.root)
+        self.assertTrue(any("must have a PNG signature and IHDR header" in issue for issue in issues))
+
     def test_missing_required_stage_blocks(self) -> None:
         data = self.minimal_analysis_manifest()
         data["stages"].pop()
@@ -497,6 +582,7 @@ class DeliveryManifestTests(unittest.TestCase):
                 "anchor": {"xyz": [0, 0, 0], "space": "world"},
                 "bounds": {"center": "anchor", "size": [4, 1, 4]}, "baseY": -0.5, "topY": 0.5,
             }],
+            "sections": [{"id": "section-main", "plane": "vertical", "station": "x=0", "points": [[0, 0, -2], [0, 0.5, 0], [0, 0, 2]], "objectIds": ["ground"]}],
         })
         source = self.root / "proxy-source.html"
         source.write_text("neutral proxy source", encoding="utf-8")
@@ -545,12 +631,16 @@ class DeliveryManifestTests(unittest.TestCase):
         visual_map = json.loads(self.visual_build_map.read_text(encoding="utf-8"))
         visual_map["buildId"] = "analysis-v1"
         self.visual_build_map.write_text(json.dumps(visual_map), encoding="utf-8")
+        diagram_report = json.loads(self.diagram_report.read_text(encoding="utf-8"))
+        diagram_report["buildId"] = "analysis-v1"
+        self.diagram_report.write_text(json.dumps(diagram_report), encoding="utf-8")
+        diagram_evidence = [ref(self.diagram_report)] + [ref(self.root / name) for name in ("drawing-site-plan.svg", "drawing-site-plan.png", "drawing-section-main.svg", "drawing-section-main.png")]
         data = {
             "schemaVersion": 1, "mode": "spatial-handoff", "buildId": "proxy-v1",
-            "sceneRegisterPath": "design/scene-register.json", "visualReferenceIndexPath": "visual-reference-index.json", "visualBuildMapPath": "visual-build-map.json", "spatialGatePath": "spatial-gate.json",
+            "sceneRegisterPath": "design/scene-register.json", "visualReferenceIndexPath": "visual-reference-index.json", "visualBuildMapPath": "visual-build-map.json", "diagramReviewReportPath": "diagram-review.json", "spatialGatePath": "spatial-gate.json",
             "stages": [
                 {"id": "direction", "status": "PASS", "buildId": "proxy-v1", "inputs": [], "evidence": [ref(brief)]},
-                {"id": "visualAnalysis", "status": "PASS", "buildId": "analysis-v1", "inputs": [ref(brief)], "evidence": [ref(simple_register), ref(self.reference_index), ref(self.visual_build_map)]},
+                {"id": "visualAnalysis", "status": "PASS", "buildId": "analysis-v1", "inputs": [ref(brief)], "evidence": [ref(simple_register), ref(self.reference_index), ref(self.visual_build_map), *diagram_evidence]},
                 {"id": "runtimePreflight", "status": "PASS", "buildId": "preflight-v1", "inputs": [ref(simple_register)], "evidence": [ref(preflight_report), ref(preflight_capture)], "preflightReport": "qa/preflight.json"},
                 {"id": "spatialProxy", "status": "PASS", "buildId": "proxy-v1", "inputs": [ref(simple_register)], "evidence": [ref(gate), ref(proxy)]},
             ],

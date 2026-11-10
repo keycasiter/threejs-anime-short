@@ -11,6 +11,7 @@ import json
 import re
 import subprocess
 import sys
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -452,6 +453,27 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
         component = prototype.get("component")
         if not isinstance(component, str) or representative_key not in component_by_target or component_by_target.get(representative_key) != component:
             issues.append(f"{label}.prototype.component must match a visualBuildMap implementation component")
+        implementation = prototype.get("implementationSource")
+        source_record = _check_file_record(base, implementation, f"{label}.prototype.implementationSource", issues)
+        if source_record:
+            rel, digest = source_record
+            if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                issues.append(f"{label}.prototype.implementationSource must be hashed in middleForms evidence")
+            symbol = implementation.get("symbol") if isinstance(implementation, dict) else None
+            source_path = _resolve(base, rel)
+            if not isinstance(symbol, str) or not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", symbol):
+                issues.append(f"{label}.prototype.implementationSource.symbol must name one declared code symbol")
+            elif symbol != component:
+                issues.append(f"{label}.prototype.implementationSource.symbol must match prototype.component")
+            elif source_path:
+                try:
+                    source_text = source_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    source_text = ""
+                    issues.append(f"{label}.prototype.implementationSource must be readable source text")
+                declaration = rf"\b(?:function|class)\s+{re.escape(symbol)}\b|\b(?:const|let|var)\s+{re.escape(symbol)}\s*="
+                if source_text and not re.search(declaration, source_text):
+                    issues.append(f"{label}.prototype.implementationSource does not declare {symbol}")
         capture = prototype.get("capture")
         if not isinstance(capture, dict) or not isinstance(capture.get("id"), str) or not capture.get("id", "").strip():
             issues.append(f"{label}.prototype.capture requires a stable sample id")
@@ -754,12 +776,89 @@ def validate_visual_build_map(base: Path, register_path: Any, index_path: Any, m
             for field, minimum_length in plan_min_lengths.items():
                 if not isinstance(plan.get(field), str) or len(plan[field].strip()) < minimum_length:
                     issues.append(f"{label}.implementationPlan.{field} must be concrete")
+            component = plan.get("component")
+            if isinstance(component, str) and not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", component):
+                issues.append(f"{label}.implementationPlan.component must be one concrete code symbol; put the construction explanation in geometryStrategy/constructionSteps")
             steps = plan.get("constructionSteps")
             if not isinstance(steps, list) or len(steps) < 2 or any(not isinstance(step, str) or len(step.strip()) < 20 for step in steps):
                 issues.append(f"{label}.implementationPlan.constructionSteps must contain at least two concrete steps")
     missing = renderables - set(covered)
     if missing:
         issues.append("visualBuildMap has unmapped renderable scene IDs: " + ", ".join(f"{kind}:{item_id}" for kind, item_id in sorted(missing)))
+
+
+def validate_diagram_review(base: Path, report_path: Any, register_path: Any, stage: Any, issues: list[str]) -> None:
+    """Require actual raster previews and review records for generated spatial drawings."""
+    register_file = _resolve(base, register_path)
+    register = _load_json(register_file) if register_file else None
+    if register is None:
+        issues.append("diagramReviewReport requires a readable scene register")
+        return
+    report_file = _resolve(base, report_path)
+    if report_file is None:
+        issues.append("diagramReviewReportPath must reference an existing project JSON file")
+        return
+    report_digest = _hash(report_file)
+    evidence = stage.get("evidence", []) if isinstance(stage, dict) else []
+    if not any(isinstance(item, dict) and item.get("path") == report_path and item.get("sha256") == report_digest for item in evidence):
+        issues.append("visualAnalysis evidence must include diagramReviewReportPath with its SHA-256")
+    report = _load_json(report_file)
+    if report is None:
+        issues.append("diagramReviewReport must be a readable JSON object")
+        return
+    if report.get("buildId") != (stage.get("buildId") if isinstance(stage, dict) else None):
+        issues.append("diagramReviewReport buildId must match visualAnalysis buildId")
+    if not isinstance(report.get("reviewer"), str) or not report["reviewer"].strip():
+        issues.append("diagramReviewReport requires a named reviewer")
+    drawings = report.get("drawings")
+    if not isinstance(drawings, list) or not drawings:
+        issues.append("diagramReviewReport.drawings must list rendered plan/section previews")
+        return
+    seen: dict[str, set[str]] = {"plan": set(), "section": set()}
+    for i, drawing in enumerate(drawings):
+        label = f"diagramReviewReport.drawings[{i}]"
+        if not isinstance(drawing, dict):
+            issues.append(f"{label} must be an object")
+            continue
+        kind, drawing_id = drawing.get("kind"), drawing.get("id")
+        if kind not in seen or not isinstance(drawing_id, str) or not drawing_id.strip():
+            issues.append(f"{label} requires kind plan/section and a stable drawing ID")
+            continue
+        if drawing_id in seen[kind]:
+            issues.append(f"{label} duplicates {kind} drawing ID {drawing_id}")
+        seen[kind].add(drawing_id)
+        if drawing.get("status") != "PASS" or not isinstance(drawing.get("observation"), str) or len(drawing["observation"].strip()) < 20:
+            issues.append(f"{label} requires PASS with a concrete visual inspection observation")
+        source = drawing.get("source")
+        source_record = _check_file_record(base, source, f"{label}.source", issues)
+        if source_record and Path(source_record[0]).suffix.lower() not in {".svg", ".pdf"}:
+            issues.append(f"{label}.source must be an SVG or PDF drawing")
+        if source_record and not any(isinstance(item, dict) and item.get("path") == source_record[0] and item.get("sha256") == source_record[1] for item in evidence):
+            issues.append(f"{label}.source must be hashed in visualAnalysis evidence")
+        preview = drawing.get("preview")
+        preview_record = _check_file_record(base, preview, f"{label}.preview", issues)
+        if preview_record:
+            rel, digest = preview_record
+            if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                issues.append(f"{label}.preview must be hashed in visualAnalysis evidence")
+            preview_file = _resolve(base, rel)
+            try:
+                header = preview_file.read_bytes()[:24] if preview_file else b""
+            except OSError:
+                header = b""
+            if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+                issues.append(f"{label}.preview must have a PNG signature and IHDR header")
+            else:
+                width, height = struct.unpack(">II", header[16:24])
+                if max(width, height) < 640 or min(width, height) < 320:
+                    issues.append(f"{label}.preview must be at least 640px on its long edge and 320px on its short edge")
+    if not seen["plan"]:
+        issues.append("diagramReviewReport requires at least one visually reviewed plan")
+    if not seen["section"]:
+        issues.append("diagramReviewReport requires at least one visually reviewed section")
+    expected_sections = {item.get("id") for item in register.get("sections", []) if isinstance(item, dict) and isinstance(item.get("id"), str)}
+    if expected_sections - seen["section"]:
+        issues.append("diagramReviewReport is missing registered sections: " + ", ".join(sorted(expected_sections - seen["section"])))
 
 
 def validate_data(data: Any, base: Path, through: str | None = None) -> list[str]:
@@ -856,6 +955,10 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
             )
             validate_visual_build_map(
                 base, register_rel, data.get("visualReferenceIndexPath"), data.get("visualBuildMapPath"),
+                by_id.get("visualAnalysis", {}), issues,
+            )
+            validate_diagram_review(
+                base, data.get("diagramReviewReportPath"), register_rel,
                 by_id.get("visualAnalysis", {}), issues,
             )
 

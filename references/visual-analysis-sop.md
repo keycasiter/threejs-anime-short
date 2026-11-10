@@ -134,6 +134,8 @@ Keep confidence and source provenance attached to the field or relationship they
 
 Declare a `sharedDriver` when one designed/observed spatial field or layout value is intended to drive two or more downstream systems. Name its producer and every intended consumer by stable ID, system, and observable output. Do not add a shared field merely to make the register look technical; if geometry, placement, and material are independent hand-authored decisions, record those inputs separately. When a shared driver is declared, Stage 2 must perturb it and show that every declared consumer changes; a field name or code comment is not evidence of data flow.
 
+For each perturbation, name the actual source file and producer/consumer function, freeze seed/camera/resolution and unrelated inputs, and capture the baseline and changed consumer in the same view. Inspect the affected region and state the expected visual or geometric change. A whole-frame pixel difference alone can be caused by an unrelated object, shadow or noise; it does not prove the named consumer used the driver. Confirm the resulting field reaches the final mesh, instance transform, material input or route geometry that is rendered.
+
 ### Coordinate and connection semantics
 
 - `anchor.xyz` is the **center of the object's axis-aligned bounds** in the declared world coordinate system. `bounds.size` is a positive full extent in X/Y/Z; `baseY` and `topY` must equal `anchor.y ± bounds.size[1]/2` within a small numeric tolerance. For non-box or asymmetric objects, keep this as a conservative envelope and add a separately named placement datum or profile; do not overload the anchor to mean both center and base.
@@ -150,6 +152,8 @@ Provide a dimensioned plan, at least one cross-section through the most importan
 Use actual CAD only when available and useful. Otherwise generate clean SVG/PDF drawings from the same spatial register and label them **design/blockout diagrams, not engineering CAD**. Do not manually redraw numbers independently of the register. Avoid making an unlabeled beauty sketch stand in for a plan or section.
 
 The generator must read coordinates, extents, object IDs, section stations, and route samples from the register. A hand-drawn illustrative section is not accepted as a measured view of the registered scene. Each section must name the plane/station and list intersected objects or sampled route IDs. If a diagram deliberately simplifies geometry, label it as a schematic and retain a separate projected view from the register so the receiver can distinguish explanation from spatial evidence.
+
+After generating drawings, render every plan/section SVG or PDF to a target-size image and inspect the image itself. Verify that the site footprint and route are inside the frame; labels, dimensions and elevations are legible and do not collide; section profiles cross the registered terrain and named objects; and route endpoints/supports appear where the register says they do. Compare each preview against the source register, not only against the generator code. Keep the rendered previews and their hashes in the `visualAnalysis` evidence. If a preview cannot be produced or visually read, mark diagram review `NOT_RUN`; the validator checks file/hash/PNG signature and dimensions, while the reviewer checks legibility and spatial correctness. A valid file, hash, or parseable SVG is not visual evidence.
 
 ## 6. Specify continuous terrain and routes
 

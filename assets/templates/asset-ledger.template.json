@@ -12,6 +12,11 @@
         "buildId": "forms-v1",
         "representativeTarget": {"type": "object", "id": "ground"},
         "component": "buildGroundSurface",
+        "implementationSource": {
+          "path": "src/assets/ground.js",
+          "sha256": "replace-with-source-sha256",
+          "symbol": "buildGroundSurface"
+        },
         "capture": {"id": "terrain-prototype-close", "path": "qa/prototypes/terrain-close.png", "sha256": "replace-with-file-sha256"},
         "featureReviews": [
           {"featureId": "ground-profile", "status": "NOT_RUN", "observation": ""},
