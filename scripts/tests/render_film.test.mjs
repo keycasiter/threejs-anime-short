@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
-import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,writeFile,rm,chmod} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -16,9 +16,9 @@ async function fixture(t,body){
  await writeFile(html,`<!doctype html><meta charset="utf-8"><style>body{margin:0;overflow:hidden}canvas{display:block}#title{position:absolute;top:8px;left:8px;color:white;font:20px sans-serif}</style>${body}`);
  return {html,out};
 }
-function exportFilm(f,extra=[],times='0,0.5'){
+function exportFilm(f,extra=[],times='0,0.5',env={}){
  return new Promise((resolve,reject)=>{
-  const child=spawn(process.execPath,[script,'--html',f.html,'--out',f.out,...(times===null?[]:['--times',times]),'--width','320','--height','180',...extra],{stdio:['ignore','pipe','pipe']});
+  const child=spawn(process.execPath,[script,'--html',f.html,'--out',f.out,...(times===null?[]:['--times',times]),'--width','320','--height','180',...extra],{stdio:['ignore','pipe','pipe'],env:{...process.env,...env}});
   let output='';child.stdout.on('data',d=>output+=d);child.stderr.on('data',d=>output+=d);
   const timer=setTimeout(()=>{child.kill('SIGTERM');reject(Error('Exporter did not finish within 45 seconds'));},45000);
   child.on('error',e=>{clearTimeout(timer);reject(e);});child.on('close',code=>{clearTimeout(timer);resolve({code,output});});
@@ -87,7 +87,21 @@ test('shorter video rerender excludes stale frames from the previous export',asy
  const original=await readFile(f.html,'utf8');await writeFile(f.html,original.replace('duration:2,fps:2','duration:0.5,fps:2'));
  const second=await exportFilm(f,['--video']);assert.equal(second.code,0,second.output);
  const m=JSON.parse(await readFile(join(f.out,'manifest.json'),'utf8'));
+ assert.equal(m.status,'PASS');assert.equal(m.audioMode,'wav');
+ const mp4=await readFile(join(f.out,'film.mp4'));assert.equal(createHash('sha256').update(mp4).digest('hex'),m.videoArtifact.sha256);
+ assert.equal(m.videoArtifact.path,'film.mp4');assert.equal(m.video.streams.filter(s=>s.codec_type==='audio').length,1);
  const video=m.video.streams.find(s=>s.codec_type==='video');assert.equal(video.nb_frames,'1');assert.equal(Number(video.duration),.5);
+});
+
+test('rejects an MP4 whose ffprobe metadata disagrees with the declared output',async t=>{
+ const f=await fixture(t,stable);
+ const bin=join(f.out,'fake-bin');await mkdir(bin,{recursive:true});
+ const fake=join(bin,'ffprobe');
+ await writeFile(fake,'#!/bin/sh\nprintf \'%s\\n\' \'{"streams":[{"codec_type":"video","width":999,"height":180,"avg_frame_rate":"2/1","nb_frames":"4","duration":"2"}]}\'\n');
+ await chmod(fake,0o755);
+ const result=await exportFilm(f,['--video'],undefined,{PATH:`${bin}:${process.env.PATH}`});
+ assert.notEqual(result.code,0,result.output);assert.match(result.output,/dimensions 999x180 do not match 320x180/);
+ await assert.rejects(readFile(join(f.out,'manifest.json')),{code:'ENOENT'});
 });
 
 test('leaves the sampled time before checking a single seek sample',async t=>{

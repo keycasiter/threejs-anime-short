@@ -6,6 +6,7 @@ import {resolve,join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
+import {validateVideoProbe} from './video-contract.mjs';
 const args=process.argv.slice(2),arg=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d;
 if(!arg('--html'))throw Error('Usage: node render_film.mjs --html film.html --out directory [--times seconds,...] [--video]');
 const html=resolve(arg('--html')),out=resolve(arg('--out','rendered')),width=Number(arg('--width',1280)),height=Number(arg('--height',720));
@@ -64,7 +65,7 @@ try{
  await captureAt(seekProbe);const checks=[];
  for(let i=times.length-1;i>=0;i--){const actual=sha256(await captureAt(times[i]));if(samples[i].sha256!==actual)throw Error(`Random-access frame changed at ${times[i]}s`);checks.push({t:times[i],sha256:actual})}
  const metrics=await evaluate('window.filmMetrics?.()||null');
- let video=null,audioMode=null;
+ let video=null,videoArtifact=null,audioMode=null;
  if(args.includes('--video')){
   const hasWav=await evaluate('typeof window.renderWav==="function"');
   audioMode=info.audio??(hasWav?'wav':'none');
@@ -79,9 +80,13 @@ try{
   const audioInputs=audioMode==='wav'?['-i',join(out,'score.wav')]:[];
   const audioOutput=audioMode==='wav'?['-c:a','aac','-b:a','160k','-shortest']:['-an'];
   await command('ffmpeg',['-y','-loglevel','error','-framerate',String(info.fps),'-i',join(frames,'%05d.png'),...audioInputs,'-frames:v',String(total),'-c:v','libx264','-preset','medium','-crf','18','-pix_fmt','yuv420p',...audioOutput,'-movflags','+faststart',join(out,'film.mp4')]);
-  video=JSON.parse(await command('ffprobe',['-v','error','-show_streams','-show_format','-of','json',join(out,'film.mp4')]));
+  const videoPath=join(out,'film.mp4');
+  video=JSON.parse(await command('ffprobe',['-v','error','-show_streams','-show_format','-of','json',videoPath]));
+  const totalFrames=Math.ceil(info.duration*info.fps);
+  validateVideoProbe(video,{width,height,fps:info.fps,totalFrames,audioMode});
+  videoArtifact={path:'film.mp4',sha256:sha256(await readFile(videoPath))};
  }
- failOnErrors();if(sha256(await readFile(html))!==sourceHash)throw Error('Source HTML changed during export');await writeFile(join(out,'manifest.json'),JSON.stringify({sourceHash,html,query:arg('--query',''),width,height,...info,samples,deterministic:true,determinism:{scope:'viewport',method:'sha256-png',sampleTimes:times,seekProbe,checks},metrics,errors,audioMode,captureContract:{mode:captureMode,timeoutMs:frameTimeoutMs,calls:captureCalls},video},null,2));console.log(`Export verified: ${out}`);
+ failOnErrors();if(sha256(await readFile(html))!==sourceHash)throw Error('Source HTML changed during export');await writeFile(join(out,'manifest.json'),JSON.stringify({status:'PASS',sourceHash,html,query:arg('--query',''),width,height,...info,samples,deterministic:true,determinism:{scope:'viewport',method:'sha256-png',sampleTimes:times,seekProbe,checks},metrics,errors,audioMode,videoArtifact,captureContract:{mode:captureMode,timeoutMs:frameTimeoutMs,calls:captureCalls},video},null,2));console.log(`Export verified: ${out}`);
 }finally{
  // Cleanup must not obscure the original shader/page/render failure.
  try{if(ws?.readyState===1)await send('Browser.close',{},null)}catch{}try{ws?.close()}catch{}

@@ -6,8 +6,10 @@ import sys
 import tempfile
 import struct
 import zlib
+import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -1008,6 +1010,53 @@ class DeliveryManifestTests(unittest.TestCase):
         joined = "\n".join(issues)
         self.assertIn("runInstructions must be included in final deliverables", joined)
         self.assertIn("delivery stage evidence must hash runInstructions", joined)
+
+    def _film_export_fixture(self) -> tuple[dict, dict, tuple[str, str], set[tuple[str, str]], dict]:
+        output = self.root / "exports"
+        output.mkdir()
+        video_path = output / "film.mp4"
+        video_path.write_bytes(b"test mp4 bytes")
+        source_path = self.root / "dist" / "index.html"
+        source_path.parent.mkdir()
+        source_path.write_text("<!doctype html><script>window.renderAt=()=>{};</script>", encoding="utf-8")
+        source_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        video_hash = hashlib.sha256(video_path.read_bytes()).hexdigest()
+        probe = {"streams": [{
+            "codec_type": "video", "width": 640, "height": 360,
+            "avg_frame_rate": "24/1", "nb_frames": "24", "duration": "1",
+        }]}
+        report = {
+            "status": "PASS", "sourceHash": source_hash, "width": 640, "height": 360,
+            "duration": 1, "fps": 24, "audioMode": "none",
+            "videoArtifact": {"path": video_path.name, "sha256": video_hash}, "video": probe,
+        }
+        report_path = output / "manifest.json"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        report_hash = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        item = {"kind": "mp4", "path": "exports/film.mp4", "sha256": video_hash, "exportReport": "exports/manifest.json"}
+        evidence = {("exports/manifest.json", report_hash), ("exports/film.mp4", video_hash)}
+        return report, item, (source_path.relative_to(self.root).as_posix(), source_hash), evidence, probe
+
+    def test_mp4_delivery_binds_export_source_artifact_hash_and_probe(self) -> None:
+        _report, item, runtime_tested, delivery_outputs, probe = self._film_export_fixture()
+        result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+            validate_delivery._validate_video_deliverable(self.root, item, runtime_tested, delivery_outputs, issues)
+        self.assertEqual([], issues)
+
+    def test_mp4_delivery_blocks_source_or_encoded_metadata_mismatch(self) -> None:
+        report, item, runtime_tested, delivery_outputs, probe = self._film_export_fixture()
+        report["sourceHash"] = "0" * 64
+        (self.root / item["exportReport"]).write_text(json.dumps(report), encoding="utf-8")
+        probe["streams"][0]["width"] = 1920
+        result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+            validate_delivery._validate_video_deliverable(self.root, item, runtime_tested, delivery_outputs, issues)
+        joined = "\n".join(issues)
+        self.assertIn("sourceHash must match runtime testedArtifact", joined)
+        self.assertIn("encoded dimensions do not match the declared 640x360", joined)
 
     def test_stage_order_must_follow_declared_pipeline(self) -> None:
         data = self.minimal_analysis_manifest()

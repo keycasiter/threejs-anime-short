@@ -158,6 +158,116 @@ def _validate_html_deliverable(kind: str, target: Path, base: Path, issues: list
         issues.append(f"deliverable {target.name}: final HTML static check blocked ({detail})")
 
 
+def _parse_frame_rate(value: Any) -> float | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        numerator, denominator = value.split("/", 1)
+        denominator_value = float(denominator)
+        return float(numerator) / denominator_value if denominator_value else None
+    except (ValueError, ZeroDivisionError):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
+
+def _validate_probe_contract(probe: Any, contract: dict[str, Any], label: str, issues: list[str]) -> None:
+    streams = probe.get("streams", []) if isinstance(probe, dict) else []
+    video_streams = [stream for stream in streams if isinstance(stream, dict) and stream.get("codec_type") == "video"]
+    audio_streams = [stream for stream in streams if isinstance(stream, dict) and stream.get("codec_type") == "audio"]
+    if len(video_streams) != 1:
+        issues.append(f"{label}: expected exactly one video stream")
+        return
+    video = video_streams[0]
+    try:
+        width, height = int(contract.get("width")), int(contract.get("height"))
+        fps, duration = float(contract.get("fps")), float(contract.get("duration"))
+    except (TypeError, ValueError):
+        issues.append(f"{label}: report must declare numeric width, height, fps, and duration")
+        return
+    if width <= 0 or height <= 0 or fps <= 0 or duration <= 0:
+        issues.append(f"{label}: width, height, fps, and duration must be positive")
+        return
+    rate = _parse_frame_rate(video.get("avg_frame_rate") or video.get("r_frame_rate"))
+    expected_frames = math.ceil(duration * fps)
+    expected_duration = expected_frames / fps
+    if video.get("width") != width or video.get("height") != height:
+        issues.append(f"{label}: encoded dimensions do not match the declared {width}x{height}")
+    if rate is None or abs(rate - fps) > 1e-6:
+        issues.append(f"{label}: encoded frame rate does not match declared {fps} fps")
+    try:
+        actual_frames = int(video.get("nb_frames"))
+    except (TypeError, ValueError):
+        actual_frames = -1
+    if actual_frames != expected_frames:
+        issues.append(f"{label}: encoded frame count {actual_frames} does not match {expected_frames}")
+    try:
+        actual_duration = float(video.get("duration"))
+    except (TypeError, ValueError):
+        actual_duration = math.nan
+    if not math.isfinite(actual_duration) or abs(actual_duration - expected_duration) > max(1e-6, .01 / fps):
+        issues.append(f"{label}: encoded duration does not match {expected_duration:g}s")
+    audio_mode = contract.get("audioMode")
+    if audio_mode == "none":
+        if audio_streams:
+            issues.append(f"{label}: encoded audio stream conflicts with audioMode none")
+    elif audio_mode == "wav":
+        if len(audio_streams) != 1:
+            issues.append(f"{label}: audioMode wav requires exactly one encoded audio stream")
+        else:
+            audio = audio_streams[0]
+            if str(audio.get("sample_rate")) != "22050":
+                issues.append(f"{label}: encoded audio sample rate does not match 22050 Hz")
+            try:
+                audio_duration = float(audio.get("duration"))
+            except (TypeError, ValueError):
+                audio_duration = math.nan
+            if not math.isfinite(audio_duration) or abs(audio_duration - expected_duration) > 1 / fps:
+                issues.append(f"{label}: encoded audio duration does not match the video")
+    else:
+        issues.append(f"{label}: audioMode must be none or wav")
+
+
+def _validate_video_deliverable(base: Path, item: dict[str, Any], runtime_tested: tuple[str, str] | None, delivery_outputs: set[tuple[str, str]], issues: list[str]) -> None:
+    report_record = item.get("exportReport")
+    report_path = _resolve(base, report_record)
+    if report_path is None:
+        issues.append(f"MP4 deliverable {item.get('path')}: exportReport must reference a project JSON file")
+        return
+    report_hash = _hash(report_path)
+    report_relative = report_path.relative_to(base.resolve()).as_posix()
+    if (report_relative, report_hash) not in delivery_outputs:
+        issues.append("delivery evidence must hash the MP4 export report")
+    report = _load_json(report_path)
+    if report is None or report.get("status") != "PASS":
+        issues.append("MP4 export report must be readable JSON with status PASS")
+        return
+    artifact_record = _check_file_record(report_path.parent, report.get("videoArtifact"), "MP4 export videoArtifact", issues)
+    artifact_path_value = report.get("videoArtifact", {}).get("path") if isinstance(report.get("videoArtifact"), dict) else None
+    artifact_path = _resolve(report_path.parent, artifact_path_value)
+    deliverable_path = _resolve(base, item.get("path"))
+    if deliverable_path is None:
+        return
+    if artifact_record and artifact_path and deliverable_path and artifact_path.resolve() != deliverable_path.resolve():
+        issues.append("MP4 export videoArtifact path must resolve to the exact final deliverable")
+    if artifact_record and artifact_record[1] != item.get("sha256"):
+        issues.append("MP4 export videoArtifact SHA-256 must match the final deliverable")
+    if runtime_tested and report.get("sourceHash") != runtime_tested[1]:
+        issues.append("MP4 export sourceHash must match runtime testedArtifact SHA-256")
+    contract = {key: report.get(key) for key in ("width", "height", "fps", "duration", "audioMode")}
+    try:
+        actual_probe = json.loads(subprocess.run(
+            ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(deliverable_path)],
+            cwd=base, capture_output=True, text=True, check=True,
+        ).stdout)
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        issues.append(f"MP4 deliverable could not be independently probed with ffprobe: {exc}")
+        return
+    _validate_probe_contract(actual_probe, contract, "MP4 deliverable", issues)
+    _validate_probe_contract(report.get("video"), contract, "MP4 export report probe", issues)
+
+
 def _validate_runtime_report(base: Path, record: Any, build_id: str, camera_contract_path: Any, stage: Any, issues: list[str]) -> set[str]:
     if not isinstance(record, str) or not record.strip():
         issues.append("runtime: full-production requires runtimeReport path")
@@ -1898,6 +2008,10 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
             runtime_tested = _check_file_record(base, runtime_report_data.get("testedArtifact"), "runtime final testedArtifact", issues) if runtime_report_data and runtime_report_data.get("testedArtifact") else None
             if runtime_tested and runtime_tested not in stage_outputs.get("delivery", set()):
                 issues.append("delivery evidence must include the exact HTML page tested by runtime")
+            if isinstance(deliverables, list):
+                for item in deliverables:
+                    if isinstance(item, dict) and item.get("kind") == "mp4":
+                        _validate_video_deliverable(base, item, runtime_tested, stage_outputs.get("delivery", set()), issues)
             camera_contract = _load_json(camera_contract_file) if camera_contract_file else None
             if camera_contract and camera_contract.get("mode") == "interactive-orbit":
                 interaction_path = _resolve(base, data.get("cameraInteractionReportPath"))
