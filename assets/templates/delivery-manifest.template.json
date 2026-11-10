@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "mode": "full-production",
+  "buildId": "scene-v01",
+  "sceneRegisterPath": "design/scene-register.json",
+  "spatialGatePath": "qa/spatial-gate.json",
+  "cameraContractPath": "design/camera-contract.json",
+  "runtimeReport": "qa/runtime-report.json",
+  "visualReviewReport": "qa/visual-review.json",
+  "deliverables": [
+    {"kind": "runnable-html", "path": "dist/index.html", "sha256": "replace-with-file-sha256"},
+    {"kind": "source", "path": "src/scene.js", "sha256": "replace-with-file-sha256"}
+  ],
+  "stages": [
+    {"id": "direction", "status": "NOT_RUN", "buildId": "direction-v1", "inputs": [], "evidence": []},
+    {"id": "visualAnalysis", "status": "NOT_RUN", "buildId": "analysis-v1", "inputs": [], "evidence": []},
+    {"id": "runtimePreflight", "status": "NOT_RUN", "buildId": "preflight-v1", "inputs": [], "evidence": [], "preflightReport": "qa/preflight-report.json"},
+    {"id": "spatialProxy", "status": "NOT_RUN", "buildId": "proxy-v1", "inputs": [], "evidence": []},
+    {"id": "middleForms", "status": "NOT_RUN", "buildId": "forms-v1", "inputs": [], "evidence": []},
+    {"id": "detailDistribution", "status": "NOT_RUN", "buildId": "detail-v1", "inputs": [], "evidence": []},
+    {"id": "lookdev", "status": "NOT_RUN", "buildId": "lookdev-v1", "inputs": [], "evidence": []},
+    {"id": "cameraMotion", "status": "NOT_RUN", "buildId": "camera-v1", "inputs": [], "evidence": []},
+    {"id": "runtime", "status": "NOT_RUN", "buildId": "scene-v01", "inputs": [], "evidence": [], "runtimeReport": "qa/runtime-report.json"},
+    {"id": "visualReview", "status": "NOT_RUN", "buildId": "scene-v01", "inputs": [], "evidence": [], "visualReviewReport": "qa/visual-review.json"},
+    {"id": "delivery", "status": "NOT_RUN", "buildId": "scene-v01", "inputs": [], "evidence": []}
+  ]
+}

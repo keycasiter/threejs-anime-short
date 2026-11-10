@@ -46,7 +46,7 @@
 
 仅对规格中包含可交互场景的交付适用。通过用户实际打开的页面完成相机操作，不能用导出截图、静态帧或存在canvas代替：
 
-1. 连续水平旋转一整圈，在至少8个方位观察，保存实际页面的目标视口证据；检查并记录已声明的俯仰高低端和近远距离端点。OrbitControls配置、相机参数或影片导出帧不能代替实际操作证据。
+1. 连续水平旋转一整圈，在至少8个方位观察，保存实际页面的目标视口证据；检查并记录已声明的俯仰高低端和近远距离端点。此8方位是最低水平抽样，不代表包络已覆盖；相机可达域必须按用户/作品规格记录，具体样本按[空间白模的相机包络契约](spatial-blockout.md#bind-view-evidence-to-the-promised-camera-domain)补齐。OrbitControls配置、相机参数或影片导出帧不能代替实际操作证据。
 2. 检查地平线/背景连续性、地面/水面边界、物体背面、透明排序、阴影/反射、相机穿模、裁切和界面遮挡。出现未建模黑空、空白背面或状态跳变均不通过。另按声明的观看内容检查开口/功能面及其中的关键内容是否可读；把正常遮挡、内容朝向错误和环境缺失分开定位。
 3. 若影片与自由查看并存，分别验证两种模式；播放/跳时不能覆盖用户相机，返回影片模式能恢复可重复的导演镜头。
 
@@ -71,7 +71,7 @@
 ## HTML 检查脚本
 
 ```sh
-node scripts/validate_offline_html.mjs path/to/film.html --require-offline
+node <skill-root>/scripts/validate_offline_html.mjs <project-root>/path/to/film.html --require-offline
 ```
 
 脚本解析最终 HTML 的可执行内联 JS，拒绝未填的 bundle 占位符，并检测脚本语法错误；`--require-offline` 额外拒绝资源标签及 CSS url 中的外部引用。默认只报告依赖。此检查不覆盖 JS import、fetch、Worker、CSS import 等所有资源路径，无法证明离线运行或 WebGL 正常，仍需浏览器离线播放验证。

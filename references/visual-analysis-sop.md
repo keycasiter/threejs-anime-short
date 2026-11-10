@@ -50,28 +50,64 @@ Create one machine-readable scene register (JSON/YAML/CSV) consumed by the plan,
 ```json
 {
   "world": {"units":"m (design estimate)","up":"Y","origin":"site center","axes":{"x":"east","z":"north"}},
+  "evidence": {
+    "view-id": {"status":"Observed","source":"reference view URL or local file"},
+    "water-edge-view": {"status":"Observed","source":"reference detail URL or local file"}
+  },
   "objects": [{
-    "id":"asset-id", "parentId":"zone-id", "kind":"terrain|platform|building|path|prop",
-    "status":"observed|inferred|designed|unknown", "evidence":["view-id"],
-    "anchor":{"x":0,"y":0,"z":0}, "headingDeg":0,
-    "bounds":{"x":1,"y":1,"z":1}, "baseY":0,"topY":1,
-    "hostSurfaceId":"terrain-id", "supportIds":["support-id"],
-    "ports":[{"id":"in","at":[0,0,0],"direction":[0,0,1],"role":"path-start"}],
-    "relations":[{"type":"connects-to","targetId":"other-id","via":"in → out"}]
+    "id":"asset-id", "kind":"platform", "status":"Designed", "evidence":["view-id"],
+    "anchor":{"space":"world","xyz":[0,0,0]}, "headingDeg":0,
+    "geometryRole":"solid",
+    "bounds":{"size":[1,1,1],"center":"anchor"}, "baseY":-0.5,"topY":0.5,
+    "ports":[{"id":"out","space":"world","at":[0,0,0],"direction":[0,0,1],"role":"route-start","evidence":["view-id"]}],
+    "fieldEvidence":{"anchor":{"status":"Designed","sourceIds":["view-id"],"confidence":"high"}},
+    "relations":[]
+  }, {
+    "id":"other-id", "kind":"platform", "status":"Designed", "evidence":["view-id"],
+    "anchor":{"space":"world","xyz":[1,0,3]}, "headingDeg":0,
+    "geometryRole":"solid",
+    "bounds":{"size":[1,1,1],"center":"anchor"}, "baseY":-0.5,"topY":0.5,
+    "ports":[{"id":"in","space":"world","at":[1,0,3],"direction":[0,0,-1],"role":"route-end","evidence":["view-id"]}],
+    "fieldEvidence":{"anchor":{"status":"Designed","sourceIds":["view-id"],"confidence":"high"}},
+    "relations":[]
   }],
-  "routes": [{"id":"route-id","kind":"walkway","width":1.5,"points":[[0,0,0],[1,-2,3]],"gradeLimit":"design check","connects":["port-a","port-b"]}],
-  "sections": [{"id":"section-id","axis":"...","stations":[[0,0,0],[1,0,1]]}],
-  "unknowns": [{"question":"...","impact":"...","proposedAssumption":"..."}]
+  "routes": [{"id":"route-id","kind":"walkway","status":"Designed","evidence":["view-id"],"coordinateSpace":"world","width":1.5,"points":[[0,0,0],[1,0,3]],"ports":[{"id":"start","space":"world","at":[0,0,0],"evidence":["view-id"]},{"id":"end","space":"world","at":[1,0,3],"evidence":["view-id"]}],"connects":["asset-id.out","other-id.in"]}],
+  "sections": [{"id":"section-id","plane":"vertical","station":"x=0","points":[[0,0,0],[0,0,1]],"objectIds":["asset-id"]}],
+  "sharedDrivers": [{
+    "id":"wetness-field", "meaning":"distance-decayed wetness from the water edge",
+    "coordinateSpace":"world", "units":"unitless",
+    "producer":{"kind":"function","ref":"terrain-fields.mjs","symbol":"wetnessAt(x,z)"},
+    "evidence":["water-edge-view"],
+    "consumers":[
+      {"id":"bank-profile","system":"geometry","output":"shoreline profile"},
+      {"id":"plant-density","system":"distribution","output":"instance density"},
+      {"id":"rock-roughness","system":"material","output":"roughness region"}
+    ]
+  }],
+  "unknowns": [{"id":"unknown-door","question":"Is the far-side opening passable?","impact":"Determines the circulation route.","proposedAssumption":"Treat as closed until a plan view confirms otherwise."}]
 }
 ```
 
 Keep confidence and source provenance attached to the field or relationship they support, not only in a closing paragraph. Never silently convert a visual estimate into measured truth. Use explicit `null`/unknown where unresolved.
+
+Declare a `sharedDriver` when one designed/observed spatial field or layout value is intended to drive two or more downstream systems. Name its producer and every intended consumer by stable ID, system, and observable output. Do not add a shared field merely to make the register look technical; if geometry, placement, and material are independent hand-authored decisions, record those inputs separately. When a shared driver is declared, Stage 2 must perturb it and show that every declared consumer changes; a field name or code comment is not evidence of data flow.
+
+### Coordinate and connection semantics
+
+- `anchor.xyz` is the **center of the object's axis-aligned bounds** in the declared world coordinate system. `bounds.size` is a positive full extent in X/Y/Z; `baseY` and `topY` must equal `anchor.y ± bounds.size[1]/2` within a small numeric tolerance. For non-box or asymmetric objects, keep this as a conservative envelope and add a separately named placement datum or profile; do not overload the anchor to mean both center and base.
+- Every object or route port has a stable local ID and a finite world-space coordinate. A route's `connects` lists its start and end targets in path order. Each target uses `ownerId.portId`, where owner can be an object or another route. The first/last route point must coincide with those ports within the declared tolerance; a visually close endpoint is not a connection.
+- If a route joins another route at an interior junction, declare a named route port at the exact sampled point. Do not invent `.start`, `.end`, or junction port names only inside a sentence.
+- Every high-impact modeled field, port, and relation carries `status`, `sourceIds`, and confidence. Sources must resolve to the evidence index. A generated design reference may support a `Designed` proposal, but cannot support a claim that a hidden object or dimension was observed.
+- Object IDs are globally unique across object and route collections. `hostSurfaceId`, `supportIds`, relation targets, route references, ports, section member IDs, and evidence IDs must all resolve to the correct entity type.
+- Declare whether each spatial record is renderable geometry or only a constraint envelope. A vegetation spread, clearance volume, excavation allowance, or visibility zone must carry `geometryRole: "distribution-envelope"` or `"clearance-envelope"`; downstream code must not instantiate that full bound as a solid object. Use `solid`, `surface`, or `path` for actual modeled content, with the semantic `kind` and form/profile describing its constructible shape.
 
 ## 5. Create CAD-like drawings from the register
 
 Provide a dimensioned plan, at least one cross-section through the most important vertical relation, and a longitudinal section whenever terrain/path grade or a long connection matters. Add sections at enough stations to reveal changing cliff/ground profile; one section cannot prove an entire route is supported. Annotate IDs, axes, level/elevation, dimensions as measured/estimated/designed, support points, port endpoints, visibility arrows, and evidence IDs.
 
 Use actual CAD only when available and useful. Otherwise generate clean SVG/PDF drawings from the same spatial register and label them **design/blockout diagrams, not engineering CAD**. Do not manually redraw numbers independently of the register. Avoid making an unlabeled beauty sketch stand in for a plan or section.
+
+The generator must read coordinates, extents, object IDs, section stations, and route samples from the register. A hand-drawn illustrative section is not accepted as a measured view of the registered scene. Each section must name the plane/station and list intersected objects or sampled route IDs. If a diagram deliberately simplifies geometry, label it as a schematic and retain a separate projected view from the register so the receiver can distinguish explanation from spatial evidence.
 
 ## 6. Specify continuous terrain and routes
 
@@ -106,3 +142,11 @@ A Stage 1 package is ready only when:
 - Stage 2 can construct the whitebox without inventing any high-impact location or connection.
 
 If the user requested only visual analysis, stop at this handoff. Do not make the Three.js scene unless asked. A passing Stage 1 package is not proof of final visual quality; it is a reliable input contract for subsequent stages.
+
+Before handoff, run the structural validator on the actual register:
+
+```bash
+python3 <skill-root>/scripts/validate_scene_register.py <project-root>/design/scene-register.json
+```
+
+`SCENE_REGISTER_PASS` confirms ID/reference/provenance and coordinate-interface consistency. It does **not** prove the visual interpretation is true, the design is attractive, code can render every shape, engineering is safe, or the diagrams are faithful unless those diagrams were generated from the register. A structural failure blocks handoff and must be resolved at source; do not suppress it by changing only the report.

@@ -23,11 +23,94 @@ A tool name alone is not a solution. State the bottleneck it addresses, the data
 4. **Choose geometry representation.** For each terrain region and route, record the representation, input controls, downstream consumers and reason. Separate major landform guides (ridge, valley, shoreline, terrace, breakline) from low-amplitude surface variation.
 5. **Construct the spatial skeleton.** Build the full terrain/water envelope, major support surfaces, object proxy volumes, routes, platforms, ports and camera envelope from the register. Use neutral materials. Keep the complete environment and its negative spaces; do not build a hero object in isolation.
 6. **Make routes and supports consume the final host geometry.** After the host mesh is final, sample the path at its final geometry spacing and across its full width. Derive route elevations, local frames and support contacts from the actual host surface or an explicit bridge/deck rule. A matching endpoint or centerline alone is insufficient.
-7. **Review and repair before middle forms.** Render the target framing and the applicable plan, sections and orbit envelope. Fix topology, terrain silhouette, route fit, scale hierarchy and occlusion before adding middle-form structure or fine detail. If a gate fails, continue the spatial pass or report the specific blocker; do not label the stage released.
+7. **Review and repair before middle forms.** Render the target framing and the applicable plan, sections and orbit envelope. Fix topology, terrain silhouette, route fit, scale hierarchy and occlusion before adding middle-form structure or fine detail. Freeze and review this neutral spatial-only build using the proxy-stage contract below. If a gate fails, continue the spatial pass or report the specific blocker; do not label the stage released.
+
+### Freeze and release the spatial-proxy stage before formal assets
+
+The spatial review must be verifiably earlier than formal asset construction. Do not call a detailed, shaded first build a “proxy” after the fact. Before implementing formal asset meshes, detailed surface materials, or high-frequency scatter:
+
+1. Build the complete scene envelope from proxies: terrain/major volumes, routes, support regions, camera targets, and negative spaces. Simple proxy geometry may encode spatially important curvature or height breaks; it must not contain the final asset's small structural forms or material finish.
+2. Force a neutral gray material override. Disable detailed material maps, lookdev lighting, ornamental geometry, and fine scatter generators. Record every major spatial component in `proxy-inventory.json` with a stable `id` and `role: "proxy"`; record zero formal assets, detailed materials, and detail generators.
+3. Freeze the exact source file used for this capture. In `spatial-gate.json`, record its path and SHA-256; use a stable `buildId` shared by the source inventory, review record, and composition evidence.
+4. Capture the actual running proxy build at the target view, plan/sections as applicable, and the full declared orbit envelope. Store a SHA-256 for every view image. Review these images while still in the proxy stage. `proxy-review.json` records the same build/hash, the exact reviewed sample IDs, the review result, reviewer, and `formalAssetsStarted: false`.
+5. Run the scope gate: `python3 <skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through spatialProxy`. This invokes the register and spatial-gate validators against the current project evidence. Only a passing record releases formal asset work. If geometry/layout/camera envelope changes afterward, regenerate dependent proxy evidence and repeat the gate before continuing.
+
+The inventory and review are evidence records, not self-proving claims: visually inspect the referenced proxy images and compare the frozen source against its inventory. A file called “proxy” that contains formal asset code, final materials, or finished details is not a spatial-only build. When the project uses version control, preserve the frozen snapshot as a commit or immutable archive as well as the hash.
+
+Example `proxy-inventory.json`:
+
+```json
+{
+  "stage": "spatial-proxy",
+  "buildId": "proxy-v01",
+  "sourceSha256": "<sha256 of the frozen source file>",
+  "renderMode": "neutral",
+  "formalAssetsStarted": false,
+  "formalAssetCount": 0,
+  "detailedMaterialCount": 0,
+  "detailGeneratorCount": 0,
+  "components": [
+    {"id": "main-landform", "role": "proxy"},
+    {"id": "circulation-network", "role": "proxy"},
+    {"id": "primary-volume", "role": "proxy"}
+  ]
+}
+```
+
+Example `proxy-review.json`:
+
+```json
+{
+  "result": "PASS",
+  "buildId": "proxy-v01",
+  "reviewedSourceSha256": "<same sha256 as proxy-inventory.json>",
+  "reviewedSampleIds": ["target-main", "orbit-000", "orbit-045"],
+  "reviewer": "reviewer name or role",
+  "formalAssetsStarted": false
+}
+```
 
 ## 3. Run two separate acceptance passes
 
 Every check is `PASS`, `FAIL`, or `NOT_RUN`. `NOT_APPLICABLE` is allowed only with a reason. A stage cannot pass while an applicable check is `FAIL` or `NOT_RUN`. A record must identify method and current-build evidence; a generic “checked” statement is not evidence.
+
+When the source register declares `sharedDrivers`, `dataIntegrity.consumerCheck` must be JSON that tests every declared driver and consumer. Change one meaningful driver input while holding other design inputs fixed; freeze seed, camera, resolution, and all unrelated inputs in `renderContract`. For each listed consumer, save distinct before/after outputs from the running build, record their SHA-256 values, and describe the observed response. The validator checks register hash, driver/consumer coverage, input change, paired output hashes, and file existence. It does not determine whether the change is semantically correct; inspect the paired outputs against the driver's meaning. If the field is declared but unused, shared-data integrity fails.
+
+Example `consumer-check.json`:
+
+```json
+{
+  "sourceRegisterSha256": "<sha256 of the exact spatial-register.json>",
+  "renderContract": {"seed": 7, "camera": "proxy-main", "resolution": [1280, 720], "otherInputsLocked": true},
+  "driverChecks": [{
+    "driverId": "wetness-field",
+    "inputChange": {"before": 0.2, "after": 0.8, "reason": "moves the wetness boundary across the test area"},
+    "consumers": [
+      {
+        "id": "bank-profile",
+        "baselineOutputSha256": "<sha256 of bank-before.png>",
+        "perturbedOutputSha256": "<sha256 of bank-after.png>",
+        "evidence": ["qa/bank-before.png", "qa/bank-after.png"],
+        "observedEffect": "wetness transition moves the bank profile"
+      },
+      {
+        "id": "plant-density",
+        "baselineOutputSha256": "<sha256 of plants-before.png>",
+        "perturbedOutputSha256": "<sha256 of plants-after.png>",
+        "evidence": ["qa/plants-before.png", "qa/plants-after.png"],
+        "observedEffect": "wet areas receive denser plants"
+      },
+      {
+        "id": "rock-roughness",
+        "baselineOutputSha256": "<sha256 of rock-before.png>",
+        "perturbedOutputSha256": "<sha256 of rock-after.png>",
+        "evidence": ["qa/rock-before.png", "qa/rock-after.png"],
+        "observedEffect": "roughness region follows the same boundary"
+      }
+    ]
+  }]
+}
+```
 
 | Check | Minimum method/evidence | What a pass means |
 |---|---|---|
@@ -44,6 +127,33 @@ For composition, set scene-specific goals before adjusting the camera: identify 
 
 For a complex terrain, include a plan diagnostic that overlays terrain guides, routes, zones and object anchors, plus at least two cross-sections through distinct terrain changes. For a simple flat interior, these terrain diagnostics are not applicable; inspect floor/wall, route, doorway and camera-clearance interfaces instead. Tailor evidence to the spatial problem without skipping the corresponding relation checks.
 
+### Bind view evidence to the promised camera domain
+
+Create `camera-envelope.json` from the viewing mode and limits requested in the brief or production spec. The gate record must point to it; do not describe only the screenshots actually taken, because that can silently narrow the promise. The contract records `mode`, `request.source`, `request.mode`, requested azimuth/polar-angle/distance bounds, implemented bounds, and an explicit `requiredSamples` list. A fixed/director-camera deliverable uses `viewEnvelope: NOT_APPLICABLE`; if a user requested free orbit, a narrower implementation is not a passing view envelope until the scope is agreed.
+
+For an interactive 360° orbit, cover the promised full azimuth at the representative viewing pitch/distance, both requested polar-angle limits at four cardinal azimuths, and the requested near/far distance endpoints at opposite cardinal azimuths. This is a 20-view starting matrix (8 horizontal + 8 pitch-limit + 4 distance-limit captures); add views for an underside, roof, transparent layer, narrow passage, or any other geometry likely to fail between those samples. If the contract allows different bounds, sample those exact limits. Each captured view has a stable `sampleId` and its actual `azimuthDeg`, `polarDeg`, `distance`, image evidence, readable content, occlusion and boundary findings. The numeric matrix proves coverage only; inspect images and operate the actual page separately under [交付验收](validation.md#交互相机验收).
+
+`polarDeg` follows spherical camera convention: `0°` is directly above the target, `90°` is level, `180°` is directly below. Generate the base matrix from the brief's exact bounds and store every row in `requiredSamples`:
+
+```js
+const requiredSamples = [];
+for (let azimuthDeg = 0; azimuthDeg < 360; azimuthDeg += 45) {
+  requiredSamples.push({ id: `orbit-${azimuthDeg}`, azimuthDeg, polarDeg: 90, distance: representativeDistance });
+}
+for (const azimuthDeg of [0, 90, 180, 270]) {
+  for (const polarDeg of [requestedPolarMin, requestedPolarMax]) {
+    requiredSamples.push({ id: `pitch-${azimuthDeg}-${polarDeg}`, azimuthDeg, polarDeg, distance: representativeDistance });
+  }
+}
+for (const azimuthDeg of [0, 180]) {
+  for (const distance of [requestedDistanceMin, requestedDistanceMax]) {
+    requiredSamples.push({ id: `distance-${azimuthDeg}-${distance}`, azimuthDeg, polarDeg: 90, distance });
+  }
+}
+```
+
+Set `representativeDistance` to an interior value from the requested range. If the requested polar range excludes `90°`, replace the representative pitch with a central allowed value. Do not alter requested limits just to make the matrix easier to pass.
+
 ### Fail-closed status
 
 Keep structural, geometric and visual status separate, for example:
@@ -51,10 +161,11 @@ Keep structural, geometric and visual status separate, for example:
 ```json
 {
   "dataIntegrity": {"status":"PASS", "sourceRegister":"spatial-register.json", "consumerCheck":"qa/register-consumer-check.json", "method":"change one register point and confirm the rendered path and plan move", "evidence":["qa/register-consumer-check.json"]},
+  "proxyStage": {"status":"NOT_RUN", "reason":"frozen neutral proxy has not been reviewed before formal asset work"},
   "surfaceQuality": {"status":"PASS", "guideOverlay":"qa/terrain-guides.png", "sections":["qa/section-across.svg", "qa/section-along.svg"], "method":"compare guide lines and emitted-mesh sections against intended landform changes", "evidence":["qa/terrain-guides.png", "qa/section-across.svg", "qa/section-along.svg"]},
   "routeFit": {"status":"NOT_RUN", "reason":"final route mesh has not been sampled against host geometry"},
   "supportContact": {"status":"NOT_APPLICABLE", "reason":"this scene has no separate support-bearing structures"},
-  "composition": {"status":"FAIL", "method":"unlabeled target-view thumbnail and full-frame review", "evidence":["qa/overview-gray.png"], "criteria":[{"criterion":"primary and secondary reads are distinguishable", "status":"FAIL"}]},
+  "composition": {"status":"FAIL", "buildId":"proxy-v01", "viewMode":"neutral-proxy", "method":"unlabeled target-view thumbnail and full-frame review", "evidence":["qa/overview-gray.png"], "criteria":[{"criterion":"primary and secondary reads are distinguishable", "status":"FAIL"}]},
   "viewEnvelope": {"status":"NOT_RUN", "reason":"orbit sectors have not been reviewed"}
 }
 ```
@@ -63,17 +174,18 @@ Do not display a combined “spatial pass” when any required geometric or visu
 
 | Category marked PASS | Required record fields |
 |---|---|
-| `dataIntegrity` | `sourceRegister` and `consumerCheck` file paths; the consumer check demonstrates the renderer/drawings use the source |
+| `proxyStage` | Frozen `sourceSnapshot` path and matching `sourceSha256`; `buildId`; valid `inventory` and `reviewRecord` JSON referencing that same build/hash; review includes unique `reviewedSampleIds`; neutral-only mode; zero formal assets, detailed materials, and detail generators; `formalAssetsStarted: false`; each major spatial component listed as a proxy |
+| `dataIntegrity` | `sourceRegister` and `consumerCheck` file paths; if `sharedDrivers` exists, the consumer check is JSON with a matching register SHA-256, one meaningful perturbation per driver, every registered consumer, changed output hashes and paired evidence files |
 | `surfaceQuality` | `guideOverlay` file path and at least two existing `sections` files for complex terrain; use `NOT_APPLICABLE` with reason for surfaces that do not need terrain analysis |
 | `routeFit` | `samples` file path plus numeric `maxEdgeDeviation` and `minClearance` from final route geometry against the final host mesh |
 | `supportContact` | `contactReport` file path covering all applicable bearing points/regions |
-| `composition` | `unlabeledViews` file path and nonempty `criteria` recording the declared composition goals and observed result |
-| `viewEnvelope` | `scope` and eight `views`, each with azimuth, evidence file, readable content, occlusion and boundary result |
+| `composition` | `viewMode: "neutral-proxy"`, matching proxy `buildId`, `unlabeledViews` file paths, and all six dimension records: `focus-and-hierarchy`, `environment-and-depth`, `negative-space-and-crop`, `critical-relations`, `scale-and-occupancy`, and `task-specific`; each PASS has its own current evidence image, and each NOT_APPLICABLE gives a reason |
+| `viewEnvelope` | Same `buildId` as `proxyStage`; a valid `contract` JSON linked to the user's viewing request; each contract `requiredSample` captured with matching coordinates, image evidence plus matching SHA-256, readable content, occlusion and boundary result; all sample IDs appear in the proxy review record |
 
 Use the optional record validator when producing a machine-readable gate record:
 
 ```sh
-python3 scripts/validate_spatial_gate.py path/to/spatial-gate.json
+python3 <skill-root>/scripts/validate_spatial_gate.py <project-root>/qa/spatial-gate.json
 ```
 
 The script checks coverage and status discipline; it does not inspect a mesh or replace visual review.

@@ -23,11 +23,13 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 ## 制作主链路
 
-制作任务先读[生产流程](references/production-workflow.md)与[统一验收](references/validation.md)。在进入空间搭建前，视觉分析必须按[视觉分析与空间交接SOP](references/visual-analysis-sop.md)交付证据索引、对象/接口关系、共享空间数据、平面/剖面和未知项；空间图与Three.js白模读取同一份登记表。用户只要求视觉分析时停在可建模交接包，不自行制作场景。开工按“用途/空间 → 形体/连接 → 材料/受光”组织设计：先安排全场分区、支撑和前中远组，用共同布局与表面数据驱动对象；再把决定身份的形体关系变成实际生成参数；最后在真实环境中校准材光。代表样件包括主形、交界两侧、承载与受光，选定后扩展同类资产。**空间搭建任务必须按[空间白模执行与放行](references/spatial-blockout.md)选表示、构建、逐项验收；几何算法再查[Three.js代码SOP](references/threejs-code-sop.md)。**具体构造进入[资产设计](references/asset-craft.md)及其分支方法，避免先完成孤立主体再补背景。
+制作任务先读[生产流程](references/production-workflow.md)与[统一验收](references/validation.md)。在进入空间搭建前，视觉分析必须按[视觉分析与空间交接SOP](references/visual-analysis-sop.md)交付证据索引、对象/接口关系、共享空间数据、平面/剖面和未知项；若一个场或布局驱动多个系统，登记其生产者与所有消费者。空间图与Three.js白模读取同一份登记表，并运行`<skill-root>/scripts/validate_scene_register.py <project-root>/design/scene-register.json`检查字段来源、端口解析、路由端点和空间坐标一致性。用户只要求视觉分析时停在可建模交接包，不自行制作场景。开工按“用途/空间 → 形体/连接 → 材料/受光”组织设计：先安排全场分区、支撑和前中远组，用共同布局与表面数据驱动对象；再把决定身份的形体关系变成实际生成参数；最后在真实环境中校准材光。代表样件包括主形、交界两侧、承载与受光，选定后扩展同类资产。**空间搭建任务必须按[空间白模执行与放行](references/spatial-blockout.md)选表示、构建、逐项验收；几何算法再查[Three.js代码SOP](references/threejs-code-sop.md)。**若登记了共享驱动场，须在固定seed、相机、分辨率和其他输入时，逐一对每个已声明消费者做前后扰动验证。具体构造进入[资产设计](references/asset-craft.md)及其分支方法，避免先完成孤立主体再补背景。
+
+**从任务开始记录可验证交接。**按用户的实际交付范围选择 `mechanism-test`、`analysis-only`、`spatial-handoff` 或 `full-production`，从[阶段交付契约](references/delivery-contract.md)和模板创建 `delivery-manifest.json`。每阶段记录真实输入/产物路径、SHA-256与该阶段`buildId`；后续阶段必须引用前序产物。场景制作先完成视觉分析和登记表校验；在空间代理前运行最小Three.js运行预检。完整制作在代理图阶段从Skill安装目录调用`<skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through spatialProxy`。仅该前置门禁通过后才开始正式资产。若运行预检或空间门禁为`BLOCKED`、`FAIL`或`NOT_RUN`，停在当前阶段，修复根因并重跑；环境无法恢复时交付当前阶段与阻塞证据，不继续造正式资产或把项目标成完整成品。最终按选定scope运行同一脚本；专项空间校验、真实浏览器运行和视觉审图仍需各自执行，总门禁不代替画面判断。
 
 新场景先实际渲染完整代理；已有场景可继承同目标、相同构建的有效部分。保留第一次完整代表画面，后续在相同关键机位查看局部改善是否仍保住全场关系。每批以实际产物衔接；按当前工项读取技术参考，工具输出截断时续读缺失段。
 
-**阶段门槛：** 新场景必须先交付实际运行的全场代理画面和审图结论，关键构图、空间层次或可达视向仍有空读时，先返回设计阶段；不得先完成细节资产、再补代理检查或用最终图代替。自由环绕任务还须先通过完整观看环的灰盒检查，具体检查按阶段2执行。
+**阶段门槛：** 新场景必须先交付实际运行的全场中性代理画面和审图结论，冻结源码快照与代理资产清单，并运行`<skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through spatialProxy`。记录必须证明同一代理构建使用中性材质、没有正式资产/细节生成，并覆盖当前承诺的观看范围；关键构图、空间层次或可达视向仍有空读时，先返回设计阶段。门禁通过前不得开始正式资产，也不得用已细化的最终图追认代理阶段。自由环绕任务还须先通过完整观看环的灰盒检查，具体检查按阶段2执行。
 
 ```mermaid
 flowchart TD
@@ -59,6 +61,8 @@ flowchart TD
 | **4 动画与交互** | 用绝对时间完整求值姿态、相机、显隐、FX、字幕和声音cue；共用变形后锚点与环境场。先主动作/因果反馈，再次级动作；影片与自由查看相机分别管理 | 关键事件前中后帧、连续片段、乱序seek结果、可操作的播放/相机模式 |
 | **5 验证交付** | 从当前版本构建最终文件；检查连续播放、交互、声音、性能、资源和媒体属性，分别记录结果；检查用户实际打开的文件 | 最终HTML/媒体、源码和必需资产、来源/许可、构建运行说明、当前版本验收证据与未覆盖项 |
 
+每阶段产物按[阶段交付契约](references/delivery-contract.md)写入manifest；用户只要求某一阶段时，只验证该scope，不自行扩成完整制作。完整制作须在中性代理放行前运行总门禁的`--through spatialProxy`检查，并在最终交付时无参数运行；门禁失败意味着缺产物、断交接或验证未完成，返回对应阶段修复。
+
 ### 品质如何进入第一批实现
 
 [资产设计](references/asset-craft.md)负责从视觉基准到设计选择，再到几何、材料和布局的转译；这是资产开工前的必读方法。
@@ -86,6 +90,7 @@ flowchart TD
 | 当前工作 | 参考的唯一职责 |
 |---|---|
 | 从视觉证据拆解场地/对象/接口，交接给空间搭建 | [视觉分析与空间交接](references/visual-analysis-sop.md) |
+| 按用户范围登记阶段产物、验证交接与当前构建 | [阶段交付契约](references/delivery-contract.md) |
 | 从需求到交付、阶段产物、职责交接 | [生产流程](references/production-workflow.md) |
 | 参考图转规格、形体/材料设计、资产路线与空间布局 | [资产设计](references/asset-craft.md) |
 | 编写几何、生成器、共享语义场、受控散布、程序材质/FX与基础时间函数 | [Three.js代码方法](references/threejs-code-sop.md)，按目录读取对应章节 |
