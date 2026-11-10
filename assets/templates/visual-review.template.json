@@ -4,13 +4,13 @@
   "reviewer": "reviewer-name",
   "reviewedSampleIds": ["hero-front", "orbit-back"],
   "checks": [
-    {"dimension": "composition", "status": "NOT_RUN", "observation": ""},
-    {"dimension": "spatial-depth", "status": "NOT_RUN", "observation": ""},
-    {"dimension": "middle-form", "status": "NOT_RUN", "observation": ""},
-    {"dimension": "detail-distribution", "status": "NOT_RUN", "observation": ""},
-    {"dimension": "material-lighting", "status": "NOT_RUN", "observation": ""},
-    {"dimension": "orbit-coverage", "status": "NOT_RUN", "observation": ""},
-    {"dimension": "interaction", "status": "NOT_RUN", "observation": ""}
+    {"dimension": "composition", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+    {"dimension": "spatial-depth", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+    {"dimension": "middle-form", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+    {"dimension": "detail-distribution", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+    {"dimension": "material-lighting", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+    {"dimension": "orbit-coverage", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+    {"dimension": "interaction", "status": "NOT_RUN", "observation": "", "sampleIds": []}
   ],
   "familyReviews": [
     {
@@ -18,12 +18,12 @@
       "status": "NOT_RUN",
       "reviewedSampleIds": ["hero-front", "orbit-back"],
       "checks": [
-        {"dimension": "silhouette", "status": "NOT_RUN", "observation": ""},
-        {"dimension": "volume-transition", "status": "NOT_RUN", "observation": ""},
-        {"dimension": "connections-support", "status": "NOT_RUN", "observation": ""},
-        {"dimension": "material-response", "status": "NOT_RUN", "observation": ""},
-        {"dimension": "spatial-relation", "status": "NOT_RUN", "observation": ""},
-        {"dimension": "detail-scale", "status": "NOT_RUN", "observation": ""}
+        {"dimension": "silhouette", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+        {"dimension": "volume-transition", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+        {"dimension": "connections-support", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+        {"dimension": "material-response", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+        {"dimension": "spatial-relation", "status": "NOT_RUN", "observation": "", "sampleIds": []},
+        {"dimension": "detail-scale", "status": "NOT_RUN", "observation": "", "sampleIds": []}
       ],
       "featureReviews": [
         {"featureId": "ground-profile", "status": "NOT_RUN", "observation": "", "reviewedSampleIds": []},

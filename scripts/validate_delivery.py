@@ -326,7 +326,8 @@ def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids:
     if not isinstance(report.get("reviewer"), str) or not report["reviewer"].strip():
         issues.append("visualReview: report requires a reviewer")
     reviewed = report.get("reviewedSampleIds")
-    if not isinstance(reviewed, list) or set(reviewed) != capture_ids or len(reviewed) != len(capture_ids):
+    reviewed_ids = {sample for sample in reviewed if isinstance(sample, str)} if isinstance(reviewed, list) else set()
+    if not isinstance(reviewed, list) or len(reviewed_ids) != len(reviewed) or reviewed_ids != capture_ids:
         issues.append("visualReview: reviewedSampleIds must match every runtime capture exactly")
     checks = report.get("checks")
     found: set[str] = set()
@@ -349,6 +350,10 @@ def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids:
                 issues.append(f"visualReview: {dimension} must PASS or be explicitly NOT_APPLICABLE")
             if status == "PASS" and (not isinstance(check.get("observation"), str) or not check["observation"].strip()):
                 issues.append(f"visualReview: {dimension} PASS requires a concrete observation")
+            if status == "PASS":
+                sample_ids = check.get("sampleIds")
+                if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(capture_ids):
+                    issues.append(f"visualReview: {dimension} PASS requires sampleIds from runtime captures")
             if status == "NOT_APPLICABLE" and (dimension not in {"orbit-coverage", "interaction"} or camera_mode == "interactive-orbit" or not isinstance(check.get("reason"), str) or not check["reason"].strip()):
                 issues.append(f"visualReview: {dimension} NOT_APPLICABLE requires a fixed-camera reason")
             if camera_mode == "interactive-orbit" and dimension in {"orbit-coverage", "interaction"} and status != "PASS":
@@ -597,6 +602,7 @@ def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any]
         samples = record.get("reviewedSampleIds")
         if not isinstance(samples, list) or not samples or any(not isinstance(sample, str) for sample in samples) or not set(samples).issubset(capture_ids):
             issues.append(f"visualReview: family {family_id} needs reviewedSampleIds from runtime captures")
+        family_sample_ids = {sample for sample in samples if isinstance(sample, str)} if isinstance(samples, list) else set()
         if record.get("status") != "PASS":
             issues.append(f"visualReview: family {family_id} must PASS")
         checks = record.get("checks")
@@ -618,6 +624,9 @@ def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any]
             check = seen[dimension]
             if check.get("status") != "PASS" or not isinstance(check.get("observation"), str) or not check["observation"].strip():
                 issues.append(f"visualReview: family {family_id} {dimension} requires PASS with a concrete observation")
+            sample_ids = check.get("sampleIds")
+            if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(family_sample_ids & capture_ids):
+                issues.append(f"visualReview: family {family_id} {dimension} requires sampleIds from this family's reviewed runtime captures")
         feature_ids = family.get("visualFeatureIds", []) if isinstance(family, dict) else []
         feature_reviews = item.get("featureReviews")
         if not isinstance(feature_reviews, list):
@@ -637,8 +646,8 @@ def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any]
             sample_ids = feature_review.get("reviewedSampleIds")
             if feature_review.get("status") != "PASS" or not isinstance(feature_review.get("observation"), str) or len(feature_review["observation"].strip()) < 20:
                 issues.append(f"visualReview: family {family_id} feature {feature_id} requires PASS with a concrete observation")
-            if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(capture_ids):
-                issues.append(f"visualReview: family {family_id} feature {feature_id} needs runtime capture evidence")
+            if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(family_sample_ids & capture_ids):
+                issues.append(f"visualReview: family {family_id} feature {feature_id} needs capture evidence from this family's reviewed runtime views")
 
 
 def validate_visual_reference_index(base: Path, register_path: Any, index_path: Any, stage: Any, issues: list[str]) -> None:

@@ -663,12 +663,45 @@ class DeliveryManifestTests(unittest.TestCase):
         }]}
         review = {"familyReviews": [{
             "familyId": "foliage", "status": "PASS", "reviewedSampleIds": ["front", "orbit-back"],
-            "checks": [{"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension}"} for dimension in required],
+            "checks": [{"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension}", "sampleIds": ["front"]} for dimension in required],
             "featureReviews": [{"featureId": feature_id, "status": "PASS", "observation": f"Observed the mapped {feature_id} in the final scene.", "reviewedSampleIds": ["front"]} for feature_id in ("ground-profile", "ground-layer", "ground-material")],
         }]}
         issues: list[str] = []
         validate_delivery.validate_asset_family_reviews(ledger, review, {"front", "orbit-back"}, issues)
         self.assertEqual([], issues)
+
+    def test_family_review_checks_must_cite_views_that_include_the_family(self) -> None:
+        required = validate_delivery.ASSET_CHECKS_BY_PRIORITY["ambient"]
+        ledger = {"families": [{
+            "id": "foliage", "priority": "ambient", "objectIds": ["ground"], "routeIds": [],
+            "visualFeatureIds": ["ground-profile", "ground-layer", "ground-material"],
+            "requiredChecks": [{"dimension": dimension, "criterion": "Visible criterion"} for dimension in required],
+        }]}
+        review = {"familyReviews": [{
+            "familyId": "foliage", "status": "PASS", "reviewedSampleIds": ["front"],
+            "checks": [{"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension}", "sampleIds": ["orbit-back"]} for dimension in required],
+            "featureReviews": [{"featureId": feature_id, "status": "PASS", "observation": f"Observed the mapped {feature_id} in the final scene.", "reviewedSampleIds": ["front"]} for feature_id in ("ground-profile", "ground-layer", "ground-material")],
+        }]}
+        issues: list[str] = []
+        validate_delivery.validate_asset_family_reviews(ledger, review, {"front", "orbit-back"}, issues)
+        self.assertTrue(any("requires sampleIds from this family's reviewed runtime captures" in issue for issue in issues))
+
+    def test_visual_review_dimensions_require_specific_runtime_samples(self) -> None:
+        capture_ids = {"front", "orbit-back"}
+        dimensions = sorted(validate_delivery.REVIEW_DIMENSIONS)
+        report = {
+            "status": "PASS", "buildId": "scene-v1", "reviewer": "visual reviewer",
+            "reviewedSampleIds": sorted(capture_ids),
+            "checks": [{"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension} in the rendered scene.", "sampleIds": ["front"]} for dimension in dimensions],
+        }
+        issues: list[str] = []
+        validate_delivery._validate_visual_review(self.root, self.write_manifest(report).name, "scene-v1", capture_ids, "interactive-orbit", issues)
+        self.assertFalse(any("PASS requires sampleIds" in issue for issue in issues))
+        report["checks"][0].pop("sampleIds")
+        path = self.write_manifest(report)
+        issues = []
+        validate_delivery._validate_visual_review(self.root, path.name, "scene-v1", capture_ids, "interactive-orbit", issues)
+        self.assertTrue(any("PASS requires sampleIds from runtime captures" in issue for issue in issues))
 
     def test_unedited_visual_review_template_cannot_pass_family_gate(self) -> None:
         template_dir = SCRIPT_DIR.parent / "assets" / "templates"

@@ -29,7 +29,7 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 视觉分析必须交接两份互补证据：参考图像索引记录实际文件、SHA-256、视角覆盖、用途、限制及被覆盖的场景ID；视觉到构建映射则把每个可渲染对象/路径的可见特征转为可检查的设计约束和具体Three.js建造方案。平面/剖面生成后还要渲染到目标阅读尺寸，逐图对照登记表检查图幅、标注、路线、支撑和高程，并把预览图哈希纳入visualAnalysis证据；用`assets/templates/diagram-review.template.json`创建`diagramReviewReportPath`，门禁会阻止缺预览、PNG头部或尺寸不合格；审阅者还必须确认图面内容可读。文件可解析或哈希匹配不代表图纸可读。全貌图不能代替单体、连接和材质细节图；索引通过也不代表Agent已把参考落实到几何。使用[视觉分析SOP](references/visual-analysis-sop.md#build-the-visual-reference-packet)、`assets/templates/visual-reference-index.template.json`和`assets/templates/visual-build-map.template.json`，在manifest填写`visualReferenceIndexPath`及`visualBuildMapPath`并纳入`visualAnalysis`证据。
 
-完整制作进入中层形体时，按[资产族台账](references/delivery-contract.md#runtime-and-review-evidence)把场景登记表中的每个可渲染对象和路径映射到焦点、支撑或环境资产族；逐族定义适用的形体、连接、材质、空间关系和细节检查。最终审图必须用当前运行截图覆盖每个资产族，总体构图通过不能代替逐族审查。按交付契约的模板和manifest字段记录，完整制作门禁会检查覆盖与证据关联。
+完整制作进入中层形体时，按[资产族台账](references/delivery-contract.md#runtime-and-review-evidence)把场景登记表中的每个可渲染对象和路径映射到焦点、支撑或环境资产族；逐族定义适用的形体、连接、材质、空间关系和细节检查。最终审图必须用当前运行截图覆盖每个资产族；每项总体维度、资产检查和视觉特征PASS都要列出具体`sampleIds`，资产族/特征只能引用确实包含该对象的运行视角。总体构图通过不能代替逐族审查。按交付契约的模板和manifest字段记录，完整制作门禁会检查覆盖与证据关联。
 
 新场景先实际渲染完整代理；已有场景可继承同目标、相同构建的有效部分。保留第一次完整代表画面，后续在相同关键机位查看局部改善是否仍保住全场关系。每批以实际产物衔接；按当前工项读取技术参考，工具输出截断时续读缺失段。
 
