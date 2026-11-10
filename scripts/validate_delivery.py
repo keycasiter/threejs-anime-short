@@ -39,6 +39,12 @@ REVIEW_DIMENSIONS = {
     "composition", "spatial-depth", "middle-form", "detail-distribution",
     "material-lighting", "orbit-coverage", "interaction",
 }
+RENDERABLE_ROLES = {"solid", "surface", "path"}
+ASSET_INTEGRITY_CHECKS = (
+    "silhouette", "volume-transition", "connections-support",
+    "material-response", "spatial-relation", "detail-scale",
+)
+ASSET_CHECKS_BY_PRIORITY = {priority: ASSET_INTEGRITY_CHECKS for priority in ("focal", "supporting", "ambient")}
 
 
 def _resolve(base: Path, value: Any) -> Path | None:
@@ -321,6 +327,236 @@ def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids:
         issues.append("visualReview: missing checks: " + ", ".join(sorted(missing)))
 
 
+def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_path: Any, stage: Any, issues: list[str]) -> set[str]:
+    """Require every renderable registered object/route to belong to one reviewed asset family."""
+    register_file = _resolve(base, scene_register_path)
+    ledger_file = _resolve(base, asset_ledger_path)
+    if register_file is None:
+        issues.append("assetLedger: sceneRegisterPath must reference an existing JSON file")
+        return set()
+    if ledger_file is None:
+        issues.append("assetLedgerPath must reference an existing project JSON file")
+        return set()
+    ledger_digest = _hash(ledger_file)
+    evidence = stage.get("evidence", []) if isinstance(stage, dict) else []
+    if not any(isinstance(item, dict) and item.get("path") == asset_ledger_path and item.get("sha256") == ledger_digest for item in evidence):
+        issues.append("middleForms evidence must include assetLedgerPath with its SHA-256")
+    register, ledger = _load_json(register_file), _load_json(ledger_file)
+    if register is None or ledger is None:
+        issues.append("assetLedger and sceneRegister must be readable JSON objects")
+        return set()
+    renderables: set[tuple[str, str]] = set()
+    for obj in register.get("objects", []):
+        if isinstance(obj, dict) and obj.get("geometryRole") in RENDERABLE_ROLES and isinstance(obj.get("id"), str):
+            renderables.add(("object", obj["id"]))
+    for route in register.get("routes", []):
+        if isinstance(route, dict) and isinstance(route.get("id"), str):
+            renderables.add(("route", route["id"]))
+    families = ledger.get("families")
+    if not isinstance(families, list) or not families:
+        issues.append("assetLedger.families must be a nonempty list")
+        return set()
+    covered: dict[tuple[str, str], str] = {}
+    family_ids: set[str] = set()
+    for index, family in enumerate(families):
+        label = f"assetLedger.families[{index}]"
+        if not isinstance(family, dict):
+            issues.append(f"{label} must be an object")
+            continue
+        family_id, priority = family.get("id"), family.get("priority")
+        if not isinstance(family_id, str) or not family_id.strip():
+            issues.append(f"{label}.id must be a nonempty stable ID")
+            continue
+        if family_id in family_ids:
+            issues.append(f"assetLedger has duplicate family id {family_id}")
+        family_ids.add(family_id)
+        expected = ASSET_CHECKS_BY_PRIORITY.get(priority)
+        if expected is None:
+            issues.append(f"{label}.priority must be focal, supporting, or ambient")
+            expected = ()
+        for field, entity_type in (("objectIds", "object"), ("routeIds", "route")):
+            values = family.get(field, [])
+            if not isinstance(values, list) or any(not isinstance(value, str) or not value.strip() for value in values):
+                issues.append(f"{label}.{field} must be a list of stable IDs")
+                continue
+            if len(set(values)) != len(values):
+                issues.append(f"{label}.{field} contains duplicate IDs")
+            for entity_id in values:
+                key = (entity_type, entity_id)
+                if key in covered:
+                    issues.append(f"asset {entity_type} {entity_id} is assigned to multiple families")
+                covered[key] = family_id
+        checks = family.get("requiredChecks")
+        if not isinstance(checks, list):
+            issues.append(f"{label}.requiredChecks must be a list")
+            continue
+        found_checks: set[str] = set()
+        for check in checks:
+            if not isinstance(check, dict):
+                issues.append(f"{label}.requiredChecks entries must be objects")
+                continue
+            dimension, criterion = check.get("dimension"), check.get("criterion")
+            if not isinstance(dimension, str) or dimension not in expected:
+                issues.append(f"{label} has unexpected check dimension {dimension}")
+                continue
+            if dimension in found_checks:
+                issues.append(f"{label} has duplicate check dimension {dimension}")
+            found_checks.add(dimension)
+            if not isinstance(criterion, str) or not criterion.strip():
+                issues.append(f"{label} check {dimension} requires a concrete criterion")
+        missing_checks = set(expected) - found_checks
+        if missing_checks:
+            issues.append(f"{label} missing required checks: " + ", ".join(sorted(missing_checks)))
+        if not family.get("objectIds") and not family.get("routeIds"):
+            issues.append(f"{label} must include at least one object or route")
+    missing_assets = renderables - set(covered)
+    unknown_assets = set(covered) - renderables
+    if missing_assets:
+        issues.append("assetLedger has unmapped renderable scene IDs: " + ", ".join(f"{kind}:{id}" for kind, id in sorted(missing_assets)))
+    if unknown_assets:
+        issues.append("assetLedger references unknown or nonrenderable scene IDs: " + ", ".join(f"{kind}:{id}" for kind, id in sorted(unknown_assets)))
+    return family_ids
+
+
+def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any], capture_ids: set[str], issues: list[str]) -> None:
+    families = ledger.get("families", [])
+    expected_ids = {item.get("id") for item in families if isinstance(item, dict) and isinstance(item.get("id"), str)}
+    records = review.get("familyReviews")
+    if not isinstance(records, list):
+        issues.append("visualReview: familyReviews must cover every asset family")
+        return
+    by_id: dict[str, dict[str, Any]] = {}
+    for item in records:
+        if not isinstance(item, dict) or not isinstance(item.get("familyId"), str):
+            issues.append("visualReview: each familyReviews entry requires familyId")
+            continue
+        family_id = item["familyId"]
+        if family_id in by_id:
+            issues.append(f"visualReview: duplicate family review {family_id}")
+        by_id[family_id] = item
+    if set(by_id) != expected_ids:
+        issues.append("visualReview: familyReviews must cover every asset family exactly once")
+    family_by_id = {item["id"]: item for item in families if isinstance(item, dict) and isinstance(item.get("id"), str)}
+    for family_id in expected_ids & set(by_id):
+        record = by_id[family_id]
+        samples = record.get("reviewedSampleIds")
+        if not isinstance(samples, list) or not samples or not set(samples).issubset(capture_ids):
+            issues.append(f"visualReview: family {family_id} needs reviewedSampleIds from runtime captures")
+        if record.get("status") != "PASS":
+            issues.append(f"visualReview: family {family_id} must PASS")
+        checks = record.get("checks")
+        family = family_by_id[family_id]
+        required_checks = family.get("requiredChecks", [])
+        if not isinstance(required_checks, list):
+            required_checks = []
+        required = {item.get("dimension") for item in required_checks if isinstance(item, dict) and isinstance(item.get("dimension"), str)}
+        seen: dict[str, dict[str, Any]] = {}
+        if isinstance(checks, list):
+            for check in checks:
+                if isinstance(check, dict) and isinstance(check.get("dimension"), str):
+                    seen[check["dimension"]] = check
+        else:
+            issues.append(f"visualReview: family {family_id} checks must be a list")
+        if set(seen) != required:
+            issues.append(f"visualReview: family {family_id} checks must cover every required dimension exactly")
+        for dimension in required & set(seen):
+            check = seen[dimension]
+            if check.get("status") != "PASS" or not isinstance(check.get("observation"), str) or not check["observation"].strip():
+                issues.append(f"visualReview: family {family_id} {dimension} requires PASS with a concrete observation")
+
+
+def validate_visual_reference_index(base: Path, register_path: Any, index_path: Any, stage: Any, issues: list[str]) -> None:
+    """Require an image-backed, scene-wide visual reference handoff before modeling."""
+    register_file = _resolve(base, register_path)
+    index_file = _resolve(base, index_path)
+    if register_file is None:
+        issues.append("visualReferences: sceneRegisterPath must reference an existing JSON file")
+        return
+    if index_file is None:
+        issues.append("visualReferenceIndexPath must reference an existing project JSON file")
+        return
+    index_digest = _hash(index_file)
+    evidence = stage.get("evidence", []) if isinstance(stage, dict) else []
+    if not any(isinstance(item, dict) and item.get("path") == index_path and item.get("sha256") == index_digest for item in evidence):
+        issues.append("visualAnalysis evidence must include visualReferenceIndexPath with its SHA-256")
+    register, index = _load_json(register_file), _load_json(index_file)
+    if register is None or index is None:
+        issues.append("visualReferenceIndex and sceneRegister must be readable JSON objects")
+        return
+    references = index.get("references")
+    if not isinstance(references, list) or not references:
+        issues.append("visualReferenceIndex.references must be a nonempty list")
+        return
+    valid_families = {"global", "plan", "section", "asset-overview", "asset-detail", "joint-detail", "material"}
+    valid_sources = {"user", "public", "generated-design", "generated-diagram"}
+    target_ids: dict[tuple[str, str], set[str]] = {}
+    family_directions: dict[str, set[str]] = {}
+    reference_ids: set[str] = set()
+    for i, reference in enumerate(references):
+        label = f"visualReferenceIndex.references[{i}]"
+        if not isinstance(reference, dict):
+            issues.append(f"{label} must be an object")
+            continue
+        ref_id, source_type = reference.get("id"), reference.get("sourceType")
+        if not isinstance(ref_id, str) or not ref_id.strip():
+            issues.append(f"{label}.id must be a nonempty stable ID")
+        elif ref_id in reference_ids:
+            issues.append(f"visualReferenceIndex has duplicate reference id {ref_id}")
+        else:
+            reference_ids.add(ref_id)
+        if source_type not in valid_sources:
+            issues.append(f"{label}.sourceType must be user, public, generated-design, or generated-diagram")
+        for field in ("source", "viewDirection", "purpose"):
+            if not isinstance(reference.get(field), str) or not reference[field].strip():
+                issues.append(f"{label}.{field} must describe source, view, and purpose")
+        limits = reference.get("limits")
+        if not isinstance(limits, list) or not limits or any(not isinstance(value, str) or not value.strip() for value in limits):
+            issues.append(f"{label}.limits must state what the reference cannot prove")
+        if reference.get("confidence") not in {"high", "medium", "low"}:
+            issues.append(f"{label}.confidence must be high, medium, or low")
+        family = reference.get("viewFamily")
+        if family not in valid_families:
+            issues.append(f"{label}.viewFamily is not recognized")
+        else:
+            family_directions.setdefault(family, set()).add(str(reference.get("viewDirection", "")).strip().lower())
+        path = _resolve(base, reference.get("path"))
+        if path is None:
+            issues.append(f"{label}.path must reference an existing project image or drawing")
+        elif not isinstance(reference.get("sha256"), str) or reference.get("sha256") != _hash(path):
+            issues.append(f"{label}.sha256 must match the referenced image or drawing")
+        targets = reference.get("targetIds")
+        if not isinstance(targets, list):
+            issues.append(f"{label}.targetIds must be a list of scene-register IDs")
+            continue
+        for target in targets:
+            if not isinstance(target, dict) or target.get("type") not in {"object", "route"} or not isinstance(target.get("id"), str):
+                issues.append(f"{label}.targetIds entries require type object/route and stable id")
+                continue
+            key = (target["type"], target["id"])
+            target_ids.setdefault(key, set()).add(family if isinstance(family, str) else "")
+    if len(family_directions.get("global", set())) < 2:
+        issues.append("visualReferenceIndex requires at least two distinct global view directions")
+    if not (family_directions.get("plan") or family_directions.get("section")):
+        issues.append("visualReferenceIndex requires a plan or section view")
+    objects = register.get("objects", [])
+    routes = register.get("routes", [])
+    renderables = {
+        ("object", item["id"]) for item in objects
+        if isinstance(item, dict) and item.get("geometryRole") in RENDERABLE_ROLES and isinstance(item.get("id"), str)
+    } | {
+        ("route", item["id"]) for item in routes
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    unknown = set(target_ids) - renderables
+    if unknown:
+        issues.append("visualReferenceIndex targets unknown/nonrenderable IDs: " + ", ".join(f"{kind}:{item_id}" for kind, item_id in sorted(unknown)))
+    for kind, item_id in sorted(renderables):
+        families = target_ids.get((kind, item_id), set())
+        expected_views = {"asset-overview", "asset-detail", "joint-detail", "material"} if kind == "object" else {"plan", "section", "asset-overview", "asset-detail"}
+        if not (families & expected_views):
+            issues.append(f"visualReferenceIndex needs an object/route-focused reference for {kind}:{item_id}")
+
+
 def validate_data(data: Any, base: Path, through: str | None = None) -> list[str]:
     issues: list[str] = []
     if not isinstance(data, dict):
@@ -410,6 +646,14 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
             if not any(item[0] == register_rel for item in stage_outputs.get("visualAnalysis", set())):
                 issues.append("visualAnalysis evidence must include sceneRegisterPath with its SHA-256")
             _run_specialist("validate_scene_register.py", register, base, "visualAnalysis", issues)
+            validate_visual_reference_index(
+                base, register_rel, data.get("visualReferenceIndexPath"), by_id.get("visualAnalysis", {}), issues,
+            )
+
+        if "middleForms" in required_stages:
+            validate_asset_ledger(
+                base, register_rel, data.get("assetLedgerPath"), by_id.get("middleForms", {}), issues,
+            )
 
         if "spatialProxy" in required_stages:
             proxy_stage = by_id.get("spatialProxy", {})
@@ -452,6 +696,12 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
             review_stage = by_id.get("visualReview", {})
             camera_contract = _load_json(camera_contract_file) if camera_contract_file else None
             _validate_visual_review(base, review_stage.get("visualReviewReport"), review_stage.get("buildId", ""), runtime_ids, camera_contract.get("mode", "") if camera_contract else "", issues)
+            ledger_path = _resolve(base, data.get("assetLedgerPath"))
+            review_path = _resolve(base, review_stage.get("visualReviewReport"))
+            ledger_data = _load_json(ledger_path) if ledger_path else None
+            review_data = _load_json(review_path) if review_path else None
+            if ledger_data is not None and review_data is not None:
+                validate_asset_family_reviews(ledger_data, review_data, runtime_ids, issues)
         if "delivery" in required_stages:
             delivery = by_id.get("delivery", {})
             deliverables = data.get("deliverables")

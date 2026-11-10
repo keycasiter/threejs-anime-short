@@ -13,17 +13,17 @@ Start with the user's requested deliverable. Do not force a full production when
 | `spatial-handoff` | `direction`, `visualAnalysis`, `runtimePreflight`, `spatialProxy` | Delivering a validated spatial plan and neutral Three.js proxy |
 | `full-production` | all eleven stages | Delivering a finished Three.js scene, interactive page, animation, or film |
 
-Use `../assets/templates/delivery-manifest.template.json` as the starting point for full production. Remove stages outside the chosen mode. The user may define a narrower deliverable explicitly; record that scope and validate its matching mode.
+Use `../assets/templates/delivery-manifest.template.json` as the starting point for full production, `../assets/templates/asset-ledger.template.json` for the per-family review inventory, and `../assets/templates/visual-review.template.json` for the final review record. Replace every example ID and observation with evidence from the current build. Remove stages outside the chosen mode. The user may define a narrower deliverable explicitly; record that scope and validate its matching mode.
 
 ## Stage order and handoff rules
 
 The ordered stage IDs are:
 
 1. `direction` — selected target, visual brief, format and viewing mode.
-2. `visualAnalysis` — evidence index, object/relationship register, dimensions, coordinate frame, plan/sections and unknowns. In `analysis-only`, `spatial-handoff` and `full-production`, `sceneRegisterPath` points to the machine-readable register and this stage hashes that file as evidence.
+2. `visualAnalysis` — image-backed visual reference index, object/relationship register, dimensions, coordinate frame, plan/sections and unknowns. In `analysis-only`, `spatial-handoff` and `full-production`, `sceneRegisterPath` and `visualReferenceIndexPath` point to machine-readable artifacts and this stage hashes both as evidence. The index must contain distinct global views, a plan/section view, and a focused reference for each renderable object/route; the image files and hashes must be present in the project.
 3. `runtimePreflight` — a minimal running Three.js page verifies the target browser, WebGL backend, dependency source and server path before scene implementation. It records a real canvas capture, browser/version, backend, dependency strategy, errors and failed requests.
 4. `spatialProxy` — frozen neutral Three.js proxy, asset inventory, review record, camera contract and spatial gate. `spatialGatePath` points to the gate; its proxy stage must precede formal asset work.
-5. `middleForms` — actual major geometry and connection methods, with representative renders or geometric checks.
+5. `middleForms` — actual major geometry and connection methods, with representative renders or geometric checks. `assetLedgerPath` points to a machine-readable ledger grouping every renderable scene-register object and route into reviewable asset families. Each family names its priority and required visual checks; this stage hashes the ledger as evidence.
 6. `detailDistribution` — constrained placement and scale/density evidence for detail families.
 7. `lookdev` — material/light setup and fixed-view comparisons on the current build.
 8. `cameraMotion` — final camera domain, animation/interactivity samples and control behavior.
@@ -39,7 +39,7 @@ Stage status must be `PASS` for the selected scope. `FAIL` and `NOT_RUN` remain 
 
 Complete visual analysis and validate the register first. Then run the runtime preflight before scene implementation. Run the delivery validator through the neutral proxy before making formal assets; that command also runs the scene-register and spatial-gate validators. Then validate the full manifest before delivery.
 
-The preflight report records `status`, its stage `buildId`, `threeVersion`, `browser`, initialized `renderer`, `dependencyStrategy`, empty `consoleErrors`/`failedRequests`, and a hashed capture of the minimal Three.js canvas. Start from `../assets/templates/runtime-preflight.template.json`. Choose the dependency strategy from the requested environment: local bundle/vendor files for offline delivery, or a pinned remote module only when network availability is part of the target. The preflight must resolve the same source/version and addon family planned for the scene.
+The preflight report records `status`, its stage `buildId`, `threeVersion`, `browser`, initialized `renderer`, `dependencyStrategy`, empty `consoleErrors`/`failedRequests`, and a hashed capture of the minimal Three.js canvas. Start from `../assets/templates/runtime-preflight.template.json`. Choose the dependency strategy from the requested environment: local bundle/vendor files for offline delivery, or a pinned remote module only when network availability is part of the target. The preflight must resolve the same source/version and addon family planned for the scene. For native ESM, vendor the complete transitive import graph or bundle it into the selected entry; a copied `three.module.js` may still import sibling core/addon files. Preserve the package license. Run `validate_offline_html.mjs` to check local markup resources and statically discoverable module imports, then run the actual preflight in the target browser: computed fetch paths, workers and renderer initialization require runtime evidence.
 
 ```bash
 python3 <skill-root>/scripts/validate_scene_register.py <project-root>/design/scene-register.json
@@ -49,7 +49,7 @@ python3 <skill-root>/scripts/validate_delivery.py <project-root>/delivery-manife
 
 For an analysis-only or spatial handoff, run the final command with its matching mode. The `--through STAGE_ID` option checks only the required prefix through that stage, which lets a full-production manifest release the proxy before downstream stages exist. Resolve `<skill-root>` from the invoked Skill package and keep `<project-root>` at the directory containing the manifest; do not assume the scene project and Skill package share a working directory.
 
-The validator checks file existence, project-relative paths, SHA-256 values, stage order, stage-specific build IDs, prior-stage input provenance, required scope coverage, the preflight report, scene register, spatial gate, final runtime error/request status, camera-sample coverage, review coverage and final deliverable hashes. It prints `DELIVERY_PASS` only when the selected contract is complete. It does not launch the browser or judge visual quality; it validates the captured runtime and human-review records supplied by the producer. Inspect the actual captures and geometry before marking visual checks PASS.
+The validator checks file existence, project-relative paths, SHA-256 values, stage order, stage-specific build IDs, prior-stage input provenance, required scope coverage, the preflight report, scene register, spatial gate, complete asset-family mapping, final runtime error/request status, camera-sample coverage, per-family review coverage and final deliverable hashes. It prints `DELIVERY_PASS` only when the selected contract is complete. It does not launch the browser or judge visual quality; it validates the captured runtime and human-review records supplied by the producer. Inspect the actual captures and geometry before marking visual checks PASS.
 
 ## Runtime and review evidence
 
@@ -73,6 +73,8 @@ The validator checks file existence, project-relative paths, SHA-256 values, sta
 Use the actual bundled/imported Three.js version and browser. Every capture ID must match a declared `requiredSamples` ID and include its image hash; when sample coordinates are present, the capture coordinates must match. The snippet shows one capture record; list every required capture in the report. A full 360-degree contract requires at least 20 envelope samples: eight roughly even azimuths, pitch endpoints at four cardinal azimuths, and near/far distance endpoints. Extra views are required for undersides, backs, transparent elements, narrow passages and other scene-specific risks. A capture list establishes sampling coverage, not visual quality.
 
 `visualReviewReport` points to JSON with the same `buildId`, a named reviewer, the exact set of runtime `reviewedSampleIds`, and concrete observations for each dimension: `composition`, `spatial-depth`, `middle-form`, `detail-distribution`, `material-lighting`, `orbit-coverage`, and `interaction`. Applicable checks need a concrete PASS observation. A fixed-camera delivery may mark `orbit-coverage` and `interaction` `NOT_APPLICABLE` with a reason; an interactive-orbit delivery must pass both. Review images remain linked by the runtime capture IDs and hashes.
+
+The review must also contain a `familyReviews` entry for every family in the asset ledger. Each entry names runtime sample IDs that visibly include that family and records a concrete PASS observation for every required check in that family. All priorities share the same minimum integrity checks: silhouette, volume transition, connections/support, material response, spatial relation and detail scale. Priority determines where pixel density and refinement effort go; it does not excuse incomplete geometry, floating parts, broken connections or unreadable material behavior. Group repeated instances only when they share a form/production method and can be meaningfully inspected together; do not group unlike components to hide omissions. The gate verifies ID coverage and evidence structure, while the reviewer judges whether the object actually meets the criterion.
 
 ## Scope limits
 

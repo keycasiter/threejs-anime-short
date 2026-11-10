@@ -12,7 +12,7 @@
 - [统一验收](references/validation.md)：完整性、视觉品质、动作、相机和最终文件分别判断。
 - [阶段交付契约](references/delivery-contract.md)、[交付模板](assets/templates/delivery-manifest.template.json)与[运行预检模板](assets/templates/runtime-preflight.template.json)：按用户任务范围验证阶段顺序、构建证据和最终交付。
 - [渲染选择](references/rendering-choices.md)：色彩、PBR/IBL、版本、软影与异步完成协议；可选[柔和主光源码](assets/rendering/soft-directional.mjs)随作品复制。
-- [视觉分析空间交接](references/visual-analysis-sop.md)由[`validate_scene_register.py`](scripts/validate_scene_register.py)检查来源、ID、坐标、高程和端口交接；空间搭建放行由`validate_spatial_gate.py`检查证据覆盖。
+- [视觉分析空间交接](references/visual-analysis-sop.md)由[`validate_scene_register.py`](scripts/validate_scene_register.py)检查来源、ID、坐标、高程和端口交接；图像参考覆盖由交付门禁核对[`视觉参考索引模板`](assets/templates/visual-reference-index.template.json)与阶段哈希；空间搭建放行由`validate_spatial_gate.py`检查证据覆盖。
 - 其他references：渲染契约、状态与规模、AI资产及研究方法，条件适用时读取。
 
 README供维护者了解版本与验证历史，不作为普通制作的额外规则。作品、模型、渲染帧与本地测试工程不随Skill发布。具体使用边界以当前SKILL.md为准。
@@ -24,6 +24,10 @@ README供维护者了解版本与验证历史，不作为普通制作的额外�
 
 | 日期 / 版本 | 内容与依据 | 验证结果及边界 |
 |---|---|---|
+| 2026-11-11 / R48 视觉参考证据与防伪通过模板 | R47风暴海岸灯塔完整构建按20个视角运行、359.93°拖拽与缩放/复位均通过，但正式视觉审查发现岛体/植被空旷与重复、背面附属屋未完成、海面泡沫缺失、材光对比弱；全构建未达交付质量。回查发现上一版视觉分析只有文字目标与平剖图，没有可复核的全貌/单体/细节参考图像；此外视觉审查模板默认为`PASS`并填了“Describe…”占位观察，存在照抄即假通过风险。补充可迁移的图像参考包SOP、索引模板及哈希/视角/场景ID覆盖校验；审阅模板改为`NOT_RUN`空观察并加回归测试 | 60项Python manifest测试、5项离线HTML Node测试、Skill格式与差异检查通过；旧R18 manifest在新validator下于`visualAnalysis`即因缺失图像索引被阻断，证明新增门禁能识别该漏项；完整旧manifest另因真实`detailDistribution/lookdev/visualReview/delivery`阻断，未追认通过。图像索引约束尚需一轮从0的新版Skill盲测，以确认Agent实际生成并使用多视角/局部图像，再评估作品质量是否提升 |
+| 2026-11-10 / R47 完整制作前向盲测：运行预检与空间代理 | 新题材“风暴海岸灯塔”从空目录开始执行完整制作。第一次失败记录显示工具环境导致浏览器/服务无法启动；修复受控本地浏览器后，Three.js ESM缺少sidecar被真实请求捕获。本轮将这些失效转化为运行前置检查，并执行冻结的空间代理/相机/构图/支撑门禁。植物种植区与可渲染植被实例分别登记，避免约束包络被误认成资产网格 | Agent用Three.js r180和Chromium 136捕获WebGL2画布、无console/请求错误；登记表8对象/1路径/3剖面通过；proxy-v07的20个全包络视图、路径14/14边缘采样、支撑20/20采样和`validate_spatial_gate.py`、`validate_delivery.py --through spatialProxy`通过。说明新版阶段门禁/真实预检在该案例中被执行；正式资产和整体画质仍在制作，不能据此宣称成品提质 |
+| 2026-11-10 / R46 离线依赖图校验与预检修正 | 独立前向制作选用Three.js r180离线ESM时只复制入口文件，真实Chromium捕获发现缺失的`three.core.js` sidecar导致404/无画布。运行预检分支后补齐通用说明，并增强离线HTML校验器：递归静态ESM导入、import map、CSS/JSON资产URI和本地资源；远端引用/缺失文件会失败，限制仍以真实浏览器检查computed路径/动态请求 | 4项新增Node测试覆盖缺失sidecar阻断、补齐后通过、import map本地路径、data URI、远程与缺失资源；当前盲测最小预检实际WebGL2/canvas通过，控制台和请求错误为空。未验证完整场景画质，作品仍在中性代理阶段 |
+| 2026-11-10 / R45 资产族逐项覆盖 | 全场构图审阅可能遗漏低优先级资产或路径，因而无法支撑“整个场景都完整”的结论。将所有可渲染登记对象/路径映射到focal/supporting/ambient资产族；中层形体阶段记录可检查项，最终review逐族关联当前构建截图；优先级调整细节投入但共用六项完整性检查；加入`assetLedgerPath`门禁与资产台账、视觉审阅模板，并从主入口/生产流程路由 | Python全套57项通过；Skill格式检查通过；Three.js r180的profile-surfaces几何专项10项通过。结果证明交付覆盖与特定剖面几何契约，不证明Agent会在新成品中正确划族或画质普遍提升；新题材独立完整盲评待完成 |
 | 2026-11-10 / R44 scope-aware阶段交付包 | 新盲前向制作记录了登记表和20样本契约，但没有实际WebGL运行/代理画面；空间门禁失败后仍写了正式场景，最终文件又依赖不可达CDN。新增范围适配的manifest（机制测试/视觉分析/空间交接/完整制作）、分阶段buildId与SHA-256交接、提前的Three.js运行预检和明确阻断分支；完整制作可在代理前通过`--through spatialProxy`放行；最终门禁自动调用登记表与空间校验，并要求实际浏览器运行、相机包络样本、全样本审阅与最终文件 | 20项总门禁测试通过，含有效空间交接全链正例、跳阶段/错hash/断上游/预检失败/预检受阻时不误检未运行空间门禁/缺失环视端点负例；与已有登记表/空间门禁回归合计49项通过。Skill格式校验通过。最新独立测试在运行预检失败后按流程停止、没有制作正式资产；门禁不验证图像语义或画面品质 |
 | 2026-11-10 / R43共享驱动消费者闭环 | R22候选虽有“共享场”注释，实际植物/地形/材质分别使用独立采样和手工坐标；Stage 1未登记场的生产者与消费者，Stage 2只要求一个通用数据检查文件。增加可选`sharedDrivers`数据契约；声明字段/布局生产者及各系统消费者后，必须固定seed、相机、分辨率和其他输入，对每个消费者做输入扰动并记录真实前后输出图及SHA-256 | Stage 1新增4项schema测试，Stage 2新增6项消费者覆盖/扰动/冻结条件/输出哈希测试；并通过22对象、7路径、3剖面的既有登记表结构验证。只证明声明和证据记录完整及输出文件变化；视觉语义是否正确仍需审图，尚无新题材完整盲测证明整体提质 |
 | 2026-11-10 / R42 空间代理阶段完整性门禁 | R22候选的首次“代理图”已包含正式模型与材质，之后补代理检查无法证明细节是在空间放行后才开始。将代理构建冻结为源码快照，要求同一构建ID、源码SHA-256、代理清单、零正式资产/细节生成、中性材质及审阅记录；构图与观看包络PASS绑定同一`neutral-proxy` buildId，捕获图像带SHA-256并由审阅清单点名 | 代理阶段8项、相机7项、构图4项，共19项空间门禁回归通过，覆盖正式模型、详细材质、源码哈希、样本来源和截图哈希等阻断。只证明记录字段和版本关联可机械检查；源码/图像仍需人工核查，尚无新Agent从零遵循验证或整体画质提升结论。根因证据：工作区`output/r22-ravine-field-test/评测报告.md` |

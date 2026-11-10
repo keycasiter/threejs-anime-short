@@ -3,6 +3,8 @@
   "mode": "full-production",
   "buildId": "scene-v01",
   "sceneRegisterPath": "design/scene-register.json",
+  "visualReferenceIndexPath": "design/visual-reference-index.json",
+  "assetLedgerPath": "design/asset-ledger.json",
   "spatialGatePath": "qa/spatial-gate.json",
   "cameraContractPath": "design/camera-contract.json",
   "runtimeReport": "qa/runtime-report.json",

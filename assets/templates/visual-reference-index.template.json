@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "references": [
+    {
+      "id": "global-overview-high-oblique",
+      "sourceType": "generated-design",
+      "source": "Record the source URL or concise generation prompt and tool.",
+      "path": "references/global-overview-high-oblique.png",
+      "sha256": "REPLACE_WITH_FILE_SHA256",
+      "viewFamily": "global",
+      "viewDirection": "high oblique, north-east looking south-west",
+      "targetIds": [],
+      "purpose": "State the composition or spatial question this image helps resolve.",
+      "limits": ["Generated proposal; does not establish factual dimensions or hidden construction."],
+      "confidence": "medium"
+    },
+    {
+      "id": "asset-primary-detail",
+      "sourceType": "user",
+      "source": "Record the supplied source and attribution or conversation attachment.",
+      "path": "references/primary-asset-detail.png",
+      "sha256": "REPLACE_WITH_FILE_SHA256",
+      "viewFamily": "asset-detail",
+      "viewDirection": "front elevation and joint close-up",
+      "targetIds": [{"type": "object", "id": "replace-with-scene-register-id"}],
+      "purpose": "State which silhouette, construction, connection, or material question this image answers.",
+      "limits": ["Perspective prevents exact dimension inference."],
+      "confidence": "medium"
+    }
+  ]
+}

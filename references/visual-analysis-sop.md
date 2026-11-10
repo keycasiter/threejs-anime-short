@@ -13,7 +13,17 @@ Convert a creative brief and visual references into an auditable scene descripti
 
 ## 2. Build an evidence set that answers questions
 
-Do not target a fixed number of images. Add views until each high-impact uncertainty has evidence or a recorded assumption. Each view must have a purpose and map to one or more questions.
+Do not target a fixed number of images. Add views until each high-impact uncertainty has evidence or a recorded design decision. Each view must have a purpose and map to one or more questions. Preserve the selected image files under the project and record them in `design/visual-reference-index.json`; the image index is a Stage 1 handoff artifact, not an informal inspiration folder.
+
+### Build the visual reference packet
+
+1. **Use the user's material first.** Inventory every supplied image/video/frame and note its actual view, visible coverage, and unresolved sides. Search for factual references when identity or construction depends on real-world evidence. Do not replace reliable facts with generated guesses.
+2. **Fill missing visual decisions deliberately.** If there is no usable image reference, use the available image-generation tool to make design proposals: first a scene-wide composition, then alternate global elevations/azimuths, then isolated views for each major object, critical joint, surface family, and material/light response that affects the target. Reuse the chosen master design as a visual anchor in follow-up prompts; ask for one view per image when a contact sheet would make scale or details unreadable. There is no maximum image count. Stop only when the questions needed by the next stage are answered or explicitly recorded as designed/unknown.
+3. **Prompt for inspectable structure.** Hold identity, palette, lighting intent, and normalized scale cues constant across a set; vary only the camera or the part being examined. Ask for uncluttered silhouette, visible support/contact, exposed underside/back where orbiting matters, and useful scale cues. Do not ask a generated image to prove dimensions, hidden construction, or geographic truth.
+4. **Separate scene views from object views.** A global beauty view establishes composition and depth, not the exact shape of every participant. Add plan/section or axonometric views for layout and level changes, full views of major objects from sides they must expose, then close details for openings, joints, edges, and material transitions. For free-orbit work, include the far side, top, and relevant underside where the camera can reach them.
+5. **Annotate, compare, and freeze.** For every file record its source or generation prompt, direction/coverage, the question it answers, target object/route IDs, what it cannot prove, and confidence. Mark generated images as design proposals. Resolve disagreements by selecting one design or recording the remaining uncertainty; do not silently combine conflicting dimensions or shapes. Hash the reference index as visual-analysis evidence. Use `assets/templates/visual-reference-index.template.json` and set `visualReferenceIndexPath` in the manifest.
+
+Reference images are for analysis and design. The final asset remains code/model geometry assembled, lit, animated, and rendered by Three.js unless the user explicitly requests image planes or image textures.
 
 | View family | Questions it must resolve |
 |---|---|

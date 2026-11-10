@@ -74,9 +74,9 @@
 node <skill-root>/scripts/validate_offline_html.mjs <project-root>/path/to/film.html --require-offline
 ```
 
-脚本解析最终 HTML 的可执行内联 JS，拒绝未填的 bundle 占位符，并检测脚本语法错误；`--require-offline` 额外拒绝资源标签及 CSS url 中的外部引用。默认只报告依赖。此检查不覆盖 JS import、fetch、Worker、CSS import 等所有资源路径，无法证明离线运行或 WebGL 正常，仍需浏览器离线播放验证。
+脚本解析最终 HTML 的可执行内联 JS，拒绝未填的 bundle 占位符，并检测脚本语法错误；`--require-offline` 还会检查本地HTML/CSS资源、静态ESM导入链、简单import map和JSON资产URI，拒绝远程资源并报告缺失文件。计算得到的URL和条件加载路径仍需浏览器请求记录验证；这不证明离线运行或WebGL正常。
 
-解析不执行影片逻辑。退出码 0 表示这些静态检查通过；1 表示语法/占位符/离线约束失败；2 表示输入或工具错误。
+解析不执行影片逻辑。退出码 0 表示这些静态检查通过，之后仍需浏览器离线播放验证；1 表示语法/占位符/离线约束失败；2 表示输入或工具错误。
 
 构建代码应使用回调 replacement 并转义 script 结束标记，避免压缩变量或字符串中的 `$&`、`$'` 等破坏生成的脚本。
 

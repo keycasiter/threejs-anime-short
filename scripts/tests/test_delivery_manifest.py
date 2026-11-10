@@ -30,6 +30,24 @@ class DeliveryManifestTests(unittest.TestCase):
             }],
         }), encoding="utf-8")
         self.register_digest = hashlib.sha256(self.register.read_bytes()).hexdigest()
+        references = []
+        for ref_id, family, direction, targets in (
+            ("global-east", "global", "east-facing", []),
+            ("global-west", "global", "west-facing", []),
+            ("site-plan", "plan", "top-down", []),
+            ("ground-detail", "asset-detail", "north-west close view", [{"type": "object", "id": "ground"}]),
+        ):
+            image_path = self.root / f"{ref_id}.svg"
+            image_path.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#888"/></svg>', encoding="utf-8")
+            references.append({
+                "id": ref_id, "sourceType": "generated-diagram", "source": f"Designed reference {ref_id}",
+                "path": image_path.name, "sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
+                "viewFamily": family, "viewDirection": direction, "targetIds": targets,
+                "purpose": "Test visual coverage", "limits": ["Test image, not factual evidence"], "confidence": "medium",
+            })
+        self.reference_index = self.root / "visual-reference-index.json"
+        self.reference_index.write_text(json.dumps({"schemaVersion": 1, "references": references}), encoding="utf-8")
+        self.reference_index_digest = hashlib.sha256(self.reference_index.read_bytes()).hexdigest()
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -45,6 +63,7 @@ class DeliveryManifestTests(unittest.TestCase):
             "mode": "analysis-only",
             "buildId": "design-v1",
             "sceneRegisterPath": "scene-register.json",
+            "visualReferenceIndexPath": "visual-reference-index.json",
             "stages": [
                 {
                     "id": "direction",
@@ -57,7 +76,10 @@ class DeliveryManifestTests(unittest.TestCase):
                     "id": "visualAnalysis",
                     "status": "PASS",
                     "buildId": "design-v1",
-                    "evidence": [{"path": "scene-register.json", "sha256": self.register_digest}],
+                    "evidence": [
+                        {"path": "scene-register.json", "sha256": self.register_digest},
+                        {"path": "visual-reference-index.json", "sha256": self.reference_index_digest},
+                    ],
                     "inputs": [{"path": "brief.md", "sha256": self.digest}],
                 },
             ],
@@ -73,6 +95,32 @@ class DeliveryManifestTests(unittest.TestCase):
         data["stages"][1]["evidence"][0]["sha256"] = hashlib.sha256(self.register.read_bytes()).hexdigest()
         issues = validate_delivery.validate_data(data, self.root)
         self.assertTrue(any("validate_scene_register.py blocked" in issue for issue in issues))
+
+    def test_visual_reference_index_requires_global_plan_and_object_coverage(self) -> None:
+        index = json.loads(self.reference_index.read_text(encoding="utf-8"))
+        index["references"] = [item for item in index["references"] if item["id"] != "ground-detail"]
+        self.reference_index.write_text(json.dumps(index), encoding="utf-8")
+        stage = {"evidence": [
+            {"path": "visual-reference-index.json", "sha256": hashlib.sha256(self.reference_index.read_bytes()).hexdigest()},
+        ]}
+        issues: list[str] = []
+        validate_delivery.validate_visual_reference_index(
+            self.root, "scene-register.json", "visual-reference-index.json", stage, issues,
+        )
+        self.assertTrue(any("object/route-focused reference for object:ground" in issue for issue in issues))
+
+    def test_visual_reference_index_rejects_stale_image_hashes(self) -> None:
+        index = json.loads(self.reference_index.read_text(encoding="utf-8"))
+        index["references"][0]["sha256"] = "0" * 64
+        self.reference_index.write_text(json.dumps(index), encoding="utf-8")
+        stage = {"evidence": [
+            {"path": "visual-reference-index.json", "sha256": hashlib.sha256(self.reference_index.read_bytes()).hexdigest()},
+        ]}
+        issues: list[str] = []
+        validate_delivery.validate_visual_reference_index(
+            self.root, "scene-register.json", "visual-reference-index.json", stage, issues,
+        )
+        self.assertTrue(any("sha256 must match" in issue for issue in issues))
 
     def test_runtime_preflight_failure_blocks_implementation_release(self) -> None:
         capture = self.root / "preflight.png"
@@ -123,6 +171,123 @@ class DeliveryManifestTests(unittest.TestCase):
         joined = "\n".join(issues)
         self.assertIn("stage runtimePreflight must be PASS", joined)
         self.assertNotIn("spatialGatePath must reference", joined)
+
+    def test_asset_ledger_maps_every_renderable_registered_object_to_a_quality_family(self) -> None:
+        dimensions = validate_delivery.ASSET_CHECKS_BY_PRIORITY["supporting"]
+        ledger = {"families": [{
+            "id": "terrain-family", "priority": "supporting", "objectIds": ["ground"], "routeIds": [],
+            "requiredChecks": [{"dimension": dimension, "criterion": f"Inspect {dimension} in applicable views"} for dimension in dimensions],
+        }]}
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+        digest = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+        stage = {"evidence": [{"path": "asset-ledger.json", "sha256": digest}]}
+        issues: list[str] = []
+        family_ids = validate_delivery.validate_asset_ledger(self.root, "scene-register.json", "asset-ledger.json", stage, issues)
+        self.assertEqual({"terrain-family"}, family_ids)
+        self.assertEqual([], issues)
+
+    def test_asset_ledger_cannot_omit_a_renderable_scene_object(self) -> None:
+        ledger = {"families": [{
+            "id": "empty-family", "priority": "ambient", "objectIds": [], "routeIds": [],
+            "requiredChecks": [],
+        }]}
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+        digest = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+        issues: list[str] = []
+        validate_delivery.validate_asset_ledger(
+            self.root, "scene-register.json", "asset-ledger.json",
+            {"evidence": [{"path": "asset-ledger.json", "sha256": digest}]}, issues,
+        )
+        self.assertTrue(any("unmapped renderable scene IDs" in issue for issue in issues))
+
+    def test_final_visual_review_must_cover_every_family_and_required_check(self) -> None:
+        ledger = {"families": [{
+            "id": "station", "priority": "focal", "objectIds": ["ground"], "routeIds": [],
+            "requiredChecks": [{"dimension": dimension, "criterion": f"Inspect {dimension}"}
+                                for dimension in validate_delivery.ASSET_CHECKS_BY_PRIORITY["focal"]],
+        }]}
+        review = {"familyReviews": []}
+        issues: list[str] = []
+        validate_delivery.validate_asset_family_reviews(ledger, review, {"orbit-main"}, issues)
+        self.assertTrue(any("familyReviews must cover every asset family" in issue for issue in issues))
+
+    def test_family_review_accepts_complete_capture_linked_check_coverage(self) -> None:
+        required = validate_delivery.ASSET_CHECKS_BY_PRIORITY["ambient"]
+        ledger = {"families": [{
+            "id": "foliage", "priority": "ambient", "objectIds": ["ground"], "routeIds": [],
+            "requiredChecks": [{"dimension": dimension, "criterion": "Visible criterion"} for dimension in required],
+        }]}
+        review = {"familyReviews": [{
+            "familyId": "foliage", "status": "PASS", "reviewedSampleIds": ["front", "orbit-back"],
+            "checks": [{"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension}"} for dimension in required],
+        }]}
+        issues: list[str] = []
+        validate_delivery.validate_asset_family_reviews(ledger, review, {"front", "orbit-back"}, issues)
+        self.assertEqual([], issues)
+
+    def test_unedited_visual_review_template_cannot_pass_family_gate(self) -> None:
+        template_dir = SCRIPT_DIR.parent / "assets" / "templates"
+        ledger = json.loads((template_dir / "asset-ledger.template.json").read_text(encoding="utf-8"))
+        review = json.loads((template_dir / "visual-review.template.json").read_text(encoding="utf-8"))
+        capture_ids = set(review["reviewedSampleIds"])
+        issues: list[str] = []
+        validate_delivery.validate_asset_family_reviews(ledger, review, capture_ids, issues)
+        self.assertTrue(any("family terrain-family must PASS" in issue for issue in issues))
+        self.assertTrue(any("silhouette requires PASS with a concrete observation" in issue for issue in issues))
+
+    def test_ambient_asset_family_keeps_full_shape_and_support_integrity_checks(self) -> None:
+        ambient = set(validate_delivery.ASSET_CHECKS_BY_PRIORITY["ambient"])
+        self.assertTrue({"volume-transition", "connections-support"}.issubset(ambient))
+        self.assertEqual(set(validate_delivery.ASSET_CHECKS_BY_PRIORITY["focal"]), ambient)
+        self.assertEqual(set(validate_delivery.ASSET_CHECKS_BY_PRIORITY["supporting"]), ambient)
+
+    def test_asset_ledger_covers_renderable_routes_as_well_as_objects(self) -> None:
+        register = json.loads(self.register.read_text(encoding="utf-8"))
+        register["routes"] = [{"id": "walkway"}]
+        self.register.write_text(json.dumps(register), encoding="utf-8")
+        ledger = {"families": [{
+            "id": "site-structure", "priority": "supporting", "objectIds": ["ground"], "routeIds": ["walkway"],
+            "requiredChecks": [{"dimension": dimension, "criterion": "Check the assembled view"}
+                               for dimension in validate_delivery.ASSET_CHECKS_BY_PRIORITY["supporting"]],
+        }]}
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+        digest = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+        issues: list[str] = []
+        family_ids = validate_delivery.validate_asset_ledger(
+            self.root, "scene-register.json", "asset-ledger.json",
+            {"evidence": [{"path": "asset-ledger.json", "sha256": digest}]}, issues,
+        )
+        self.assertEqual({"site-structure"}, family_ids)
+        self.assertEqual([], issues)
+
+    def test_full_production_middle_forms_release_requires_asset_ledger(self) -> None:
+        data = self.minimal_analysis_manifest()
+        data["mode"] = "full-production"
+        data["buildId"] = "scene-v1"
+        data["stages"].extend([
+            {"id": "runtimePreflight", "status": "BLOCKED", "buildId": "preflight-v1", "inputs": [], "evidence": [], "preflightReport": "missing-preflight.json"},
+            {"id": "spatialProxy", "status": "NOT_RUN", "buildId": "proxy-v1", "inputs": [], "evidence": []},
+            {"id": "middleForms", "status": "NOT_RUN", "buildId": "forms-v1", "inputs": [], "evidence": []},
+        ])
+        issues = validate_delivery.validate_data(data, self.root, through="middleForms")
+        self.assertTrue(any("assetLedgerPath must reference an existing project JSON file" in issue for issue in issues))
+
+    def test_asset_ledger_evidence_must_be_hashed_by_middle_forms_stage(self) -> None:
+        ledger = {"families": [{
+            "id": "terrain", "priority": "supporting", "objectIds": ["ground"], "routeIds": [],
+            "requiredChecks": [{"dimension": dimension, "criterion": "Observe a real view"}
+                               for dimension in validate_delivery.ASSET_CHECKS_BY_PRIORITY["supporting"]],
+        }]}
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+        issues: list[str] = []
+        validate_delivery.validate_asset_ledger(
+            self.root, "scene-register.json", "asset-ledger.json", {"evidence": []}, issues,
+        )
+        self.assertTrue(any("middleForms evidence must include assetLedgerPath" in issue for issue in issues))
 
     def test_mechanism_test_scope_does_not_require_the_full_production_chain(self) -> None:
         data = self.minimal_analysis_manifest()
@@ -216,10 +381,11 @@ class DeliveryManifestTests(unittest.TestCase):
             "mode": "spatial-handoff",
             "buildId": "proxy-v1",
             "sceneRegisterPath": "scene-register.json",
+            "visualReferenceIndexPath": "visual-reference-index.json",
             "spatialGatePath": "spatial-gate.json",
             "stages": [
                 {"id": "direction", "status": "PASS", "buildId": "proxy-v1", "inputs": [], "evidence": [{"path": "brief.md", "sha256": digest(brief)}]},
-                {"id": "visualAnalysis", "status": "PASS", "buildId": "proxy-v1", "inputs": [{"path": "brief.md", "sha256": digest(brief)}], "evidence": [{"path": "scene-register.json", "sha256": digest(register)}]},
+                {"id": "visualAnalysis", "status": "PASS", "buildId": "proxy-v1", "inputs": [{"path": "brief.md", "sha256": digest(brief)}], "evidence": [{"path": "scene-register.json", "sha256": digest(register)}, {"path": "visual-reference-index.json", "sha256": digest(self.reference_index)}]},
                 {"id": "runtimePreflight", "status": "PASS", "buildId": "preflight-v1", "inputs": [{"path": "scene-register.json", "sha256": digest(register)}], "evidence": [{"path": "qa/preflight.json", "sha256": digest(preflight_report)}, {"path": "qa/preflight.png", "sha256": digest(preflight_capture)}], "preflightReport": "qa/preflight.json"},
                 {"id": "spatialProxy", "status": "PASS", "buildId": "proxy-v1", "inputs": [{"path": "scene-register.json", "sha256": digest(register)}], "evidence": [{"path": "spatial-gate.json", "sha256": digest(gate)}, {"path": "proxy.html", "sha256": digest(proxy)}]},
             ],
@@ -299,10 +465,10 @@ class DeliveryManifestTests(unittest.TestCase):
         proxy.write_text("neutral proxy output", encoding="utf-8")
         data = {
             "schemaVersion": 1, "mode": "spatial-handoff", "buildId": "proxy-v1",
-            "sceneRegisterPath": "design/scene-register.json", "spatialGatePath": "spatial-gate.json",
+            "sceneRegisterPath": "design/scene-register.json", "visualReferenceIndexPath": "visual-reference-index.json", "spatialGatePath": "spatial-gate.json",
             "stages": [
                 {"id": "direction", "status": "PASS", "buildId": "proxy-v1", "inputs": [], "evidence": [ref(brief)]},
-                {"id": "visualAnalysis", "status": "PASS", "buildId": "analysis-v1", "inputs": [ref(brief)], "evidence": [ref(simple_register)]},
+                {"id": "visualAnalysis", "status": "PASS", "buildId": "analysis-v1", "inputs": [ref(brief)], "evidence": [ref(simple_register), ref(self.reference_index)]},
                 {"id": "runtimePreflight", "status": "PASS", "buildId": "preflight-v1", "inputs": [ref(simple_register)], "evidence": [ref(preflight_report), ref(preflight_capture)], "preflightReport": "qa/preflight.json"},
                 {"id": "spatialProxy", "status": "PASS", "buildId": "proxy-v1", "inputs": [ref(simple_register)], "evidence": [ref(gate), ref(proxy)]},
             ],

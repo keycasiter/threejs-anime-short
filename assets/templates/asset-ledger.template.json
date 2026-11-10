@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "families": [
+    {
+      "id": "terrain-family",
+      "priority": "supporting",
+      "objectIds": ["ground"],
+      "routeIds": [],
+      "requiredChecks": [
+        {"dimension": "silhouette", "criterion": "Terrain profile reads clearly in side and oblique views."},
+        {"dimension": "volume-transition", "criterion": "Grade transitions have no visible steps or accidental seams."},
+        {"dimension": "connections-support", "criterion": "Paths and supported objects contact the terrain without floating or penetration."},
+        {"dimension": "material-response", "criterion": "Surface material response remains legible across light and view changes."},
+        {"dimension": "spatial-relation", "criterion": "Terrain frames the focal object without obscuring the primary route."},
+        {"dimension": "detail-scale", "criterion": "Surface detail scale remains coherent at near, middle and far distances."}
+      ]
+    }
+  ]
+}
