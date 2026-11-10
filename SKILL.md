@@ -37,6 +37,8 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 规模化细节前，先逐资产族完成代表样件：在目标尺寸下至少捕获主视角与互补视角的真实PNG，并为每项视觉特征绑定能证明它的具体视图。剪影/比例/体积要有主视角与侧、斜、背、顶或底部形体视角；连接要有接点近景及能说明构件延伸的互补视角；空间关系要有环境视角及侧/斜/背视角。`asset-ledger.json`记录代表对象、明确的代码构建函数、该函数所在源码文件与SHA-256、各视图哈希、视图角色和逐特征观察；visual-build-map中的component必须是单一代码符号，不写“屋顶和装饰建造”这类描述。运行`validate_delivery.py ... --through middleForms`，确认源码确实声明该符号且同属本阶段证据，再由当前构建截图核实函数调用、对象可见性及目标特征后，才进入细节扩展。符号存在和脚本PASS仍不证明画面品质。最终`visual-review.json`继续按同一组特征绑定运行截图，代码中存在某个构件不代表它在画面里可读。
 
+细节与分布阶段先按[细节与分布SOP](references/detail-distribution.md)明确允许区、留白、宿主、seed、目标数量范围和形态变体，再扩展实例。用`distribution-report.json`记录实现函数、实际落点、候选/接受/拒绝计数、分区覆盖图、完整场景图和局部图，并逐组检查覆盖、节奏、变体、屏幕尺度及支撑/净空。运行`<skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through detailDistribution`核对数据与证据；总数量、固定seed或存在截图本身都不能证明分布成立。
+
 ```mermaid
 flowchart TD
   A[用户需求] --> B{创作方向明确?}

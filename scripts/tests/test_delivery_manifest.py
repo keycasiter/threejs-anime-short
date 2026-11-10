@@ -37,6 +37,7 @@ class DeliveryManifestTests(unittest.TestCase):
                 "fieldEvidence": {"anchor": {"status": "Designed", "sourceIds": ["e1"], "confidence": "high"}},
                 "anchor": {"xyz": [0, 0, 0], "space": "world"},
                 "bounds": {"center": "anchor", "size": [4, 1, 4]}, "baseY": -0.5, "topY": 0.5,
+                "planGeometry": [{"id": "ground-distribution", "role": "distribution-envelope", "outlineXZ": [[-2, -2], [2, -2], [2, 2], [-2, 2]], "evidence": ["e1"]}],
             }],
             "sections": [{"id": "section-main", "plane": "vertical", "station": "x=0", "points": [[0, 0, -2], [0, 0.5, 0], [0, 0, 2]], "objectIds": ["ground"]}],
         }), encoding="utf-8")
@@ -142,6 +143,67 @@ class DeliveryManifestTests(unittest.TestCase):
         source_path = self.root / "asset.js"
         evidence.append({"path": source_path.name, "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest()})
         return {"buildId": "forms-v1", "evidence": evidence}
+
+    def distribution_fixture(self) -> tuple[Path, Path, dict]:
+        build_map = json.loads(self.visual_build_map.read_text(encoding="utf-8"))
+        build_map["entries"][0]["features"].append({
+            "id": "ground-distribution", "referenceId": "ground-detail", "category": "distribution",
+            "observation": "Small surface forms cluster along the raised ridge and thin out near the exposed edge.",
+            "designConstraint": "Place distinct clusters within the registered ridge zone and leave the edge and route clearance legible.",
+            "confidence": "medium",
+        })
+        self.visual_build_map.write_text(json.dumps(build_map), encoding="utf-8")
+        family = self.asset_family("terrain-family", "supporting", ["ground"], [])
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        views = []
+        evidence = []
+        source_path = self.root / "distribution.js"
+        source_path.write_text("export function placeRidgeClusters(){ return []; }\n", encoding="utf-8")
+        evidence.append({"path": source_path.name, "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest()})
+        for view_id, role in (("context", "context"), ("map", "distribution-map"), ("detail", "detail")):
+            path = self.root / f"distribution-{view_id}.png"
+            path.write_bytes(png_bytes(800, 600))
+            view = {"id": view_id, "role": role, "path": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+            views.append(view)
+            evidence.append({"path": path.name, "sha256": view["sha256"]})
+        report = {
+            "schemaVersion": 1, "status": "PASS", "buildId": "detail-v1",
+            "groups": [{
+                "id": "ridge-clusters", "familyId": "terrain-family", "featureIds": ["ground-distribution"],
+                "method": "clustered", "seed": 21,
+                "placementSource": {"path": source_path.name, "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(), "symbol": "placeRidgeClusters"},
+                "zones": [{"id": "ridge", "objectId": "ground", "planGeometryId": "ground-distribution", "targetCountRange": [2, 4], "pattern": "clustered", "excludeRegions": []}],
+                "placements": [
+                    {"id": "plant-1", "zoneId": "ridge", "variantId": "broad", "positionWorld": [-1, 0, -0.5], "scale": [0.8, 1.1, 0.9]},
+                    {"id": "plant-2", "zoneId": "ridge", "variantId": "narrow", "positionWorld": [0, 0, 0], "scale": [0.7, 1.2, 0.8]},
+                    {"id": "plant-3", "zoneId": "ridge", "variantId": "leaning", "positionWorld": [1, 0, 0.5], "scale": [0.9, 0.9, 1.0]},
+                ],
+                "counts": {"candidate": 4, "accepted": 3, "rejectedByReason": {"outside-zone": 1}},
+                "minimumVariantCount": 3, "views": views,
+                "checks": [
+                    {"dimension": "coverage", "status": "PASS", "observation": "The ridge groups span the intended zone while the edge and route opening stay visibly clear.", "viewIds": ["context", "map"]},
+                    {"dimension": "spacing-rhythm", "status": "PASS", "observation": "Clusters follow the ridge axis and preserve deliberate gaps between the neighboring groups.", "viewIds": ["map"]},
+                    {"dimension": "variation", "status": "PASS", "observation": "Three distinct emitted variants alter height, width, and lean without breaking the family silhouette.", "viewIds": ["detail"]},
+                    {"dimension": "screen-scale", "status": "PASS", "observation": "The cluster reads in context while individual blade forms remain legible in the close view.", "viewIds": ["context", "detail"]},
+                    {"dimension": "support-clearance", "status": "PASS", "observation": "Placement anchors remain on the registered host and clear the documented route opening.", "viewIds": ["context"]},
+                ],
+            }],
+        }
+        report_path = self.root / "distribution-report.json"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        evidence.append({"path": report_path.name, "sha256": hashlib.sha256(report_path.read_bytes()).hexdigest()})
+        ledger_digest = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+        build_map_digest = hashlib.sha256(self.visual_build_map.read_bytes()).hexdigest()
+        register_digest = hashlib.sha256(self.register.read_bytes()).hexdigest()
+        stage = {
+            "buildId": "detail-v1", "inputs": [
+                {"path": self.register.name, "sha256": register_digest},
+                {"path": self.visual_build_map.name, "sha256": build_map_digest},
+                {"path": ledger_path.name, "sha256": ledger_digest},
+            ], "evidence": evidence,
+        }
+        return ledger_path, report_path, stage
 
     def minimal_analysis_manifest(self) -> dict:
         return {
@@ -378,6 +440,115 @@ class DeliveryManifestTests(unittest.TestCase):
         self.assertIn("requires viewIds linked to its hashed prototype views", joined)
         self.assertIn("must be a real PNG capture", joined)
 
+    def test_distribution_report_passes_with_reconciled_realized_placements(self) -> None:
+        ledger_path, report_path, stage = self.distribution_fixture()
+        issues: list[str] = []
+        validate_delivery.validate_distribution_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        self.assertEqual([], issues)
+
+    def test_distribution_report_accepts_streamable_csv_for_large_placement_sets(self) -> None:
+        ledger_path, report_path, stage = self.distribution_fixture()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        group = report["groups"][0]
+        rows = group.pop("placements")
+        table_path = self.root / "placements.csv"
+        lines = ["id,zoneId,variantId,x,y,z,sx,sy,sz"]
+        for row in rows:
+            p, s = row["positionWorld"], row["scale"]
+            lines.append(f"{row['id']},{row['zoneId']},{row['variantId']},{p[0]},{p[1]},{p[2]},{s[0]},{s[1]},{s[2]}")
+        table_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        group["placementTable"] = {"path": table_path.name, "sha256": hashlib.sha256(table_path.read_bytes()).hexdigest()}
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        report_digest = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        for item in stage["evidence"]:
+            if item.get("path") == report_path.name:
+                item["sha256"] = report_digest
+        stage["evidence"].append({"path": table_path.name, "sha256": hashlib.sha256(table_path.read_bytes()).hexdigest()})
+        issues: list[str] = []
+        validate_delivery.validate_distribution_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        self.assertEqual([], issues)
+
+    def test_distribution_report_blocks_undercoverage_and_out_of_zone_placements(self) -> None:
+        ledger_path, report_path, stage = self.distribution_fixture()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        group = report["groups"][0]
+        group["placements"].pop()
+        group["placements"][0]["positionWorld"][0] = 3
+        group["zones"][0]["targetCountRange"] = [3, 4]
+        group["counts"]["accepted"] = 2
+        group["counts"]["candidate"] = 4
+        group["counts"]["rejectedByReason"]["outside-zone"] = 2
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        digest = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        stage["evidence"][-1]["sha256"] = digest
+        issues: list[str] = []
+        validate_delivery.validate_distribution_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        joined = "\n".join(issues)
+        self.assertIn("outside or inside a hole of declared plan region", joined)
+        self.assertIn("placements outside targetCountRange", joined)
+
+    def test_distribution_report_blocks_fake_count_totals_and_missing_view_role(self) -> None:
+        ledger_path, report_path, stage = self.distribution_fixture()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        group = report["groups"][0]
+        group["counts"]["candidate"] = 9
+        group["views"] = [view for view in group["views"] if view["role"] != "distribution-map"]
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stage["evidence"][-1]["sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        issues: list[str] = []
+        validate_delivery.validate_distribution_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        joined = "\n".join(issues)
+        self.assertIn("rejectedByReason must reconcile candidate minus accepted", joined)
+        self.assertIn("must include each required role", joined)
+
+    def test_distribution_report_respects_plan_holes_and_registered_clearance(self) -> None:
+        ledger_path, report_path, stage = self.distribution_fixture()
+        register = json.loads(self.register.read_text(encoding="utf-8"))
+        register["objects"][0]["planGeometry"][0]["holesXZ"] = [[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]]
+        register["objects"][0]["planGeometry"].append(
+            {"id": "route-clearance", "role": "clearance-envelope", "outlineXZ": [[0.8, 0.3], [1.2, 0.3], [1.2, 0.7], [0.8, 0.7]], "evidence": ["e1"]}
+        )
+        self.register.write_text(json.dumps(register), encoding="utf-8")
+        stage["inputs"][0]["sha256"] = hashlib.sha256(self.register.read_bytes()).hexdigest()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["groups"][0]["zones"][0]["excludeRegions"] = [{"objectId": "ground", "planGeometryId": "route-clearance"}]
+        report["groups"][0]["zones"][0]["planGeometryId"] = "ground-distribution"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stage["evidence"][-1]["sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        issues: list[str] = []
+        validate_delivery.validate_distribution_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        joined = "\n".join(issues)
+        self.assertIn("inside a hole of declared plan region", joined)
+        self.assertIn("inside excluded clearance region", joined)
+
+    def test_distribution_report_requires_declared_placement_source(self) -> None:
+        ledger_path, report_path, stage = self.distribution_fixture()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["groups"][0]["placementSource"]["symbol"] = "missingBuilder"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stage["evidence"][-1]["sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        issues: list[str] = []
+        validate_delivery.validate_distribution_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        self.assertTrue(any("placementSource does not declare missingBuilder" in issue for issue in issues))
+
     def test_asset_ledger_cannot_omit_a_renderable_scene_object(self) -> None:
         ledger = {"families": [{
             "id": "empty-family", "priority": "ambient", "objectIds": [], "routeIds": [],
@@ -464,6 +635,19 @@ class DeliveryManifestTests(unittest.TestCase):
         ])
         issues = validate_delivery.validate_data(data, self.root, through="middleForms")
         self.assertTrue(any("assetLedgerPath must reference an existing project JSON file" in issue for issue in issues))
+
+    def test_full_production_detail_stage_requires_distribution_report(self) -> None:
+        data = self.minimal_analysis_manifest()
+        data["mode"] = "full-production"
+        data["buildId"] = "scene-v1"
+        data["stages"].extend([
+            {"id": "runtimePreflight", "status": "BLOCKED", "buildId": "preflight-v1", "inputs": [{"path": "scene-register.json", "sha256": self.register_digest}], "evidence": [], "preflightReport": "missing-preflight.json"},
+            {"id": "spatialProxy", "status": "NOT_RUN", "buildId": "proxy-v1", "inputs": [], "evidence": []},
+            {"id": "middleForms", "status": "NOT_RUN", "buildId": "forms-v1", "inputs": [], "evidence": []},
+            {"id": "detailDistribution", "status": "NOT_RUN", "buildId": "detail-v1", "inputs": [], "evidence": []},
+        ])
+        issues = validate_delivery.validate_data(data, self.root, through="detailDistribution")
+        self.assertTrue(any("distributionReportPath must reference an existing project JSON file" in issue for issue in issues))
 
     def test_asset_ledger_evidence_must_be_hashed_by_middle_forms_stage(self) -> None:
         ledger = {"families": [self.asset_family("terrain", "supporting", ["ground"], [])]}

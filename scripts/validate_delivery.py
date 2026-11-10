@@ -6,14 +6,17 @@ existing specialist validators. It does not judge visual quality by itself.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
+import math
 import re
 import subprocess
 import sys
 import struct
 from pathlib import Path
 from typing import Any
+from validate_scene_register import point_in_plan_shape_xz
 
 PIPELINE = (
     "direction",
@@ -54,6 +57,10 @@ FEATURE_VIEW_REQUIREMENTS = {
     "connection": ({"joint"}, {"oblique", "side", "back", "underside"}),
     "spatial-relation": ({"context"}, {"oblique", "side", "back"}),
 }
+DISTRIBUTION_METHODS = {"manual", "grid", "clustered", "poisson", "field-sampled", "path-sampled", "hybrid"}
+DISTRIBUTION_VIEW_ROLES = {"context", "distribution-map", "detail"}
+DISTRIBUTION_CHECKS = {"coverage", "spacing-rhythm", "variation", "screen-scale", "support-clearance"}
+DISTRIBUTION_PATTERNS = {"uniform", "grid", "clustered", "gradient", "edge-following", "path-following", "curated", "volume-layered", "mixed"}
 
 
 def _resolve(base: Path, value: Any) -> Path | None:
@@ -919,6 +926,400 @@ def validate_diagram_review(base: Path, report_path: Any, register_path: Any, st
         issues.append("diagramReviewReport is missing registered sections: " + ", ".join(sorted(expected_sections - seen["section"])))
 
 
+def _finite_vec3(value: Any) -> bool:
+    return isinstance(value, list) and len(value) == 3 and all(
+        isinstance(component, (int, float)) and math.isfinite(component) for component in value
+    )
+
+
+def _object_bounds_contains(obj: dict[str, Any], point: list[float]) -> bool:
+    anchor = obj.get("anchor", {}).get("xyz") if isinstance(obj.get("anchor"), dict) else None
+    size = obj.get("bounds", {}).get("size") if isinstance(obj.get("bounds"), dict) else None
+    return _finite_vec3(anchor) and _finite_vec3(size) and all(
+        anchor[axis] - size[axis] / 2 - 0.02 <= point[axis] <= anchor[axis] + size[axis] / 2 + 0.02
+        for axis in range(3)
+    )
+
+
+def _object_vertical_contains(obj: Any, y: float) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    low, high = obj.get("baseY"), obj.get("topY")
+    return isinstance(low, (int, float)) and isinstance(high, (int, float)) and low - 0.02 <= y <= high + 0.02
+
+
+def _registered_plan_shape(obj: Any, shape_id: Any) -> dict[str, Any] | None:
+    if not isinstance(obj, dict) or not isinstance(shape_id, str):
+        return None
+    shapes = obj.get("planGeometry")
+    if not isinstance(shapes, list):
+        return None
+    return next((item for item in shapes if isinstance(item, dict) and item.get("id") == shape_id), None)
+
+
+def _shape_contains_placement(shape: dict[str, Any], point: list[float]) -> bool:
+    if not point_in_plan_shape_xz([point[0], point[2]], shape):
+        return False
+    elevation = shape.get("elevationY")
+    if isinstance(elevation, (int, float)) and abs(point[1] - elevation) > 0.02:
+        return False
+    span = shape.get("elevationRangeY")
+    if isinstance(span, list) and len(span) == 2 and all(isinstance(value, (int, float)) for value in span):
+        if not span[0] - 0.02 <= point[1] <= span[1] + 0.02:
+            return False
+    return True
+
+
+def _distribution_placement_rows(base: Path, group: dict[str, Any], label: str, evidence: Any, issues: list[str]):
+    table = group.get("placementTable")
+    if table is None:
+        placements = group.get("placements")
+        if not isinstance(placements, list):
+            issues.append(f"{label}.placements must be a list or use placementTable CSV")
+            return iter(())
+        return iter(placements)
+    if group.get("placements") not in (None, []):
+        issues.append(f"{label} must use either placements or placementTable, not both")
+    record = _check_file_record(base, table, f"{label}.placementTable", issues)
+    if not record:
+        return iter(())
+    relative, digest = record
+    if Path(relative).suffix.lower() != ".csv":
+        issues.append(f"{label}.placementTable must be a CSV file")
+    if not any(isinstance(item, dict) and item.get("path") == relative and item.get("sha256") == digest for item in evidence):
+        issues.append(f"{label}.placementTable must be hashed in detailDistribution evidence")
+    path = _resolve(base, relative)
+    required_columns = {"id", "zoneId", "variantId", "x", "y", "z", "sx", "sy", "sz"}
+
+    def rows():
+        try:
+            with path.open(newline="", encoding="utf-8") as stream:
+                reader = csv.DictReader(stream)
+                if not required_columns.issubset(set(reader.fieldnames or [])):
+                    issues.append(f"{label}.placementTable requires columns: " + ", ".join(sorted(required_columns)))
+                    return
+                for index, row in enumerate(reader):
+                    def number(field: str):
+                        try:
+                            return float(row.get(field, ""))
+                        except (TypeError, ValueError):
+                            return None
+                    yield {
+                        "id": row.get("id"), "zoneId": row.get("zoneId"), "variantId": row.get("variantId"),
+                        "positionWorld": [number("x"), number("y"), number("z")],
+                        "scale": [number("sx"), number("sy"), number("sz")],
+                    }
+        except (OSError, UnicodeDecodeError, csv.Error) as exc:
+            issues.append(f"{label}.placementTable could not be read: {exc}")
+
+    return rows()
+
+
+def validate_distribution_report(
+    base: Path, report_path: Any, register_path: Any, visual_build_map_path: Any,
+    asset_ledger_path: Any, stage: Any, issues: list[str],
+) -> None:
+    """Check planned and realized detail placements against declared zones and visual evidence."""
+    report_file = _resolve(base, report_path)
+    register_file = _resolve(base, register_path)
+    build_map_file = _resolve(base, visual_build_map_path)
+    ledger_file = _resolve(base, asset_ledger_path)
+    if report_file is None:
+        issues.append("distributionReportPath must reference an existing project JSON file")
+        return
+    if not register_file or not build_map_file or not ledger_file:
+        issues.append("detailDistribution requires scene register, visual build map, and asset ledger inputs")
+        return
+    stage = stage if isinstance(stage, dict) else {}
+    evidence = stage.get("evidence", [])
+    report_hash = _hash(report_file)
+    if not any(isinstance(item, dict) and item.get("path") == report_path and item.get("sha256") == report_hash for item in evidence):
+        issues.append("detailDistribution evidence must include distributionReportPath with its SHA-256")
+    upstream_refs = {
+        str(register_path): _hash(register_file),
+        str(visual_build_map_path): _hash(build_map_file),
+        str(asset_ledger_path): _hash(ledger_file),
+    }
+    recorded_inputs = {
+        (item.get("path"), item.get("sha256"))
+        for item in stage.get("inputs", []) if isinstance(item, dict)
+    }
+    for path, digest in upstream_refs.items():
+        if (path, digest) not in recorded_inputs:
+            issues.append(f"detailDistribution inputs must include {path} with its current SHA-256")
+    report, register, build_map, ledger = (
+        _load_json(report_file), _load_json(register_file), _load_json(build_map_file), _load_json(ledger_file)
+    )
+    if not all((report, register, build_map, ledger)):
+        issues.append("distribution report and its upstream design artifacts must be readable JSON objects")
+        return
+    if report.get("schemaVersion") != 1:
+        issues.append("distribution report schemaVersion must equal 1")
+    if report.get("status") != "PASS" or report.get("buildId") != stage.get("buildId"):
+        issues.append("distribution report must PASS and match the detailDistribution stage buildId")
+
+    objects = {item.get("id"): item for item in register.get("objects", []) if isinstance(item, dict) and isinstance(item.get("id"), str)}
+    families = {item.get("id"): item for item in ledger.get("families", []) if isinstance(item, dict) and isinstance(item.get("id"), str)}
+    categories: dict[str, str] = {}
+    for entry in build_map.get("entries", []):
+        if isinstance(entry, dict):
+            for feature in entry.get("features", []):
+                if isinstance(feature, dict) and isinstance(feature.get("id"), str):
+                    categories[feature["id"]] = feature.get("category")
+    expected_features = {feature_id for feature_id, category in categories.items() if isinstance(category, str) and category in {"distribution", "detail"}}
+    if not expected_features:
+        issues.append("visualBuildMap must define at least one distribution/detail feature for full-production")
+
+    groups = report.get("groups")
+    if not isinstance(groups, list) or not groups:
+        issues.append("distribution report groups must be a nonempty list")
+        return
+    seen_groups: set[str] = set()
+    covered_features: dict[str, str] = {}
+    for group_index, group in enumerate(groups):
+        label = f"distributionReport.groups[{group_index}]"
+        if not isinstance(group, dict):
+            issues.append(f"{label} must be an object")
+            continue
+        group_id, family_id = group.get("id"), group.get("familyId")
+        if not isinstance(group_id, str) or not group_id.strip():
+            issues.append(f"{label}.id must be a stable identifier")
+            continue
+        if group_id in seen_groups:
+            issues.append(f"distribution report has duplicate group id {group_id}")
+        seen_groups.add(group_id)
+        family = families.get(family_id) if isinstance(family_id, str) else None
+        if family is None:
+            issues.append(f"{label}.familyId must resolve to an asset family")
+        feature_ids = group.get("featureIds")
+        if not isinstance(feature_ids, list) or not feature_ids or any(not isinstance(value, str) for value in feature_ids) or len(feature_ids) != len(set(feature_ids)):
+            issues.append(f"{label}.featureIds must list unique mapped features")
+            feature_ids = []
+        for feature_id in feature_ids:
+            if feature_id not in expected_features:
+                issues.append(f"{label} feature {feature_id} must be categorized as distribution/detail in visualBuildMap")
+            family_features = family.get("visualFeatureIds", []) if isinstance(family, dict) else []
+            if family and (not isinstance(family_features, list) or feature_id not in family_features):
+                issues.append(f"{label} feature {feature_id} must belong to asset family {family_id}")
+            if feature_id in covered_features:
+                issues.append(f"distribution feature {feature_id} is covered by multiple groups")
+            covered_features[feature_id] = group_id
+
+        method = group.get("method")
+        if not isinstance(method, str) or method not in DISTRIBUTION_METHODS:
+            issues.append(f"{label}.method must be one of: " + ", ".join(sorted(DISTRIBUTION_METHODS)))
+        seed = group.get("seed")
+        if method != "manual" and (not isinstance(seed, int) or isinstance(seed, bool)):
+            issues.append(f"{label}.seed must be a fixed integer for reproducible non-manual placement")
+        source = group.get("placementSource")
+        source_record = _check_file_record(base, source, f"{label}.placementSource", issues)
+        if source_record:
+            source_rel, source_digest = source_record
+            if not any(isinstance(item, dict) and item.get("path") == source_rel and item.get("sha256") == source_digest for item in evidence):
+                issues.append(f"{label}.placementSource must be hashed in detailDistribution evidence")
+            symbol = source.get("symbol") if isinstance(source, dict) else None
+            if not isinstance(symbol, str) or not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", symbol):
+                issues.append(f"{label}.placementSource.symbol must name one declared generator/placement symbol")
+            else:
+                source_file = _resolve(base, source_rel)
+                try:
+                    source_text = source_file.read_text(encoding="utf-8") if source_file else ""
+                except (OSError, UnicodeDecodeError):
+                    source_text = ""
+                declaration = rf"\b(?:function|class)\s+{re.escape(symbol)}\b|\b(?:const|let|var)\s+{re.escape(symbol)}\s*="
+                if source_text and not re.search(declaration, source_text):
+                    issues.append(f"{label}.placementSource does not declare {symbol}")
+        zones = group.get("zones")
+        if not isinstance(zones, list) or not zones:
+            issues.append(f"{label}.zones must define allowed distribution regions and target counts")
+            zones = []
+        zone_by_id: dict[str, dict[str, Any]] = {}
+        zone_counts: dict[str, int] = {}
+        for zone_index, zone in enumerate(zones):
+            zone_label = f"{label}.zones[{zone_index}]"
+            if not isinstance(zone, dict) or not isinstance(zone.get("id"), str) or not zone["id"].strip():
+                issues.append(f"{zone_label}.id must be a stable identifier")
+                continue
+            zone_id = zone["id"]
+            if zone_id in zone_by_id:
+                issues.append(f"{label}.zones has duplicate id {zone_id}")
+            zone_by_id[zone_id] = zone
+            target_range = zone.get("targetCountRange")
+            if not isinstance(target_range, list) or len(target_range) != 2 or any(not isinstance(value, int) or isinstance(value, bool) for value in target_range) or target_range[0] < 1 or target_range[1] < target_range[0]:
+                issues.append(f"{zone_label}.targetCountRange must be an ordered positive integer pair; intentionally empty regions belong in excludeRegions")
+            if not isinstance(zone.get("pattern"), str) or zone.get("pattern") not in DISTRIBUTION_PATTERNS:
+                issues.append(f"{zone_label}.pattern must describe the intended spatial rhythm")
+            object_id = zone.get("objectId")
+            obj = objects.get(object_id) if isinstance(object_id, str) else None
+            if obj is None or not isinstance(obj.get("geometryRole"), str) or obj.get("geometryRole") not in {"distribution-envelope", "surface"}:
+                issues.append(f"{zone_label}.objectId must resolve to a distribution envelope or host surface")
+            shape = None
+            if obj and zone.get("planGeometryId"):
+                shape = _registered_plan_shape(obj, zone.get("planGeometryId"))
+                if shape is None or shape.get("role") not in {"distribution-envelope", "support-footprint", "walkable-surface", "overhead-overhang"}:
+                    issues.append(f"{zone_label}.planGeometryId must resolve to an allowed plan region")
+            elif obj and (obj.get("geometryRole") != "distribution-envelope" or obj.get("hostSurfaceId")):
+                issues.append(f"{zone_label} on a surface-hosted domain requires planGeometryId; a bounding box is not a distribution mask")
+            excludes = zone.get("excludeRegions", [])
+            if not isinstance(excludes, list):
+                issues.append(f"{zone_label}.excludeRegions must be a list")
+            else:
+                for exclude_index, excluded in enumerate(excludes):
+                    if not isinstance(excluded, dict):
+                        issues.append(f"{zone_label}.excludeRegions[{exclude_index}] must identify a registered clearance region")
+                        continue
+                    excluded_object_id = excluded.get("objectId")
+                    excluded_obj = objects.get(excluded_object_id) if isinstance(excluded_object_id, str) else None
+                    excluded_shape = _registered_plan_shape(excluded_obj, excluded.get("planGeometryId"))
+                    if not excluded_obj or not excluded_shape or excluded_shape.get("role") != "clearance-envelope":
+                        issues.append(f"{zone_label}.excludeRegions[{exclude_index}] must resolve to a clearance-envelope")
+
+        placements = _distribution_placement_rows(base, group, label, evidence, issues)
+        placement_count = 0
+        placement_ids: set[str] = set()
+        variant_ids: set[str] = set()
+        for placement_index, placement in enumerate(placements):
+            placement_count += 1
+            placement_label = f"{label}.placements[{placement_index}]"
+            if not isinstance(placement, dict) or not isinstance(placement.get("id"), str) or not placement["id"].strip():
+                issues.append(f"{placement_label}.id must be a stable emitted instance id")
+                continue
+            if placement["id"] in placement_ids:
+                issues.append(f"{label}.placements has duplicate id {placement['id']}")
+            placement_ids.add(placement["id"])
+            zone_id = placement.get("zoneId")
+            zone = zone_by_id.get(zone_id)
+            if zone is None:
+                issues.append(f"{placement_label}.zoneId must resolve to a declared distribution zone")
+                continue
+            position, scale, variant = placement.get("positionWorld"), placement.get("scale"), placement.get("variantId")
+            if not _finite_vec3(position):
+                issues.append(f"{placement_label}.positionWorld must be a finite world-space anchor")
+                continue
+            if not _finite_vec3(scale) or any(value <= 0 for value in scale):
+                issues.append(f"{placement_label}.scale must be a positive finite vec3")
+            if not isinstance(variant, str) or not variant.strip():
+                issues.append(f"{placement_label}.variantId must name the emitted form variant")
+            else:
+                variant_ids.add(variant)
+            object_id = zone.get("objectId")
+            obj = objects.get(object_id) if isinstance(object_id, str) else None
+            shape = _registered_plan_shape(obj, zone.get("planGeometryId"))
+            if shape:
+                if not _shape_contains_placement(shape, position):
+                    issues.append(f"{placement_label} lies outside or inside a hole of declared plan region {zone_id}")
+                host_id = obj.get("hostSurfaceId") if isinstance(obj, dict) else None
+                vertical_host = objects.get(host_id) if isinstance(host_id, str) else obj
+                if not _object_vertical_contains(vertical_host, position[1]):
+                    issues.append(f"{placement_label} lies outside the registered host elevation range for {zone_id}")
+            elif obj and not _object_bounds_contains(obj, position):
+                issues.append(f"{placement_label} lies outside declared distribution bounds {zone_id}")
+            for excluded in zone.get("excludeRegions", []) if isinstance(zone.get("excludeRegions", []), list) else []:
+                if not isinstance(excluded, dict):
+                    continue
+                excluded_object_id = excluded.get("objectId")
+                excluded_obj = objects.get(excluded_object_id) if isinstance(excluded_object_id, str) else None
+                excluded_shape = _registered_plan_shape(excluded_obj, excluded.get("planGeometryId"))
+                if excluded_shape and _shape_contains_placement(excluded_shape, position):
+                    issues.append(f"{placement_label} lies inside excluded clearance region {excluded.get('planGeometryId')}")
+            zone_counts[zone_id] = zone_counts.get(zone_id, 0) + 1
+
+        counts = group.get("counts")
+        if not isinstance(counts, dict):
+            issues.append(f"{label}.counts must reconcile candidate, accepted, and rejection totals")
+            counts = {}
+        candidates, accepted, rejected = counts.get("candidate"), counts.get("accepted"), counts.get("rejectedByReason")
+        if not isinstance(candidates, int) or isinstance(candidates, bool) or not isinstance(accepted, int) or isinstance(accepted, bool) or candidates < 0 or accepted != placement_count or accepted > candidates:
+            issues.append(f"{label}.counts candidate/accepted must match the actual placement list")
+        if not isinstance(rejected, dict) or any(not isinstance(reason, str) or not reason.strip() or not isinstance(value, int) or isinstance(value, bool) or value < 0 for reason, value in rejected.items()):
+            issues.append(f"{label}.counts.rejectedByReason must contain nonnegative reason counts")
+        elif isinstance(candidates, int) and isinstance(accepted, int) and accepted + sum(rejected.values()) != candidates:
+            issues.append(f"{label}.counts rejectedByReason must reconcile candidate minus accepted")
+        for zone_id, zone in zone_by_id.items():
+            target = zone.get("targetCountRange")
+            if isinstance(target, list) and len(target) == 2 and all(isinstance(value, int) and not isinstance(value, bool) for value in target):
+                actual = zone_counts.get(zone_id, 0)
+                if not target[0] <= actual <= target[1]:
+                    issues.append(f"{label} zone {zone_id} has {actual} placements outside targetCountRange {target}")
+        minimum_variants = group.get("minimumVariantCount")
+        if not isinstance(minimum_variants, int) or isinstance(minimum_variants, bool) or minimum_variants < 1 or len(variant_ids) < minimum_variants:
+            issues.append(f"{label}.minimumVariantCount must be met by actual placement variantIds")
+
+        views = group.get("views")
+        if not isinstance(views, list):
+            issues.append(f"{label}.views must contain context, distribution-map, and detail PNG evidence")
+            views = []
+        view_ids: set[str] = set()
+        role_by_view: dict[str, str] = {}
+        for view_index, view in enumerate(views):
+            view_label = f"{label}.views[{view_index}]"
+            if not isinstance(view, dict) or not isinstance(view.get("id"), str) or not view["id"].strip():
+                issues.append(f"{view_label}.id must be a stable view identifier")
+                continue
+            view_id, role = view["id"], view.get("role")
+            if view_id in view_ids:
+                issues.append(f"{label}.views has duplicate id {view_id}")
+            view_ids.add(view_id)
+            if not isinstance(role, str) or role not in DISTRIBUTION_VIEW_ROLES:
+                issues.append(f"{view_label}.role must be one of: " + ", ".join(sorted(DISTRIBUTION_VIEW_ROLES)))
+            else:
+                role_by_view[view_id] = role
+            capture = _check_file_record(base, view, view_label, issues)
+            if capture:
+                rel, digest = capture
+                if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                    issues.append(f"{view_label} must be hashed in detailDistribution evidence")
+                _check_capture_png(base, rel, view_label, issues)
+        if not DISTRIBUTION_VIEW_ROLES.issubset(set(role_by_view.values())):
+            issues.append(f"{label}.views must include each required role: " + ", ".join(sorted(DISTRIBUTION_VIEW_ROLES)))
+
+        checks = group.get("checks")
+        if not isinstance(checks, list):
+            issues.append(f"{label}.checks must inspect each distribution quality dimension")
+            continue
+        checks_by_dimension: dict[str, dict[str, Any]] = {}
+        for check in checks:
+            if isinstance(check, dict) and isinstance(check.get("dimension"), str):
+                dimension = check["dimension"]
+                if dimension in checks_by_dimension:
+                    issues.append(f"{label}.checks has duplicate dimension {dimension}")
+                checks_by_dimension[dimension] = check
+        if set(checks_by_dimension) != DISTRIBUTION_CHECKS:
+            issues.append(f"{label}.checks must cover exactly: " + ", ".join(sorted(DISTRIBUTION_CHECKS)))
+        required_roles_by_dimension = {
+            "coverage": {"context", "distribution-map"},
+            "spacing-rhythm": {"distribution-map"},
+            "variation": {"detail"},
+            "screen-scale": {"context", "detail"},
+            "support-clearance": {"context"},
+        }
+        for dimension in DISTRIBUTION_CHECKS & set(checks_by_dimension):
+            check = checks_by_dimension[dimension]
+            status = check.get("status")
+            if status == "PASS":
+                observation = check.get("observation")
+                if not isinstance(observation, str) or len(observation.strip()) < 20:
+                    issues.append(f"{label} {dimension} PASS requires a concrete visual observation")
+                linked = check.get("viewIds")
+                if not isinstance(linked, list) or not linked or any(not isinstance(value, str) for value in linked) or not set(linked).issubset(view_ids):
+                    issues.append(f"{label} {dimension} requires viewIds linked to its PNG evidence")
+                elif not required_roles_by_dimension[dimension].issubset({role_by_view.get(view_id) for view_id in linked}):
+                    issues.append(f"{label} {dimension} must cite views with roles: " + ", ".join(sorted(required_roles_by_dimension[dimension])))
+            elif status == "NOT_APPLICABLE":
+                if dimension not in {"spacing-rhythm", "variation"} or not isinstance(check.get("reason"), str) or len(check["reason"].strip()) < 20:
+                    issues.append(f"{label} {dimension} NOT_APPLICABLE needs a justified single-form reason")
+            else:
+                issues.append(f"{label} {dimension} must PASS or be explicitly NOT_APPLICABLE")
+
+    if set(covered_features) != expected_features:
+        missing = sorted(expected_features - set(covered_features))
+        extra = sorted(set(covered_features) - expected_features)
+        if missing:
+            issues.append("distribution report is missing mapped distribution/detail features: " + ", ".join(missing))
+        if extra:
+            issues.append("distribution report includes unmapped distribution/detail features: " + ", ".join(extra))
+
+
 def validate_data(data: Any, base: Path, through: str | None = None) -> list[str]:
     issues: list[str] = []
     if not isinstance(data, dict):
@@ -1052,6 +1453,13 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                     if isinstance(gate_proxy, dict) and gate_proxy.get("visualBuildMap") != visual_map_rel:
                         issues.append("proxyStage must review the same visualBuildMapPath produced by visualAnalysis")
                     _run_specialist("validate_spatial_gate.py", gate, base, "spatialProxy", issues)
+
+    if "detailDistribution" in required_stages:
+        validate_distribution_report(
+            base, data.get("distributionReportPath"), data.get("sceneRegisterPath"),
+            data.get("visualBuildMapPath"), data.get("assetLedgerPath"),
+            by_id.get("detailDistribution", {}), issues,
+        )
 
     if mode == "full-production" and "runtime" in required_stages:
         camera_stage = by_id.get("cameraMotion", {})

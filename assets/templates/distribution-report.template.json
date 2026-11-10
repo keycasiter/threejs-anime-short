@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "status": "NOT_RUN",
+  "buildId": "detail-v1",
+  "groups": [
+    {
+      "id": "ridge-clusters",
+      "familyId": "terrain-family",
+      "featureIds": ["ground-distribution"],
+      "method": "clustered",
+      "seed": 2026,
+      "placementSource": {
+        "path": "src/distribution.js",
+        "sha256": "replace-with-source-sha256",
+        "symbol": "buildRidgeClusters"
+      },
+      "zones": [
+        {
+          "id": "upper-ridge-zone",
+          "objectId": "plant-zones",
+          "planGeometryId": "upper-ridge-planting-area",
+          "targetCountRange": [18, 30],
+          "pattern": "clustered",
+          "excludeRegions": [
+            {"objectId": "main-route-clearance", "planGeometryId": "walkway-clearance"}
+          ]
+        }
+      ],
+      "placements": [],
+      "counts": {"candidate": 0, "accepted": 0, "rejectedByReason": {}},
+      "minimumVariantCount": 3,
+      "views": [
+        {"id": "context", "role": "context", "path": "qa/detail/context.png", "sha256": "replace-with-file-sha256"},
+        {"id": "distribution-map", "role": "distribution-map", "path": "qa/detail/distribution-map.png", "sha256": "replace-with-file-sha256"},
+        {"id": "detail", "role": "detail", "path": "qa/detail/detail.png", "sha256": "replace-with-file-sha256"}
+      ],
+      "checks": [
+        {"dimension": "coverage", "status": "NOT_RUN", "observation": "", "viewIds": ["context", "distribution-map"]},
+        {"dimension": "spacing-rhythm", "status": "NOT_RUN", "observation": "", "viewIds": ["distribution-map"]},
+        {"dimension": "variation", "status": "NOT_RUN", "observation": "", "viewIds": ["detail"]},
+        {"dimension": "screen-scale", "status": "NOT_RUN", "observation": "", "viewIds": ["context", "detail"]},
+        {"dimension": "support-clearance", "status": "NOT_RUN", "observation": "", "viewIds": ["context"]}
+      ]
+    }
+  ]
+}
