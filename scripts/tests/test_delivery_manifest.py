@@ -507,6 +507,17 @@ class DeliveryManifestTests(unittest.TestCase):
         self.assertEqual({"terrain-family"}, family_ids)
         self.assertEqual([], issues)
 
+    def test_asset_ledger_rejects_schema_one_without_geometry_variant_handoff(self) -> None:
+        ledger = {"schemaVersion": 1, "families": [self.asset_family("terrain-family", "supporting", ["ground"], [])]}
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+        issues: list[str] = []
+        validate_delivery.validate_asset_ledger(
+            self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
+            self.asset_stage(ledger_path), issues,
+        )
+        self.assertTrue(any("assetLedger.schemaVersion must equal 2" in issue for issue in issues))
+
     def test_asset_ledger_blocks_detail_expansion_without_a_complete_visual_prototype(self) -> None:
         family = self.asset_family("terrain-family", "supporting", ["ground"], [])
         family["prototype"]["featureReviews"].pop()
