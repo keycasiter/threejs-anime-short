@@ -17,6 +17,7 @@
 - 最终HTML会在full-production门禁内静态检查；离线HTML拒绝远程依赖。运行说明必须作为哈希文件随成品交付。
 - MP4导出会在完成前核对媒体属性并记录成片哈希；最终交付门禁会重新探测文件并绑定导出manifest、源HTML和交付文件。
 - 带音轨MP4需随交付提交绑定最终MP4哈希的完整播放/分段审听记录；静音MP4不要求音频审听报告。
+- 所有MP4都会从编码后文件抽取代表帧，需提交完整播放审片报告；帧图与报告均以哈希纳入最终交付证据。
 - [渲染选择](references/rendering-choices.md)：色彩、PBR/IBL、版本、软影与异步完成协议；可选[柔和主光源码](assets/rendering/soft-directional.mjs)随作品复制。
 - [视觉分析空间交接](references/visual-analysis-sop.md)由[`validate_scene_register.py`](scripts/validate_scene_register.py)检查来源、ID、坐标、高程和端口交接；参考图与可建模特征的映射由[`visual-build-map模板`](assets/templates/visual-build-map.template.json)和交付门禁检查；每个资产族的代表样件及逐特征证据由[`asset-ledger模板`](assets/templates/asset-ledger.template.json)检查；空间搭建放行由`validate_spatial_gate.py`检查证据覆盖。
 - 其他references：渲染契约、状态与规模、AI资产及研究方法，条件适用时读取。
@@ -31,6 +32,7 @@ README供维护者了解版本与验证历史，不作为普通制作的额外�
 | 日期 / 版本 | 内容与依据 | 验证结果及边界 |
 |---|---|---|
 | 2026-11-11 / R31 最终音频听感复核证据 | R30已能验证音轨存在、采样率与时长，却不能证明实际播放时同步、混音层次、失真/噪声及尾音成立；既有文档要求审听但门禁无记录。现要求有音轨MP4绑定最终文件哈希、完整播放声明、开场/中段/结尾的定时观察和同步/平衡/失真/底噪/收尾检查；不替静音MP4增加音频项 | 102项Python用例、Skill格式、模板JSON和diff检查通过；新增正反例覆盖MP4哈希绑定、完整播放、时间片覆盖、必要检查与build ID。门禁只能校验审听记录的完整性和文件关系，不能证明真的播放或判断听感。 |
+| 2026-11-11 / R32 编码后成片视觉审片闭环 | `visualReview`只检查浏览器渲染截图，导出manifest只核对MP4元数据和哈希，未覆盖编码伪影、画面可读性及成片时序连续性。现从最终MP4解码开场/四分位/中点/四分之三/结尾和请求采样帧，纳入哈希证据；每个MP4需完整播放并提交绑定成片哈希的视觉审片报告，音轨审听仍独立执行 | 69项manifest测试、5项Node视频契约测试通过；真实ffmpeg合成片抽帧验证尺寸、时间和哈希。视频审片报告仍是可追溯的人审声明，门禁无法证明实际播放，也不自动判断审美质量。Chrome启动故障使浏览器驱动的完整导出路径未做端到端验证。 |
 | 2026-11-11 / R30 视频/音频成品与导出规格绑定 | `render_film.mjs`原先只把ffprobe结果写进manifest，没有在导出成功前核对声明尺寸/fps/帧数/时长/音轨，也没有记录MP4哈希；最终delivery门禁不验证MP4内容。现加入导出时元数据门禁和videoArtifact SHA-256，并要求mp4 deliverable引用导出manifest；最终校验重新运行ffprobe，绑定导出源HTML hash、实际MP4路径/哈希、媒体规格和音轨 | 98项Python用例、3项视频契约Node用例、JS语法、Skill格式、模板JSON和diff检查通过；真实ffmpeg/ffprobe静音及AAC样片均匹配尺寸/fps/帧数/时长/音轨契约。`render_film.test.mjs`端到端测试无法完成：Chrome 157启动时Abort trap，DevTools端口文件未生成，因此浏览器驱动导出路径未验证。 |
 | 2026-11-11 / R29 最终运行包可执行性 | R18 的最终 `offline-html` 手动静态检查通过，但该检查未接入最终delivery gate；门禁也没强制把运行说明与产物一起交付。现在最终HTML按deliverable类型自动检查脚本语法、资源、模块依赖和离线约束；必须将运行说明哈希加入最终deliverables与delivery evidence | 96项Python用例、Skill格式、模板JSON和diff检查通过；R18最终HTML静态离线检查通过，但完整交付仍被运行页身份、缺失的运行说明记录、视觉复核BLOCK等问题拦截。静态检查不能证明真实浏览器运行或视觉品质。 |
 | 2026-11-11 / R28 运行页面与最终包交接 | R18 `runtime` 阶段的输入已经哈希引用`dist/index.html`，但`runtime-report.json`只记URL、浏览器、截图与渲染状态，没有指出实际启动页文件/哈希；门禁核对了相机契约输入，却没把runtime报告中的样本与最终交付包中的测试页面绑定。新增`runtimeReport.testedArtifact`，要求它匹配runtime输入并在最终delivery evidence中保留同一HTML/hash；interactive-orbit还要求相机操作报告与runtime报告测试同一个页面 | 94项Python用例、Skill格式、模板JSON和内部链接检查通过；R18仍因运行页面记录缺失、视觉复核BLOCK等原因被门禁拦截。校验只验证声明的页面/哈希/阶段引用一致，不会自动证明浏览器实际载入了这些字节或画面达标。 |

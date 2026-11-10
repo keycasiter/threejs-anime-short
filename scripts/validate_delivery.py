@@ -266,12 +266,150 @@ def _validate_video_deliverable(base: Path, item: dict[str, Any], build_id: str,
         return
     _validate_probe_contract(actual_probe, contract, "MP4 deliverable", issues)
     _validate_probe_contract(report.get("video"), contract, "MP4 export report probe", issues)
+    samples = _validate_video_samples(base, report_path.parent, report, delivery_outputs, issues)
+    _validate_video_review(base, item.get("videoReviewReport"), item, build_id, samples, delivery_outputs, issues)
     if report.get("audioMode") == "wav":
         try:
             duration = math.ceil(float(report.get("duration")) * float(report.get("fps"))) / float(report.get("fps"))
         except (TypeError, ValueError, ZeroDivisionError):
             duration = 0
         _validate_audio_review(base, item.get("audioReviewReport"), item, build_id, duration, delivery_outputs, issues)
+
+
+def _validate_video_samples(project_dir: Path, export_dir: Path, report: dict[str, Any], delivery_outputs: set[tuple[str, str]], issues: list[str]) -> list[str]:
+    samples = report.get("videoSamples")
+    if not isinstance(samples, list):
+        issues.append("MP4 export report requires post-encode videoSamples")
+        return []
+    ids: list[str] = []
+    frame_times: list[float] = []
+    frame_indexes: list[int] = []
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, dict):
+            issues.append(f"videoSamples[{index}] must be an object")
+            continue
+        sample_id = sample.get("id")
+        if not isinstance(sample_id, str) or not sample_id.strip():
+            issues.append(f"videoSamples[{index}] requires an id")
+        else:
+            ids.append(sample_id)
+        try:
+            sample_time = float(sample.get("t"))
+            if not math.isfinite(sample_time) or sample_time < 0:
+                raise ValueError
+            frame_times.append(sample_time)
+        except (TypeError, ValueError):
+            issues.append(f"videoSamples[{index}] requires a nonnegative encoded time")
+        try:
+            frame_indexes.append(int(sample.get("frame")))
+        except (TypeError, ValueError):
+            issues.append(f"videoSamples[{index}] requires an encoded frame index")
+        record = _check_file_record(export_dir, {"path": sample.get("file"), "sha256": sample.get("sha256")}, f"videoSamples[{index}]", issues)
+        if record:
+            _relative, digest = record
+            frame_path = _resolve(export_dir, sample.get("file"))
+            try:
+                evidence_path = frame_path.relative_to(project_dir.resolve()).as_posix() if frame_path else ""
+            except ValueError:
+                evidence_path = ""
+            if not evidence_path or (evidence_path, digest) not in delivery_outputs:
+                issues.append(f"delivery evidence must hash encoded frame {sample.get('file')}")
+            header = frame_path.read_bytes()[:24] if frame_path else b""
+            if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+                issues.append(f"videoSamples[{index}] must be a real post-encode PNG")
+            elif struct.unpack(">II", header[16:24]) != (report.get("width"), report.get("height")):
+                issues.append(f"videoSamples[{index}] dimensions must match the encoded MP4")
+    if len(ids) != len(set(ids)):
+        issues.append("videoSamples ids must be unique")
+    if frame_times != sorted(frame_times) or len(frame_times) != len(set(frame_times)):
+        issues.append("videoSamples times must be unique and ordered along the encoded timeline")
+    try:
+        probe = report.get("video")
+        streams = probe.get("streams", []) if isinstance(probe, dict) else []
+        video_stream = next(stream for stream in streams if isinstance(stream, dict) and stream.get("codec_type") == "video")
+        rate_parts = str(video_stream.get("avg_frame_rate", "0/1")).split("/")
+        fps = float(rate_parts[0]) / float(rate_parts[1])
+        total_frames = int(video_stream.get("nb_frames"))
+        last_frame = total_frames - 1
+        required_frames = {math.floor(last_frame * fraction + .5) for fraction in (0, .25, .5, .75, 1)}
+        if not required_frames.issubset(set(frame_indexes)):
+            issues.append("videoSamples must cover opening, quarter, midpoint, three-quarter, and ending encoded frames")
+        if len(frame_indexes) < min(5, total_frames):
+            issues.append("videoSamples must cover at least five encoded positions, or every frame for clips shorter than five frames")
+        if len(frame_indexes) != len(set(frame_indexes)) or any(frame < 0 or frame >= total_frames for frame in frame_indexes):
+            issues.append("videoSamples frame indexes must be unique and inside the encoded MP4")
+        for sample, frame_index in zip(samples, frame_indexes):
+            if isinstance(sample, dict):
+                try:
+                    mismatched = abs(float(sample.get("t")) - frame_index / fps) > 1e-6
+                except (TypeError, ValueError, ZeroDivisionError):
+                    mismatched = True
+                if mismatched:
+                    issues.append("videoSamples time must match its encoded frame index")
+                    break
+        if "ending" in ids:
+            ending = next(float(sample.get("t")) for sample in samples if isinstance(sample, dict) and sample.get("id") == "ending")
+            if abs(ending - last_frame / fps) > 1e-6:
+                issues.append("ending videoSample must target the last encoded frame, before MP4 duration")
+    except (StopIteration, TypeError, ValueError, ZeroDivisionError):
+        issues.append("MP4 export report must expose frame rate and frame count to validate ending sample")
+    return ids
+
+
+def _validate_video_review(base: Path, record: Any, item: dict[str, Any], build_id: str, sample_ids: list[str], delivery_outputs: set[tuple[str, str]], issues: list[str]) -> None:
+    if not isinstance(record, str) or not record.strip():
+        issues.append("MP4 deliverable requires videoReviewReport for the encoded file")
+        return
+    path = _resolve(base, record)
+    review = _load_json(path) if path else None
+    if review is None:
+        issues.append("videoReviewReport must reference an existing project JSON file")
+        return
+    report_hash = _hash(path)
+    report_relative = path.relative_to(base.resolve()).as_posix()
+    if (report_relative, report_hash) not in delivery_outputs:
+        issues.append("delivery evidence must hash the video review report")
+    if review.get("status") != "PASS" or review.get("buildId") != build_id:
+        issues.append("video review report must PASS and match the final buildId")
+    if not isinstance(review.get("reviewer"), str) or not review["reviewer"].strip():
+        issues.append("video review report requires a named reviewer")
+    playback = review.get("playback")
+    if not isinstance(playback, dict):
+        issues.append("video review requires playback method, device, and completion status")
+        playback = {}
+    for key in ("method", "device"):
+        if not isinstance(playback.get(key), str) or not playback[key].strip():
+            issues.append(f"video review playback requires {key}")
+    if playback.get("completePlayback") is not True:
+        issues.append("video review must record completePlayback=true for the final MP4")
+    reviewed = _check_file_record(base, review.get("reviewedArtifact"), "video review reviewedArtifact", issues)
+    deliverable = _check_file_record(base, item, "video review MP4 deliverable", issues)
+    if reviewed and deliverable and reviewed != deliverable:
+        issues.append("video review reviewedArtifact must match the exact final MP4 path and SHA-256")
+    reviewed_ids = review.get("reviewedSampleIds")
+    valid_reviewed_ids = isinstance(reviewed_ids, list) and all(isinstance(sample_id, str) for sample_id in reviewed_ids)
+    if not valid_reviewed_ids or len(reviewed_ids) != len(set(reviewed_ids)) or set(reviewed_ids) != set(sample_ids):
+        issues.append("video review reviewedSampleIds must exactly match the encoded videoSamples")
+    required = {"framing-readability", "encoding-artifacts", "temporal-continuity"}
+    checks = review.get("checks")
+    if not isinstance(checks, dict):
+        issues.append("video review checks must be an object")
+        checks = {}
+    if required - set(checks):
+        issues.append("video review is missing checks: " + ", ".join(sorted(required - set(checks))))
+    if set(checks) - required:
+        issues.append("video review has unknown checks: " + ", ".join(sorted(set(checks) - required)))
+    for check_id in sorted(required & set(checks)):
+        check = checks[check_id]
+        if not isinstance(check, dict) or check.get("status") != "PASS":
+            issues.append(f"video review {check_id} must PASS")
+            continue
+        observation = check.get("observation")
+        if not isinstance(observation, str) or len(observation.strip()) < 16:
+            issues.append(f"video review {check_id} PASS requires a concrete observation")
+        cited = check.get("sampleIds")
+        if not isinstance(cited, list) or not all(isinstance(sample_id, str) for sample_id in cited) or set(cited) != set(sample_ids):
+            issues.append(f"video review {check_id} must cite all encoded review samples")
 
 
 def _validate_audio_review(base: Path, record: Any, item: dict[str, Any], build_id: str, duration: float, delivery_outputs: set[tuple[str, str]], issues: list[str]) -> None:

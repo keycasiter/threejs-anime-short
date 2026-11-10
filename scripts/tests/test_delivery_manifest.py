@@ -1038,12 +1038,95 @@ class DeliveryManifestTests(unittest.TestCase):
         return report, item, (source_path.relative_to(self.root).as_posix(), source_hash), evidence, probe
 
     def test_mp4_delivery_binds_export_source_artifact_hash_and_probe(self) -> None:
-        _report, item, runtime_tested, delivery_outputs, probe = self._film_export_fixture()
+        report, item, runtime_tested, delivery_outputs, probe = self._film_export_fixture()
+        self._attach_video_review(report, item, delivery_outputs)
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
         with patch.object(validate_delivery.subprocess, "run", return_value=result):
             validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, delivery_outputs, issues)
         self.assertEqual([], issues)
+
+    def _attach_video_review(self, report: dict, item: dict, evidence: set[tuple[str, str]]) -> None:
+        """Create post-encode frame evidence and a hash-bound visual review."""
+        import struct
+
+        export_dir = self.root / "exports"
+        sample_specs = [("opening", 0), ("quarter-1", 6), ("midpoint", 12), ("quarter-3", 17), ("ending", 23)]
+        samples = []
+        for index, (sample_id, time) in enumerate(sample_specs):
+            frame_path = export_dir / f"video-frame-{index:03}.png"
+            png = bytearray(b"\x89PNG\r\n\x1a\n")
+            png.extend(struct.pack(">I", 13))
+            png.extend(b"IHDR")
+            png.extend(struct.pack(">II", 640, 360))
+            png.extend(b"\x08\x02\x00\x00\x00")
+            png.extend(b"\x00\x00\x00\x00")
+            frame_path.write_bytes(png)
+            digest = hashlib.sha256(png).hexdigest()
+            samples.append({"id": sample_id, "frame": time, "t": time / 24, "file": frame_path.name, "sha256": digest})
+            evidence.add((frame_path.relative_to(self.root).as_posix(), digest))
+        report["videoSamples"] = samples
+        export_report_path = export_dir / "manifest.json"
+        export_report_path.write_text(json.dumps(report), encoding="utf-8")
+        evidence.discard(("exports/manifest.json", next((h for p, h in evidence if p == "exports/manifest.json"), "")))
+        evidence.add(("exports/manifest.json", hashlib.sha256(export_report_path.read_bytes()).hexdigest()))
+        item["videoReviewReport"] = "exports/video-review.json"
+        review = {
+            "status": "PASS", "buildId": "scene-v1", "reviewer": "Video reviewer",
+            "reviewedArtifact": {"path": item["path"], "sha256": item["sha256"]},
+            "reviewedSampleIds": [sample["id"] for sample in samples],
+            "playback": {"method": "Full playback in a desktop media player", "device": "Calibrated desktop display", "completePlayback": True},
+            "checks": {
+                key: {"status": "PASS", "observation": f"Reviewed {key} on the encoded MP4 at the cited frames.", "sampleIds": [sample["id"] for sample in samples]}
+                for key in ("framing-readability", "encoding-artifacts", "temporal-continuity")
+            },
+        }
+        review_path = self.root / item["videoReviewReport"]
+        review_path.write_text(json.dumps(review), encoding="utf-8")
+        evidence.add((review_path.relative_to(self.root).as_posix(), hashlib.sha256(review_path.read_bytes()).hexdigest()))
+
+    def test_mp4_delivery_requires_hash_bound_post_encode_visual_review(self) -> None:
+        report, item, runtime_tested, evidence, probe = self._film_export_fixture()
+        result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+            validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
+        self.assertIn("MP4 deliverable requires videoReviewReport", "\n".join(issues))
+
+    def test_mp4_delivery_requires_each_post_encode_frame_in_delivery_evidence(self) -> None:
+        report, item, runtime_tested, evidence, probe = self._film_export_fixture()
+        self._attach_video_review(report, item, evidence)
+        frame_path = self.root / "exports" / "video-frame-002.png"
+        evidence.discard(("exports/video-frame-002.png", hashlib.sha256(frame_path.read_bytes()).hexdigest()))
+        result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+            validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
+        self.assertIn("delivery evidence must hash encoded frame video-frame-002.png", "\n".join(issues))
+
+    def test_mp4_review_blocks_stale_encoded_frame_hash_and_missing_temporal_coverage(self) -> None:
+        report, item, runtime_tested, evidence, probe = self._film_export_fixture()
+        self._attach_video_review(report, item, evidence)
+        review_path = self.root / item["videoReviewReport"]
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+        review["reviewedSampleIds"].pop()
+        review["checks"]["encoding-artifacts"]["sampleIds"] = ["opening"]
+        review_path.write_text(json.dumps(review), encoding="utf-8")
+        evidence.discard(("exports/video-review.json", next((h for p, h in evidence if p == "exports/video-review.json"), "")))
+        evidence.add(("exports/video-review.json", hashlib.sha256(review_path.read_bytes()).hexdigest()))
+        report["videoSamples"][0]["sha256"] = "0" * 64
+        export_path = self.root / item["exportReport"]
+        export_path.write_text(json.dumps(report), encoding="utf-8")
+        evidence.discard(("exports/manifest.json", next((h for p, h in evidence if p == "exports/manifest.json"), "")))
+        evidence.add(("exports/manifest.json", hashlib.sha256(export_path.read_bytes()).hexdigest()))
+        result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+            validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
+        joined = "\n".join(issues)
+        self.assertIn("videoSamples[0]: SHA-256 mismatch", joined)
+        self.assertIn("reviewedSampleIds must exactly match", joined)
+        self.assertIn("must cite all encoded review samples", joined)
 
     def test_mp4_delivery_blocks_source_or_encoded_metadata_mismatch(self) -> None:
         report, item, runtime_tested, delivery_outputs, probe = self._film_export_fixture()
@@ -1060,6 +1143,7 @@ class DeliveryManifestTests(unittest.TestCase):
 
     def _audio_review_fixture(self) -> tuple[dict, dict, set[tuple[str, str]], tuple[str, str], dict]:
         export, item, runtime_tested, evidence, _probe = self._film_export_fixture()
+        self._attach_video_review(export, item, evidence)
         export_path = self.root / item["exportReport"]
         old_export_hash = hashlib.sha256(export_path.read_bytes()).hexdigest()
         evidence.discard(("exports/manifest.json", old_export_hash))
