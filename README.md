@@ -9,9 +9,10 @@
 - [资产设计](references/asset-craft.md)：视觉基准、形体/场景选择、实现映射与材料设计。
 - [构图、空间与中层](references/composition-and-form.md)：屏幕关系到视点/透视、空间分组与真实体积过渡，含可执行投影诊断。
 - [细节与分布SOP](references/detail-distribution.md)：从空间分布目标到实际实例、热区图和分组验收。
+- [材质与灯光校准SOP](references/lookdev-calibration.md)：把材料目标连到Three.js消费者，并做固定条件配对对照。
 - [代码方法](references/threejs-code-sop.md)：几何、生成器、材料/FX及时间函数；按问题选读。
 - [统一验收](references/validation.md)：完整性、视觉品质、动作、相机和最终文件分别判断。
-- [阶段交付契约](references/delivery-contract.md)、[交付模板](assets/templates/delivery-manifest.template.json)、[分布报告模板](assets/templates/distribution-report.template.json)与[运行预检模板](assets/templates/runtime-preflight.template.json)：按用户任务范围验证阶段顺序、构建证据和最终交付。
+- [阶段交付契约](references/delivery-contract.md)、[交付模板](assets/templates/delivery-manifest.template.json)、[分布报告模板](assets/templates/distribution-report.template.json)、[材光校准报告模板](assets/templates/lookdev-report.template.json)与[运行预检模板](assets/templates/runtime-preflight.template.json)：按用户任务范围验证阶段顺序、构建证据和最终交付。
 - [渲染选择](references/rendering-choices.md)：色彩、PBR/IBL、版本、软影与异步完成协议；可选[柔和主光源码](assets/rendering/soft-directional.mjs)随作品复制。
 - [视觉分析空间交接](references/visual-analysis-sop.md)由[`validate_scene_register.py`](scripts/validate_scene_register.py)检查来源、ID、坐标、高程和端口交接；参考图与可建模特征的映射由[`visual-build-map模板`](assets/templates/visual-build-map.template.json)和交付门禁检查；每个资产族的代表样件及逐特征证据由[`asset-ledger模板`](assets/templates/asset-ledger.template.json)检查；空间搭建放行由`validate_spatial_gate.py`检查证据覆盖。
 - 其他references：渲染契约、状态与规模、AI资产及研究方法，条件适用时读取。
@@ -25,6 +26,7 @@ README供维护者了解版本与验证历史，不作为普通制作的额外�
 
 | 日期 / 版本 | 内容与依据 | 验证结果及边界 |
 |---|---|---|
+| 2026-11-11 / R25 材质与灯光校准交接 | R18最终复核发现地形与海面低对比、岸边泡沫在最终镜头不可见；现有材光资料讲了很多实现方式，但lookdev阶段只要求“固定视角比较”，未强制逐项材料目标对应到真实绑定/受光/输出消费者，也未锁定几何、相机、曝光和颜色输出条件。新增配对校准报告、逐族SOP及门禁：覆盖全部material特征；哈希绑定实现符号、冻结控制、baseline/selected真实PNG和可见选择理由 | 86项Python用例、Skill格式、模板JSON与内部链接检查通过；正例放行，漏特征与未锁定几何的负例拦截。门禁仅检查结构、哈希、符号声明和截图格式；不证明函数被运行或画面更好。R18缺少对应报告，不能回填成通过，也不据此声称画质提升。 |
 | 2026-11-11 / R24 细节分布的可执行交接 | R18灯塔最终审查发现植被集中在单一区域、岛冠大面积空缺、灌木/岩块形态重复；但`detailDistribution`只有源码、最终审查和一个泡沫调试图，没有区域密度目标、实际落点、候选/拒绝统计或分布诊断图。新增独立细节/分布SOP、`distribution-report`模板和阶段门禁：分组连回目标特征/资产族/生成器；实际世界锚点和变体按登记分布域、孔洞/净空及分区目标校验；上下文、分布图和近景绑定覆盖/节奏/变化/屏幕尺度/支撑净空审查；大群体支持流式CSV放置表 | 83项Python用例、Skill格式和内部相对链接检查通过；正例可放行，分区欠量、越界/孔洞/净空、统计不一致、缺视图和错误生成器符号负例被拦截。R18运行至`detailDistribution`仍因缺上游visualBuildMap及分布报告被阻断，与其原始BLOCK一致；无法用该旧项目证明新门禁端到端通过。脚本校验数据/证据完整性，不替代人工判断分布节奏与视觉品质，也不证明Agent自主遵循或画质提升。 |
 | 2026-11-11 / R23 中层形体的互补视角证据 | R18灯塔项目已有最终构建候选图，但该项目的`visualReview`与`delivery`均为BLOCK，资产台账中六个资产族也没有代表样件。旧中层门禁允许单张哈希截图配多条文字观察，无法确认剪影、体积、连接与空间关系是否由合适视角实际呈现。改为要求真实PNG互补视图，并将逐特征检查绑定到视图ID；剪影/比例/体积需主视角+补充形体视角，连接需接点+延伸方向视角，空间关系需环境+侧/斜/背视角 | 76项Python用例、Skill格式校验通过；新负例确认单视角、无效图片和未关联视图会被拦截。R18全链路复核在visualAnalysis与spatialProxy输入处已阻断，不能据其验证新中层门禁的端到端行为；其原始delivery状态明确为BLOCK。本轮只证明门禁对所需证据作结构约束，不证明Agent会产出高品质形体或成片质量提升。 |
 | 2026-11-11 / R22 视觉特征到空间白模接力 | R20空间记录和构图六维度可被标成PASS，但中性截图仍以一圈分离圆锥表示视觉构建图中的层叠远山、以平面加球块表示连续云体；proxy inventory只核对场景ID，没有核对分析阶段的关键轮廓/体积/连接/分布约束。新增空间特征从`visual-build-map`映射到白模表示、再逐特征绑定实际截图审查；`spatialProxy`必须消费与`visualAnalysis`相同哈希的build map | 73项Python用例、Skill格式和`git diff --check`通过；正向集成样例可放行，漏掉特征映射/特征观察/上游图输入的负例被拦截。将新验证器应用于R20当前代理副本后，它因缺少feature映射与逐特征审查被阻断，证实旧的构图PASS不足以证明目标轮廓落实；这只能证明新门禁能暴露交接缺口，不能证明Agent遵循或画质改善，R20场景仍未完成。 |

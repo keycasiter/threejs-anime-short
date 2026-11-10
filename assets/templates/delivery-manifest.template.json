@@ -8,6 +8,7 @@
   "diagramReviewReportPath": "qa/diagram-review.json",
   "assetLedgerPath": "design/asset-ledger.json",
   "distributionReportPath": "qa/distribution-report.json",
+  "lookdevReportPath": "qa/lookdev-report.json",
   "spatialGatePath": "qa/spatial-gate.json",
   "cameraContractPath": "design/camera-contract.json",
   "runtimeReport": "qa/runtime-report.json",

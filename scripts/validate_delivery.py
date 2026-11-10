@@ -61,6 +61,7 @@ DISTRIBUTION_METHODS = {"manual", "grid", "clustered", "poisson", "field-sampled
 DISTRIBUTION_VIEW_ROLES = {"context", "distribution-map", "detail"}
 DISTRIBUTION_CHECKS = {"coverage", "spacing-rhythm", "variation", "screen-scale", "support-clearance"}
 DISTRIBUTION_PATTERNS = {"uniform", "grid", "clustered", "gradient", "edge-following", "path-following", "curated", "volume-layered", "mixed"}
+LOOKDEV_SOURCE_ROLES = {"material-binding", "lighting", "render-output"}
 
 
 def _resolve(base: Path, value: Any) -> Path | None:
@@ -1320,6 +1321,189 @@ def validate_distribution_report(
             issues.append("distribution report includes unmapped distribution/detail features: " + ", ".join(extra))
 
 
+def validate_lookdev_report(
+    base: Path, report_path: Any, register_path: Any, visual_build_map_path: Any,
+    asset_ledger_path: Any, stage: Any, issues: list[str],
+) -> None:
+    """Check traceable, paired material/light calibration evidence for mapped material features."""
+    report_file = _resolve(base, report_path)
+    register_file = _resolve(base, register_path)
+    build_map_file = _resolve(base, visual_build_map_path)
+    ledger_file = _resolve(base, asset_ledger_path)
+    if report_file is None:
+        issues.append("lookdevReportPath must reference an existing project JSON file")
+        return
+    if not register_file or not build_map_file or not ledger_file:
+        issues.append("lookdev requires scene register, visual build map, and asset ledger inputs")
+        return
+    stage = stage if isinstance(stage, dict) else {}
+    evidence = stage.get("evidence", [])
+    report_hash = _hash(report_file)
+    if not any(isinstance(item, dict) and item.get("path") == report_path and item.get("sha256") == report_hash for item in evidence):
+        issues.append("lookdev evidence must include lookdevReportPath with its SHA-256")
+    upstream_refs = {
+        str(register_path): _hash(register_file),
+        str(visual_build_map_path): _hash(build_map_file),
+        str(asset_ledger_path): _hash(ledger_file),
+    }
+    recorded_inputs = {
+        (item.get("path"), item.get("sha256"))
+        for item in stage.get("inputs", []) if isinstance(item, dict)
+    }
+    for path, digest in upstream_refs.items():
+        if (path, digest) not in recorded_inputs:
+            issues.append(f"lookdev inputs must include {path} with its current SHA-256")
+    report, _register, build_map, ledger = (
+        _load_json(report_file), _load_json(register_file), _load_json(build_map_file), _load_json(ledger_file)
+    )
+    if not all((report, _register, build_map, ledger)):
+        issues.append("lookdev report and its upstream design artifacts must be readable JSON objects")
+        return
+    if report.get("schemaVersion") != 1:
+        issues.append("lookdev report schemaVersion must equal 1")
+    if report.get("status") != "PASS" or report.get("buildId") != stage.get("buildId"):
+        issues.append("lookdev report must PASS and match the lookdev stage buildId")
+
+    feature_family: dict[str, str] = {}
+    valid_families: set[str] = set()
+    for family in ledger.get("families", []):
+        if isinstance(family, dict) and isinstance(family.get("id"), str):
+            valid_families.add(family["id"])
+            for feature_id in family.get("visualFeatureIds", []):
+                if isinstance(feature_id, str):
+                    feature_family[feature_id] = family["id"]
+    material_features: set[str] = set()
+    feature_owner: dict[str, str | None] = {}
+    for entry in build_map.get("entries", []):
+        if not isinstance(entry, dict):
+            continue
+        for feature in entry.get("features", []):
+            if isinstance(feature, dict) and isinstance(feature.get("id"), str) and feature.get("category") == "material":
+                feature_id = feature["id"]
+                material_features.add(feature_id)
+                feature_owner[feature_id] = feature_family.get(feature_id)
+    if not material_features:
+        issues.append("visualBuildMap must define material features for full-production lookdev")
+
+    groups = report.get("groups")
+    if not isinstance(groups, list) or not groups:
+        issues.append("lookdev report groups must be a nonempty list")
+        return
+    seen_groups: set[str] = set()
+    covered: dict[str, str] = {}
+    family_to_group: dict[str, str] = {}
+    for index, group in enumerate(groups):
+        label = f"lookdevReport.groups[{index}]"
+        if not isinstance(group, dict):
+            issues.append(f"{label} must be an object")
+            continue
+        group_id = group.get("id")
+        family_id = group.get("familyId")
+        if not isinstance(group_id, str) or not group_id.strip() or group_id in seen_groups:
+            issues.append(f"{label}.id must be a unique stable identifier")
+            continue
+        seen_groups.add(group_id)
+        if not isinstance(family_id, str) or family_id not in valid_families:
+            issues.append(f"{label}.familyId must resolve to an asset family")
+        feature_ids = group.get("featureIds")
+        if not isinstance(feature_ids, list) or not feature_ids or any(not isinstance(value, str) for value in feature_ids) or len(feature_ids) != len(set(feature_ids)):
+            issues.append(f"{label}.featureIds must list unique material features")
+            feature_ids = []
+        if isinstance(family_id, str) and family_id in family_to_group and family_to_group[family_id] != group_id:
+            issues.append(f"lookdev asset family {family_id} is split across groups; consolidate its fixed-view calibration")
+        if isinstance(family_id, str):
+            family_to_group[family_id] = group_id
+        for feature_id in feature_ids:
+            if feature_id not in material_features:
+                issues.append(f"{label} feature {feature_id} must be categorized as material in visualBuildMap")
+            if feature_owner.get(feature_id) != family_id:
+                issues.append(f"{label} feature {feature_id} must belong to asset family {family_id}")
+            if feature_id in covered:
+                issues.append(f"lookdev material feature {feature_id} is covered by multiple groups")
+            covered[feature_id] = group_id
+
+        sources = group.get("sources")
+        source_roles: set[str] = set()
+        if not isinstance(sources, list) or not sources:
+            issues.append(f"{label}.sources must trace material, lighting, and render-output consumers")
+            sources = []
+        for source_index, source in enumerate(sources):
+            source_label = f"{label}.sources[{source_index}]"
+            source_record = _check_file_record(base, source, source_label, issues)
+            if source_record:
+                rel, digest = source_record
+                if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                    issues.append(f"{source_label} must be hashed in lookdev evidence")
+            role = source.get("role") if isinstance(source, dict) else None
+            symbol = source.get("symbol") if isinstance(source, dict) else None
+            if not isinstance(role, str) or role not in LOOKDEV_SOURCE_ROLES:
+                issues.append(f"{source_label}.role must be one of: " + ", ".join(sorted(LOOKDEV_SOURCE_ROLES)))
+            else:
+                source_roles.add(role)
+            if not isinstance(symbol, str) or not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", symbol):
+                issues.append(f"{source_label}.symbol must name a declared implementation symbol")
+            elif source_record:
+                source_file = _resolve(base, source_record[0])
+                try:
+                    source_text = source_file.read_text(encoding="utf-8") if source_file else ""
+                except (OSError, UnicodeDecodeError):
+                    source_text = ""
+                declaration = rf"\b(?:function|class)\s+{re.escape(symbol)}\b|\b(?:const|let|var)\s+{re.escape(symbol)}\s*="
+                if source_text and not re.search(declaration, source_text):
+                    issues.append(f"{source_label} source does not declare {symbol}")
+        if "material-binding" not in source_roles or not source_roles.intersection({"lighting", "render-output"}):
+            issues.append(f"{label}.sources must trace material-binding and at least one lighting/render-output consumer")
+
+        target = group.get("targetResponse")
+        if not isinstance(target, str) or len(target.strip()) < 20:
+            issues.append(f"{label}.targetResponse must state the intended visible material/light response")
+        comparison = group.get("comparison")
+        if not isinstance(comparison, dict):
+            issues.append(f"{label}.comparison must contain a paired controlled calibration")
+            continue
+        changed = comparison.get("changedVariable")
+        before_value, selected_value = comparison.get("baselineValue"), comparison.get("selectedValue")
+        if (not isinstance(changed, str) or len(changed.strip()) < 4
+                or before_value in (None, "") or selected_value in (None, "") or before_value == selected_value):
+            issues.append(f"{label}.comparison must name a changed variable and distinct baseline/selected values")
+        frozen = comparison.get("frozenControls")
+        required_controls = {"cameraId", "resolution", "geometryHash", "renderer", "threeVersion", "exposure", "toneMapping", "outputColorSpace"}
+        if not isinstance(frozen, dict) or not required_controls.issubset(frozen):
+            issues.append(f"{label}.comparison.frozenControls must lock: " + ", ".join(sorted(required_controls)))
+        else:
+            resolution = frozen.get("resolution")
+            if not isinstance(resolution, list) or len(resolution) != 2 or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in resolution):
+                issues.append(f"{label}.comparison.frozenControls.resolution must be two positive integers")
+            geometry_hash = frozen.get("geometryHash")
+            if not isinstance(geometry_hash, str) or not SHA256_RE.fullmatch(geometry_hash):
+                issues.append(f"{label}.comparison.frozenControls.geometryHash must be a SHA-256 of the fixed geometry/layout state")
+            for key in ("cameraId", "renderer", "threeVersion", "toneMapping", "outputColorSpace"):
+                if not isinstance(frozen.get(key), str) or not frozen[key].strip():
+                    issues.append(f"{label}.comparison.frozenControls.{key} must be a nonempty string")
+            exposure = frozen.get("exposure")
+            if not isinstance(exposure, (int, float)) or isinstance(exposure, bool) or not math.isfinite(exposure):
+                issues.append(f"{label}.comparison.frozenControls.exposure must be finite")
+        for side in ("baseline", "selected"):
+            capture = comparison.get(side)
+            capture_label = f"{label}.comparison.{side}"
+            record = _check_file_record(base, capture, capture_label, issues)
+            if record:
+                rel, digest = record
+                if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                    issues.append(f"{capture_label} must be hashed in lookdev evidence")
+                _check_capture_png(base, rel, capture_label, issues)
+        decision = group.get("decision")
+        if not isinstance(decision, dict) or decision.get("status") != "SELECTED" or not isinstance(decision.get("observation"), str) or len(decision["observation"].strip()) < 20:
+            issues.append(f"{label}.decision must explain the selected response with a concrete visual observation")
+
+    missing = material_features - set(covered)
+    extra = set(covered) - material_features
+    if missing:
+        issues.append("lookdev report is missing mapped material features: " + ", ".join(sorted(missing)))
+    if extra:
+        issues.append("lookdev report includes unmapped material features: " + ", ".join(sorted(extra)))
+
+
 def validate_data(data: Any, base: Path, through: str | None = None) -> list[str]:
     issues: list[str] = []
     if not isinstance(data, dict):
@@ -1459,6 +1643,13 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
             base, data.get("distributionReportPath"), data.get("sceneRegisterPath"),
             data.get("visualBuildMapPath"), data.get("assetLedgerPath"),
             by_id.get("detailDistribution", {}), issues,
+        )
+
+    if "lookdev" in required_stages:
+        validate_lookdev_report(
+            base, data.get("lookdevReportPath"), data.get("sceneRegisterPath"),
+            data.get("visualBuildMapPath"), data.get("assetLedgerPath"),
+            by_id.get("lookdev", {}), issues,
         )
 
     if mode == "full-production" and "runtime" in required_stages:

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "NOT_RUN",
+  "buildId": "lookdev-v1",
+  "groups": [
+    {
+      "id": "terrain-material-response",
+      "familyId": "terrain-family",
+      "featureIds": ["ground-material"],
+      "targetResponse": "Keep the broad top matte while the exposed sides read darker and rougher under the intended key light.",
+      "sources": [
+        {"role": "material-binding", "path": "src/scene.js", "sha256": "replace-with-source-sha256", "symbol": "bindGroundMaterials"},
+        {"role": "lighting", "path": "src/scene.js", "sha256": "replace-with-source-sha256", "symbol": "createLightingRig"}
+      ],
+      "comparison": {
+        "changedVariable": "exposed-side roughness",
+        "baselineValue": 0.72,
+        "selectedValue": 0.9,
+        "frozenControls": {
+          "cameraId": "terrain-oblique",
+          "resolution": [1280, 720],
+          "geometryHash": "replace-with-geometry-layout-sha256",
+          "renderer": "WebGLRenderer",
+          "threeVersion": "0.180.0",
+          "exposure": 1,
+          "toneMapping": "ACESFilmicToneMapping",
+          "outputColorSpace": "SRGBColorSpace"
+        },
+        "baseline": {"path": "qa/lookdev/terrain-baseline.png", "sha256": "replace-with-file-sha256"},
+        "selected": {"path": "qa/lookdev/terrain-selected.png", "sha256": "replace-with-file-sha256"}
+      },
+      "decision": {"status": "NOT_RUN", "observation": ""}
+    }
+  ]
+}

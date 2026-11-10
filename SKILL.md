@@ -39,6 +39,8 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 细节与分布阶段先按[细节与分布SOP](references/detail-distribution.md)明确允许区、留白、宿主、seed、目标数量范围和形态变体，再扩展实例。用`distribution-report.json`记录实现函数、实际落点、候选/接受/拒绝计数、分区覆盖图、完整场景图和局部图，并逐组检查覆盖、节奏、变体、屏幕尺度及支撑/净空。运行`<skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through detailDistribution`核对数据与证据；总数量、固定seed或存在截图本身都不能证明分布成立。
 
+材质与灯光阶段按[材质与灯光校准SOP](references/lookdev-calibration.md)逐项落实visual-build-map中的材料目标：核对材质绑定及灯光/输出消费者；每组只改变当前待验证变量，固定几何、相机、分辨率、renderer、曝光和输出颜色链，保存基线与候选真实渲染并记录选择原因。用`lookdev-report.json`覆盖每个material feature，运行`<skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through lookdev`。有截图或参数不代表目标响应成立；须打开同条件对照检查真实网格上的材质分区、形体受光、空间反差与焦点，完整场景仍要通过最终多视角审查。
+
 ```mermaid
 flowchart TD
   A[用户需求] --> B{创作方向明确?}

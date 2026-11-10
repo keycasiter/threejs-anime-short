@@ -205,6 +205,59 @@ class DeliveryManifestTests(unittest.TestCase):
         }
         return ledger_path, report_path, stage
 
+    def lookdev_fixture(self) -> tuple[Path, Path, dict]:
+        family = self.asset_family("terrain-family", "supporting", ["ground"], [])
+        ledger_path = self.root / "asset-ledger.json"
+        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        source_path = self.root / "lookdev.js"
+        source_path.write_text(
+            "export function bindGroundMaterials(){ return true; }\n"
+            "export function createLightingRig(){ return true; }\n", encoding="utf-8",
+        )
+        source_digest = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        captures = []
+        evidence = [{"path": source_path.name, "sha256": source_digest}]
+        for side in ("baseline", "selected"):
+            capture_path = self.root / f"lookdev-{side}.png"
+            capture_path.write_bytes(png_bytes(1280, 720))
+            digest = hashlib.sha256(capture_path.read_bytes()).hexdigest()
+            captures.append({"path": capture_path.name, "sha256": digest})
+            evidence.append({"path": capture_path.name, "sha256": digest})
+        report = {
+            "schemaVersion": 1, "status": "PASS", "buildId": "lookdev-v1",
+            "groups": [{
+                "id": "terrain-material", "familyId": "terrain-family", "featureIds": ["ground-material"],
+                "targetResponse": "Keep the broad ground matte while the exposed side reads rougher and darker under the key light.",
+                "sources": [
+                    {"role": "material-binding", "path": source_path.name, "sha256": source_digest, "symbol": "bindGroundMaterials"},
+                    {"role": "lighting", "path": source_path.name, "sha256": source_digest, "symbol": "createLightingRig"},
+                ],
+                "comparison": {
+                    "changedVariable": "exposed-side roughness", "baselineValue": 0.72, "selectedValue": 0.9,
+                    "frozenControls": {
+                        "cameraId": "ground-oblique", "resolution": [1280, 720],
+                        "geometryHash": "a" * 64, "renderer": "WebGLRenderer", "threeVersion": "0.180.0",
+                        "exposure": 1, "toneMapping": "ACESFilmicToneMapping", "outputColorSpace": "SRGBColorSpace",
+                    },
+                    "baseline": captures[0], "selected": captures[1],
+                },
+                "decision": {"status": "SELECTED", "observation": "The exposed strata separate from the matte top without lifting the surrounding terrain or losing the ledge."},
+            }],
+        }
+        report_path = self.root / "lookdev-report.json"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        evidence.append({"path": report_path.name, "sha256": hashlib.sha256(report_path.read_bytes()).hexdigest()})
+        stage = {
+            "buildId": "lookdev-v1",
+            "inputs": [
+                {"path": self.register.name, "sha256": hashlib.sha256(self.register.read_bytes()).hexdigest()},
+                {"path": self.visual_build_map.name, "sha256": hashlib.sha256(self.visual_build_map.read_bytes()).hexdigest()},
+                {"path": ledger_path.name, "sha256": hashlib.sha256(ledger_path.read_bytes()).hexdigest()},
+            ],
+            "evidence": evidence,
+        }
+        return ledger_path, report_path, stage
+
     def minimal_analysis_manifest(self) -> dict:
         return {
             "schemaVersion": 1,
@@ -449,6 +502,31 @@ class DeliveryManifestTests(unittest.TestCase):
         )
         self.assertEqual([], issues)
 
+    def test_lookdev_report_passes_for_controlled_material_comparison(self) -> None:
+        ledger_path, report_path, stage = self.lookdev_fixture()
+        issues: list[str] = []
+        validate_delivery.validate_lookdev_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        self.assertEqual([], issues)
+
+    def test_lookdev_report_blocks_missing_material_coverage_and_fixed_controls(self) -> None:
+        ledger_path, report_path, stage = self.lookdev_fixture()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["groups"][0]["featureIds"] = []
+        report["groups"][0]["comparison"]["frozenControls"].pop("geometryHash")
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stage["evidence"][-1]["sha256"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+        issues: list[str] = []
+        validate_delivery.validate_lookdev_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        joined = "\n".join(issues)
+        self.assertIn("missing mapped material features", joined)
+        self.assertIn("frozenControls must lock", joined)
+
     def test_distribution_report_accepts_streamable_csv_for_large_placement_sets(self) -> None:
         ledger_path, report_path, stage = self.distribution_fixture()
         report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -648,6 +726,23 @@ class DeliveryManifestTests(unittest.TestCase):
         ])
         issues = validate_delivery.validate_data(data, self.root, through="detailDistribution")
         self.assertTrue(any("distributionReportPath must reference an existing project JSON file" in issue for issue in issues))
+
+    def test_full_production_lookdev_stage_requires_calibration_report(self) -> None:
+        data = self.minimal_analysis_manifest()
+        data["mode"] = "full-production"
+        data["buildId"] = "scene-v1"
+        data["assetLedgerPath"] = "asset-ledger.json"
+        data["distributionReportPath"] = "distribution-report.json"
+        data["lookdevReportPath"] = "missing-lookdev-report.json"
+        data["stages"].extend([
+            {"id": "runtimePreflight", "status": "BLOCKED", "buildId": "preflight-v1", "inputs": [], "evidence": [], "preflightReport": "missing-preflight.json"},
+            {"id": "spatialProxy", "status": "NOT_RUN", "buildId": "proxy-v1", "inputs": [], "evidence": []},
+            {"id": "middleForms", "status": "NOT_RUN", "buildId": "forms-v1", "inputs": [], "evidence": []},
+            {"id": "detailDistribution", "status": "NOT_RUN", "buildId": "detail-v1", "inputs": [], "evidence": []},
+            {"id": "lookdev", "status": "NOT_RUN", "buildId": "lookdev-v1", "inputs": [], "evidence": []},
+        ])
+        issues = validate_delivery.validate_data(data, self.root, through="lookdev")
+        self.assertTrue(any("lookdevReportPath must reference an existing project JSON file" in issue for issue in issues))
 
     def test_asset_ledger_evidence_must_be_hashed_by_middle_forms_stage(self) -> None:
         ledger = {"families": [self.asset_family("terrain", "supporting", ["ground"], [])]}
