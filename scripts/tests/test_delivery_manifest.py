@@ -106,7 +106,7 @@ class DeliveryManifestTests(unittest.TestCase):
         path.write_text(json.dumps(payload), encoding="utf-8")
         return path
 
-    def asset_family(self, family_id: str, priority: str, object_ids: list[str], route_ids: list[str]) -> dict:
+    def asset_family(self, family_id: str, priority: str, object_ids: list[str], route_ids: list[str], form_variant_ids: list[str] | None = None) -> dict:
         build_map = json.loads(self.visual_build_map.read_text(encoding="utf-8"))
         targets = {("object", value) for value in object_ids} | {("route", value) for value in route_ids}
         entries = [entry for entry in build_map["entries"] if (entry["target"]["type"], entry["target"]["id"]) in targets]
@@ -121,6 +121,21 @@ class DeliveryManifestTests(unittest.TestCase):
             })
         source_path = self.root / "asset.js"
         source_path.write_text("export function buildGroundSurface(){ return true; }\n", encoding="utf-8")
+        form_variants = []
+        for variant_id in form_variant_ids or ["uniform"]:
+            variant_views = []
+            for view_id, view_role in (("primary", "primary"), ("oblique", "oblique")):
+                capture_path = self.root / f"{family_id}-prototype-form-{variant_id}-{view_id}.png"
+                capture_path.write_bytes(png_bytes(800, 600))
+                variant_views.append({
+                    "id": f"{variant_id}-{view_id}", "viewRole": view_role, "path": capture_path.name,
+                    "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest(),
+                })
+            form_variants.append({
+                "id": variant_id,
+                "geometryChange": f"The {variant_id} archetype has an explicitly described structural profile and retains the shared support interface.",
+                "views": variant_views,
+            })
         return {
             "id": family_id, "priority": priority, "objectIds": object_ids, "routeIds": route_ids,
             "visualFeatureIds": feature_ids,
@@ -130,6 +145,15 @@ class DeliveryManifestTests(unittest.TestCase):
                 "component": entries[0]["implementationPlan"]["component"],
                 "implementationSource": {"path": source_path.name, "sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(), "symbol": "buildGroundSurface"},
                 "views": prototype_views,
+                "formComparisonSet": {
+                    "id": "neutral-form-comparison-v1",
+                    "cameras": [
+                        {"viewRole": "primary", "projection": "orthographic", "position": [4, 3, 5], "target": [0, 0, 0], "verticalSpan": 4},
+                        {"viewRole": "oblique", "projection": "orthographic", "position": [5, 3, 4], "target": [0, 0, 0], "verticalSpan": 4},
+                    ],
+                    "render": {"resolution": [800, 600], "exposure": 1, "neutralMaterial": "untextured-neutral-gray"},
+                },
+                "formVariants": form_variants,
                 "featureReviews": [
                     {"featureId": feature_id, "status": "PASS", "observation": f"Observed the mapped {feature_id} feature in linked prototype views.",
                      "viewIds": (["primary", "side"] if feature_id == "ground-profile" else ["primary", "oblique"] if feature_id == "ground-layer" else ["primary"])}
@@ -156,9 +180,9 @@ class DeliveryManifestTests(unittest.TestCase):
             "confidence": "medium",
         })
         self.visual_build_map.write_text(json.dumps(build_map), encoding="utf-8")
-        family = self.asset_family("terrain-family", "supporting", ["ground"], [])
+        family = self.asset_family("terrain-family", "supporting", ["ground"], [], ["broad", "narrow", "leaning"])
         ledger_path = self.root / "asset-ledger.json"
-        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        ledger_path.write_text(json.dumps({"schemaVersion": 2, "families": [family]}), encoding="utf-8")
         views = []
         evidence = []
         source_path = self.root / "distribution.js"
@@ -211,7 +235,7 @@ class DeliveryManifestTests(unittest.TestCase):
     def lookdev_fixture(self) -> tuple[Path, Path, dict]:
         family = self.asset_family("terrain-family", "supporting", ["ground"], [])
         ledger_path = self.root / "asset-ledger.json"
-        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        ledger_path.write_text(json.dumps({"schemaVersion": 2, "families": [family]}), encoding="utf-8")
         source_path = self.root / "lookdev.js"
         source_path.write_text(
             "export function bindGroundMaterials(){ return true; }\n"
@@ -456,7 +480,7 @@ class DeliveryManifestTests(unittest.TestCase):
         source_path.write_text("export function unrelatedBuilder(){ return true; }\n", encoding="utf-8")
         family["prototype"]["implementationSource"]["sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
         ledger_path = self.root / "asset-ledger.json"
-        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        ledger_path.write_text(json.dumps({"schemaVersion": 2, "families": [family]}), encoding="utf-8")
         issues: list[str] = []
         validate_delivery.validate_asset_ledger(
             self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
@@ -474,7 +498,7 @@ class DeliveryManifestTests(unittest.TestCase):
         self.assertTrue(any("must be one concrete code symbol" in issue for issue in issues))
 
     def test_asset_ledger_maps_every_renderable_registered_object_to_a_quality_family(self) -> None:
-        ledger = {"families": [self.asset_family("terrain-family", "supporting", ["ground"], [])]}
+        ledger = {"schemaVersion": 2, "families": [self.asset_family("terrain-family", "supporting", ["ground"], [])]}
         ledger_path = self.root / "asset-ledger.json"
         ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
         stage = self.asset_stage(ledger_path)
@@ -487,7 +511,7 @@ class DeliveryManifestTests(unittest.TestCase):
         family = self.asset_family("terrain-family", "supporting", ["ground"], [])
         family["prototype"]["featureReviews"].pop()
         ledger_path = self.root / "asset-ledger.json"
-        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        ledger_path.write_text(json.dumps({"schemaVersion": 2, "families": [family]}), encoding="utf-8")
         issues: list[str] = []
         validate_delivery.validate_asset_ledger(
             self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
@@ -499,7 +523,7 @@ class DeliveryManifestTests(unittest.TestCase):
         family = self.asset_family("terrain-family", "supporting", ["ground"], [])
         family["prototype"]["featureReviews"][0]["viewIds"] = ["primary"]
         ledger_path = self.root / "asset-ledger.json"
-        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        ledger_path.write_text(json.dumps({"schemaVersion": 2, "families": [family]}), encoding="utf-8")
         issues: list[str] = []
         validate_delivery.validate_asset_ledger(
             self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
@@ -512,7 +536,7 @@ class DeliveryManifestTests(unittest.TestCase):
         for view in family["prototype"]["views"]:
             view["viewRole"] = "primary"
         ledger_path = self.root / "asset-ledger.json"
-        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        ledger_path.write_text(json.dumps({"schemaVersion": 2, "families": [family]}), encoding="utf-8")
         issues: list[str] = []
         validate_delivery.validate_asset_ledger(
             self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
@@ -526,7 +550,7 @@ class DeliveryManifestTests(unittest.TestCase):
         family["prototype"]["views"][0]["path"] = "asset.js"
         family["prototype"]["views"][0]["sha256"] = hashlib.sha256((self.root / "asset.js").read_bytes()).hexdigest()
         ledger_path = self.root / "asset-ledger.json"
-        ledger_path.write_text(json.dumps({"families": [family]}), encoding="utf-8")
+        ledger_path.write_text(json.dumps({"schemaVersion": 2, "families": [family]}), encoding="utf-8")
         issues: list[str] = []
         validate_delivery.validate_asset_ledger(
             self.root, "scene-register.json", "asset-ledger.json", "visual-build-map.json",
@@ -544,6 +568,21 @@ class DeliveryManifestTests(unittest.TestCase):
             ledger_path.name, stage, issues,
         )
         self.assertEqual([], issues)
+
+    def test_distribution_blocks_variant_ids_without_a_middle_forms_prototype(self) -> None:
+        ledger_path, report_path, stage = self.distribution_fixture()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["groups"][0]["placements"][0]["variantId"] = "color-only-change"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        stage["evidence"] = [
+            item for item in stage["evidence"] if item.get("path") != report_path.name
+        ] + [{"path": report_path.name, "sha256": hashlib.sha256(report_path.read_bytes()).hexdigest()}]
+        issues: list[str] = []
+        validate_delivery.validate_distribution_report(
+            self.root, report_path.name, self.register.name, self.visual_build_map.name,
+            ledger_path.name, stage, issues,
+        )
+        self.assertTrue(any("must resolve to a geometry archetype approved in middleForms" in issue for issue in issues))
 
     def test_lookdev_report_passes_for_controlled_material_comparison(self) -> None:
         ledger_path, report_path, stage = self.lookdev_fixture()
@@ -942,7 +981,7 @@ class DeliveryManifestTests(unittest.TestCase):
         register = json.loads(self.register.read_text(encoding="utf-8"))
         register["routes"] = [{"id": "walkway"}]
         self.register.write_text(json.dumps(register), encoding="utf-8")
-        ledger = {"families": [self.asset_family("site-structure", "supporting", ["ground"], ["walkway"])]}
+        ledger = {"schemaVersion": 2, "families": [self.asset_family("site-structure", "supporting", ["ground"], ["walkway"])]}
         ledger_path = self.root / "asset-ledger.json"
         ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
         digest = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
@@ -997,7 +1036,7 @@ class DeliveryManifestTests(unittest.TestCase):
         self.assertTrue(any("lookdevReportPath must reference an existing project JSON file" in issue for issue in issues))
 
     def test_asset_ledger_evidence_must_be_hashed_by_middle_forms_stage(self) -> None:
-        ledger = {"families": [self.asset_family("terrain", "supporting", ["ground"], [])]}
+        ledger = {"schemaVersion": 2, "families": [self.asset_family("terrain", "supporting", ["ground"], [])]}
         ledger_path = self.root / "asset-ledger.json"
         ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
         issues: list[str] = []

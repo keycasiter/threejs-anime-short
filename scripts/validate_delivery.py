@@ -987,6 +987,8 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
     if register is None or ledger is None or build_map is None:
         issues.append("assetLedger, visualBuildMap, and sceneRegister must be readable JSON objects")
         return set()
+    if ledger.get("schemaVersion") != 2:
+        issues.append("assetLedger.schemaVersion must equal 2 and include per-variant prototype evidence")
     renderables: set[tuple[str, str]] = set()
     for obj in register.get("objects", []):
         if isinstance(obj, dict) and obj.get("geometryRole") in RENDERABLE_ROLES and isinstance(obj.get("id"), str):
@@ -1144,6 +1146,99 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
                 _check_capture_png(base, rel, view_label, issues)
         if len(set(role_by_view.values())) < 2:
             issues.append(f"{label}.prototype.views must use at least two distinct viewRole values")
+        form_variants = prototype.get("formVariants")
+        variant_ids: set[str] = set()
+        if not isinstance(form_variants, list) or not form_variants:
+            issues.append(f"{label}.prototype.formVariants must register at least one visually reviewed geometry archetype")
+            form_variants = []
+        comparison_set = prototype.get("formComparisonSet")
+        if not isinstance(comparison_set, dict) or not isinstance(comparison_set.get("id"), str) or not comparison_set.get("id", "").strip():
+            issues.append(f"{label}.prototype.formComparisonSet must define the shared prototype comparison conditions")
+            comparison_roles: set[str] = set()
+        else:
+            cameras = comparison_set.get("cameras")
+            render = comparison_set.get("render")
+            if not isinstance(cameras, list) or len(cameras) < 2:
+                issues.append(f"{label}.prototype.formComparisonSet.cameras must define at least two fixed comparison views")
+                cameras = []
+            comparison_roles = set()
+            for camera_index, camera in enumerate(cameras):
+                camera_label = f"{label}.prototype.formComparisonSet.cameras[{camera_index}]"
+                if not isinstance(camera, dict):
+                    issues.append(f"{camera_label} must be an object")
+                    continue
+                role, projection = camera.get("viewRole"), camera.get("projection")
+                if not isinstance(role, str) or role not in PROTOTYPE_VIEW_ROLES or role in comparison_roles:
+                    issues.append(f"{camera_label}.viewRole must be a unique supported prototype view role")
+                else:
+                    comparison_roles.add(role)
+                if not isinstance(projection, str) or projection not in {"orthographic", "perspective"} or not _finite_vec3(camera.get("position")) or not _finite_vec3(camera.get("target")):
+                    issues.append(f"{camera_label} must define projection, finite position, and target")
+                elif projection == "orthographic" and (not isinstance(camera.get("verticalSpan"), (int, float)) or isinstance(camera.get("verticalSpan"), bool) or camera.get("verticalSpan") <= 0):
+                    issues.append(f"{camera_label}.verticalSpan must be positive for orthographic comparison")
+                elif projection == "perspective" and (not isinstance(camera.get("fov"), (int, float)) or isinstance(camera.get("fov"), bool) or not 0 < camera.get("fov") < 180):
+                    issues.append(f"{camera_label}.fov must be between 0 and 180 for perspective comparison")
+            if not isinstance(render, dict):
+                issues.append(f"{label}.prototype.formComparisonSet.render must define neutral render conditions")
+            else:
+                resolution = render.get("resolution")
+                if not isinstance(resolution, list) or len(resolution) != 2 or any(not isinstance(value, int) or isinstance(value, bool) for value in resolution) or resolution[0] < 640 or resolution[1] < 320:
+                    issues.append(f"{label}.prototype.formComparisonSet.render.resolution must be at least 640x320")
+                exposure = render.get("exposure")
+                if not isinstance(exposure, (int, float)) or isinstance(exposure, bool) or not math.isfinite(exposure) or exposure <= 0:
+                    issues.append(f"{label}.prototype.formComparisonSet.render.exposure must be positive and finite")
+                if not isinstance(render.get("neutralMaterial"), str) or not render.get("neutralMaterial", "").strip():
+                    issues.append(f"{label}.prototype.formComparisonSet.render.neutralMaterial must name an untextured neutral material")
+        all_form_variant_view_ids: set[str] = set()
+        for variant_index, variant in enumerate(form_variants):
+            variant_label = f"{label}.prototype.formVariants[{variant_index}]"
+            if not isinstance(variant, dict):
+                issues.append(f"{variant_label} must be an object")
+                continue
+            variant_id = variant.get("id")
+            if not isinstance(variant_id, str) or not variant_id.strip():
+                issues.append(f"{variant_label}.id must be a stable geometry archetype ID")
+            elif variant_id in variant_ids:
+                issues.append(f"{label}.prototype.formVariants has duplicate id {variant_id}")
+            else:
+                variant_ids.add(variant_id)
+            geometry_change = variant.get("geometryChange")
+            if not isinstance(geometry_change, str) or len(geometry_change.strip()) < 20:
+                issues.append(f"{variant_label}.geometryChange must describe the actual structural difference or intentional uniform form")
+            variant_views = variant.get("views")
+            if not isinstance(variant_views, list) or len(variant_views) < 2:
+                issues.append(f"{variant_label}.views must contain at least two comparison captures")
+                variant_views = []
+            variant_view_ids: set[str] = set()
+            variant_roles: set[str] = set()
+            for variant_view_index, view in enumerate(variant_views):
+                variant_view_label = f"{variant_label}.views[{variant_view_index}]"
+                if not isinstance(view, dict) or not isinstance(view.get("id"), str) or not view["id"].strip():
+                    issues.append(f"{variant_view_label}.id must be a stable identifier")
+                    continue
+                view_id, role = view["id"], view.get("viewRole")
+                if view_id in variant_view_ids:
+                    issues.append(f"{variant_label}.views has duplicate id {view_id}")
+                if view_id in all_form_variant_view_ids:
+                    issues.append(f"{label}.prototype.formVariants has duplicate view id {view_id}")
+                variant_view_ids.add(view_id)
+                all_form_variant_view_ids.add(view_id)
+                if not isinstance(role, str) or role not in PROTOTYPE_VIEW_ROLES:
+                    issues.append(f"{variant_view_label}.viewRole must be one of: " + ", ".join(sorted(PROTOTYPE_VIEW_ROLES)))
+                else:
+                    variant_roles.add(role)
+                    if role not in comparison_roles:
+                        issues.append(f"{variant_view_label}.viewRole must resolve to a camera in formComparisonSet")
+                capture_record = _check_file_record(base, view, variant_view_label, issues)
+                if capture_record:
+                    rel, digest = capture_record
+                    if not any(isinstance(item, dict) and item.get("path") == rel and item.get("sha256") == digest for item in evidence):
+                        issues.append(f"{variant_view_label} must be hashed in middleForms evidence")
+                    _check_capture_png(base, rel, variant_view_label, issues)
+            if len(variant_roles) < 2:
+                issues.append(f"{variant_label}.views must use at least two complementary viewRole values")
+            elif variant_roles != comparison_roles:
+                issues.append(f"{variant_label}.views must cover every comparison camera role exactly as the shared formComparisonSet defines")
         reviews = prototype.get("featureReviews")
         if not isinstance(reviews, list):
             issues.append(f"{label}.prototype.featureReviews must review every mapped visual feature")
@@ -1737,6 +1832,16 @@ def validate_distribution_report(
         family = families.get(family_id) if isinstance(family_id, str) else None
         if family is None:
             issues.append(f"{label}.familyId must resolve to an asset family")
+            approved_variant_ids: set[str] = set()
+        else:
+            prototype = family.get("prototype", {})
+            form_variants = prototype.get("formVariants", []) if isinstance(prototype, dict) else []
+            approved_variant_ids = {
+                item.get("id") for item in form_variants
+                if isinstance(item, dict) and isinstance(item.get("id"), str) and item.get("id").strip()
+            } if isinstance(form_variants, list) else set()
+            if not approved_variant_ids:
+                issues.append(f"{label}.familyId must provide approved prototype.formVariants from middleForms")
         feature_ids = group.get("featureIds")
         if not isinstance(feature_ids, list) or not feature_ids or any(not isinstance(value, str) for value in feature_ids) or len(feature_ids) != len(set(feature_ids)):
             issues.append(f"{label}.featureIds must list unique mapped features")
@@ -1848,6 +1953,8 @@ def validate_distribution_report(
                 issues.append(f"{placement_label}.variantId must name the emitted form variant")
             else:
                 variant_ids.add(variant)
+                if variant not in approved_variant_ids:
+                    issues.append(f"{placement_label}.variantId must resolve to a geometry archetype approved in middleForms for family {family_id}")
             object_id = zone.get("objectId")
             obj = objects.get(object_id) if isinstance(object_id, str) else None
             shape = _registered_plan_shape(obj, zone.get("planGeometryId"))
@@ -1890,6 +1997,8 @@ def validate_distribution_report(
         minimum_variants = group.get("minimumVariantCount")
         if not isinstance(minimum_variants, int) or isinstance(minimum_variants, bool) or minimum_variants < 1 or len(variant_ids) < minimum_variants:
             issues.append(f"{label}.minimumVariantCount must be met by actual placement variantIds")
+        if isinstance(minimum_variants, int) and not isinstance(minimum_variants, bool) and minimum_variants > len(approved_variant_ids):
+            issues.append(f"{label}.minimumVariantCount cannot exceed the family's approved middleForms geometry archetypes")
 
         views = group.get("views")
         if not isinstance(views, list):
