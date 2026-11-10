@@ -101,6 +101,8 @@ function renderStill() { renderer.render(scene, camera); }
 
 提供完整环绕时，实际拖动完成一整圈并检查至少8个方位，再看可达俯仰和近远端点。验证背景和地平线连续、地面/水面不露边、背面不空、没有穿模/裁切、透明排序和阴影不会因转向消失。失败处回到场景覆盖或控制范围修复；不能用黑幕、遮罩或过度限制隐藏。固定镜头交付则明确写固定/导演相机，不把“页面能拖”称作无死角浏览。
 
+相机轨道可能经过地形、建筑或其他不透明表面时，在每个代表方位及俯仰/远近端点核对两项不同问题：**相机位置是否与最终承载几何相交**，以及**预期可读的焦点/场景区域是否被中间表面遮挡**。地形优先用最终网格射线命中，规则高度场可用与输出三角划分一致的采样；仅查看目标点高度或上游解析场不够。记录请求机位、实际机位、最小安全间隙，并为每个视向抽查通往其关键可见锚点的首个射线命中；按设计允许遮挡，但不能把焦点被坡面挡住或画面只剩无信息近景当作视角通过。若控制器会抬高/推开相机，复核实际构图和观看范围仍符合规格。仅当地下/内部视点是有意设计且内容已建模时，才接受相机与表面相交。负间隙、无效命中或关键视线意外受阻，应回到相机/场景空间设计处理，不能留给视觉审图猜测。
+
 ### 资产开工前的质量预排：把常见失败变成可计算约束
 
 在写细节几何之前，先用最终相机、目标分辨率和画风做一份短的“资产实现计划”。它是代码设计输入，不是对渲染不满意后再补的修图单。
@@ -167,6 +169,8 @@ instances.computeBoundingSphere();
 | 群体/抽象构成 | 整体节奏与负形 → 可复用形态家族 → 受权重/路径/规则控制的布局 → 焦点对比与局部变化 | 规则要服务整体构图；重复变化不能造成随机噪声，也不要求具象对象式的装配或接地 |
 | 水、雾、烟和风 | 确定范围、边界、流向及空间锚点 → 曲面/体积轮廓 → 频率分层与材质响应 → 从绝对时间求值的扰动和消退 | 效果随视距、光线、表面和事件变化；粒子不能代替主要体积，噪声不能代替结构 |
 
+**分枝结构的代码落实。** 将主干和枝条保存为带父级、连接锚点和枝级的骨架图；半径按枝级与沿程收细。Three.js可用端点间的[`CylinderGeometry`](https://threejs.org/docs/pages/CylinderGeometry.html)配合[`Quaternion.setFromUnitVectors()`](https://threejs.org/docs/pages/Quaternion.html#method:setFromUnitVectors)快速定向，或用沿中心线变化截面的扫掠网格提升弯曲和截面控制；枝根交汇需几何搭接或专用节点体，不能只让线段端点相碰。再按物种/设计包络，把叶片、针叶簇或其他表面体量沿有效枝条布置，控制它们共同填充树冠而保留有意空隙。静态形态族可合并网格或复用实例并以固定seed改变枝角、长度、密度和冠幅；不要把分枝骨架直接当成完成资产，也不要只堆同尺寸球/锥。验收目标机位及侧背剪影：冠层既不能稀成裸架，也不能糊成无结构团块；近景细节和中远景体量按投影尺度分配。
+
 ### 从主形到中层的多遍生成
 
 表面需要经过多种形成过程时，不要把各类变化揉成一个 `noise(position)`。将上游形状、受限区域和后续消费者连成一条可追踪的数据链；这些是职责，不是固定节点数，也不要求每种资产都使用噪声或体素。
@@ -180,6 +184,8 @@ instances.computeBoundingSphere();
 | 下游派生 | 由同一稳定空间字段采样路径、承载、材料区域和实例点；需要变体时用有界参数与固定种子生成 | 网格/材质/散布指向实际使用的共同数据；相邻构件有承接，密度随坡度/区域/视线调整 |
 
 编码前先画清字段依赖：`主形/承载 → 区域与方向场 → 中层几何 → 修整后的表面 → 材质、路径与布局`。字段名本身不会产生视觉效果：每个消费者必须将其读入顶点位置、采样坐标、材质通道或实例变换。若三个组件各自重新随机一遍，它们不会自动对齐。动态修改场或网格时再同步包围体、法线、UV和阴影/反射消费者；静态生成则不要添加无用的逐帧重建。
+
+**先定义相交特征的优先级，再组合字段。** 两条引导线各自进入几何，不代表它们相遇后仍形成正确结构。将脊线、沟槽、道路、平台、接触区等相交处标为“连续穿越、汇合、分隔、跨越或让位”；决定由哪个特征保持主轮廓，另一个通过遮罩抑制、改道、形成鞍部/支撑，或采用桥接等专门过渡。避免把多个高度项简单相加/取最大值后就认为空间关系成立。至少选一个代表交汇处，在最终网格上沿两条特征各取中心与侧翼剖面；断言主形/支撑没有被意外削弱，次级形变在预期范围内，再检查灰模中的连续轮廓。没有相交的设计关系时不必强加此检查。
 
 **依附最终网格的元素要从最终网格取样。** 上游解析高度场只在它与输出网格使用相同的三角划分和插值时，才能保证道路、溪流、台阶、散布物等贴合。若最终地表经过离散网格化、形变或分块，优先从最终几何做射线命中；需要沿中心线密集取样时，可复用它的顶点、索引和同一三角形插值规则。取样中心线之外，还要检查路径两侧、物体底面和相邻块边缘；按目标关系使用命中法线、边界过渡与接触阴影。陡坡上的贴合偏移应沿支撑面法线或局部框架计算，不能默认只增加世界Y。解析场仍可作为生成输入，但不能替代最终承载面的贴合验证。
 
@@ -451,6 +457,8 @@ for (const group of layout.groups) {
 
 `supportMeshes`只传实际承载对象，不包含待放置物。模块返回实际交点/几何法线、对象及instanceId，命中失败返回null；支持父级非均匀变换及实例框架。实例矩阵变更后由调用方更新相关包围体。rayTop/rayDepth按场景尺度选择，也可直接传任意世界射线。模块不负责碰撞/IK或物体整体支撑；路径/大接触面需采样边界与多个点，再用这些点构建底/侧承接或连续变形，不能把所有点简单抬到最高处。
 
+**起伏地形上的大占地结构要验证整圈承接。** 建筑、台地、桥台或平台先明确采用顺坡铺设、水平基座加挡土构造，还是分级过渡；不要用一个中心高度放置完整平板。沿实际占地边界按最终承载网格细分采样，依据每段地面高程与法线生成连续底面、侧壁/基础、分段挡墙或地形回填；转角、入口和相邻坡面也要收口。记录整圈支撑底缘的最大悬空/嵌入、上缘与主体的搭接，再看沿坡剖面和周向视角。单点、单侧墙或数值全通过仍不代表结构与环境在画面中自然连成一体；若高差使挡墙成为主视觉，应返回总平面和地形设计，不能只加高墙体遮缺口。
+
 `surfaceFrame`给出世界矩阵。父级有变换时乘其逆矩阵；非均匀父级可能产生局部剪切，应保留矩阵而非强拆TRS。功能前向与重力轴分别决定；静态框架的平行回退不替代曲线的连续传输坐标架。接触/反馈从最终变形后的锚点取得，见[动画与规模](motion-and-scale.md)。
 
 ### 局部前向与内容锚点
@@ -591,6 +599,8 @@ inst.computeBoundingSphere();
 
 散布先从布局/曲线候选点取样，再用密度权重、坡度/承载条件和排除区筛选；随后读取实际支撑面及法线，确定方向、家族变体和尺度。固定 seed 保持复现，显著的主礁、树、路径转折等仍可手工落点。相同区域字段可同时驱动几何过渡、颜色/粗糙度分区及浪沫/植被/雾等反馈，但每个消费者都要按其物理或设计含义解释该字段。
 
+**先验证布局可行性，再锁定每组数量。** 以实际候选点和最终场数据运行一次轻量预演，记录每个设计组的候选数、通过全部掩码/坡度/承载/净距条件后的可用数、各拒绝原因计数及目标数；画出同一坐标范围内的资格区、排除区、候选点和已落位点。逐组判断目标数量、疏密和边界是否可实现。若目标未达到，先分辨是布局足迹放错、可用区域估计错误、间距/密度与目标冲突，还是组内确实应更稀；再调整分组范围、分布策略或设计目标并重新预演。道路净空、承载、视线等硬约束只能依据设计重新评审后修改，不能为凑总数而静默放宽；全场总数通过也不能掩盖单组空缺。最终生成后，用相同字段和约束复查实际落位，再从目标相机检查组团轮廓、空隙与遮挡。
+
 ```js
 const sample = siteField.sample(x, z); // 固定世界/局部坐标约定，返回同一套语义字段
 geometryPosition.y = sample.height;   // 主形和中层几何读取高度/断面规则
@@ -601,6 +611,68 @@ material.roughness = roughnessFor(sample.regionWeights, sample.wetness);
 ```
 
 这是数据流示意：`siteField`、`placeOnSupport` 和 `chooseFamily` 必须由当前场景实现，字段与材质映射也要依题材定义；不要直接复制这些示例名当作 Three.js API。开发时可把单一字段临时映射为颜色、画出采样点/区域边界，检查几何、摆放和材质是否在同一位置同步变化。再恢复最终材光与完整相机复核；字段图通过不能代替成片审图。
+
+对地表、海岸、河谷等由平面场驱动的连续形体，除点采样外，必须把**整张平面场**按同一坐标范围做俯视诊断图，并叠加轮廓、主脊/沟线、路径、区界和关键对象锚点；从实际生成网格取至少两条穿过关键地形变化的横断面，查看高度与坡度是否形成预期的缓滩、陡崖、鞍部、凹口或承接。单点符号正确、中心线距离为零或消费者读到了字段，只能证明局部数据链；不能证明凹湾开口、崖段范围、地貌分区和场景整体轮廓在空间上成立。二维分区/断面通过后，再回到目标斜视与完整相机环检查实际几何和景别。
+
+#### 将可设计的轮廓/路径变成可调空间场
+
+当场景有明确的地块边界、山脊/沟槽、道路、磨损带或生长轴时，先用少量引导点定义这些特征，再从点集派生连续距离场。把设计输入和表面残余变化分开：轮廓与主轴决定形体，受限区域决定哪里能改变，低幅噪声只打破过度平滑。没有明确引导特征的对象不必硬套这套做法。
+
+```js
+function distanceToSegment(x, z, a, b) {
+  const dx = b[0] - a[0], dz = b[1] - a[1];
+  const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+  return Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t));
+}
+
+function polylineDistance(x, z, points, closed = false) {
+  let d = Infinity;
+  const edgeCount = closed ? points.length : points.length - 1;
+  for (let i = 0; i < edgeCount; i++) {
+    d = Math.min(d, distanceToSegment(x, z, points[i], points[(i + 1) % points.length]));
+  }
+  return d;
+}
+
+// Positive values are inside the polygon; negative values are outside.
+function signedPolygonDistance(x, z, outline) {
+  let inside = false;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const a = outline[j], b = outline[i];
+    if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  const edgeDistance = polylineDistance(x, z, outline, true);
+  return inside ? edgeDistance : -edgeDistance;
+}
+
+const coast = [[-18,-9],[-21,-3],[-20,5],[-16,13],[-9,17],[-1,18],[7,16],[13,12],[18,6],[20,0],[18,-7],[13,-13],[6,-17],[-2,-19],[-10,-16],[-15,-12]];
+const crest = [[-14,5],[-10,1],[-7,-1],[-3,-3],[1,-4],[6,-3],[10,-1],[14,2]];
+const channel = [[-17,10],[-13,7],[-10,5],[-6,2],[-2,1],[2,4],[8,7],[14,10],[20,11]];
+const smooth01 = (a, b, x) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+const field = (x, z) => {
+  const shoreDistance = signedPolygonDistance(x, z, coast);
+  const crestDistance = polylineDistance(x, z, crest);
+  const channelDistance = polylineDistance(x, z, channel);
+  const land = smooth01(-1.2, .65, shoreDistance);
+  const ridge = 1 - smooth01(1.4, 5.8, crestDistance);
+  const channelMask = 1 - smooth01(1.2, 4.7, channelDistance);
+  const height = -4 + land * (4.9 + ridge * 3.8) - channelMask * 2.8;
+  return { height, shoreDistance, crestDistance, channelDistance, land, ridge, channelMask };
+};
+```
+
+Point lists above only demonstrate the representation; derive their shape and scale from the current composition, not from the sample coordinates. The closed outline must be an ordered, simple XZ polygon without duplicate adjacent points; define additional loops for holes. Add path, strata, basin or vegetation guides only when the scene calls for them. Keep each field's meaning and units explicit; do not reuse a variable named `mask` for unrelated regions. Build final terrain vertices from the field, then derive slope from its height or from the final mesh. Place paths and instances by sampling the final mesh so the guides do not drift from the rendered surface.
+
+Before scattering or adding material detail, expose one field at a time as false color and draw its source guide/zero contour. Sample known points on both sides of every boundary and at the guide centerline; assert expected inside/outside, high/low and exclusion results. Inspect the resulting **main-form mesh** in gray material from the target camera and a side view. If the visible ridge, channel or plateau does not match its guide, fix the guide, signed-distance convention, falloff or geometry sampling before adding noise and assets. Passing field values alone is not visual acceptance.
+
+**确认引导线真的驱动了几何。** 逐条追踪“设计引导 → 距离/遮罩/控制场 → 最终顶点或实体构造 → 渲染网格”；仅绘制在诊断叠层、写进审计数据或用于摆放对象的线，不会自动塑造地表。检查代码引用和字段消费者时，要确认控制场实际进入最终几何高度/位置公式。对每条主脊、沟槽、岸线或建筑控制线，在中心线和两侧固定样点比较最终网格高度/宽度/轮廓，断言变化方向和最低幅度符合设计；然后隐藏叠线看灰模。数值探针通过但完整网格没有可见形体响应时仍判失败，回到引导线与几何生成的连接处，不用材质、阴影或散布掩盖断链。
+
+**曲线贴附要在细分后采样。** 先在平面定义道路、河道、岸线或铺装中心线，再把路径细分到最终几何采样密度；不要只给稀疏控制点取地形高度后，在三维曲线上插值Y值，因为中间曲段可能穿地、悬空或越过邻接台地。每个最终横截面按对象角色取高程：道路两侧贴合承载网格并处理坡度过渡；水面使用连续水位/河床中心线高程，检查边缘与河床、岸坡的相交；桥面等跨越物明确端点和净空。逐顶点比较生成曲线与最终承载面的距离，沿全线采样最高/最低偏差；路径进入平台、建筑占地或其他不同高程区时，先明确谁是空间主导并重做路线/交界，再做材质。中心控制点吻合不等于整条曲线贴合。
+
+**通行路径的纵坡与台阶要由路线功能决定。** 对人行或车行路径，沿最终路径计算高程剖面、纵坡和横坡，并记录项目采用的可接受范围；两端接上但中间坡度突变或过陡，仍判不通过。可用平缓坡道时，按实际水平长度构造并核对两端搭接；空间不够时改成折返/平台或有真实踏面、踢面与落地平台的阶梯，不要把总高差压进短段后仅线性插值Y值。踏步的级高、踏宽、路径宽度、转角和上下端高程应共用同一条路线数据，并在侧视剖面与行进方向视角检查连续性；非通行的装饰路径则按其设计语义定义并验证。
 
 ## 5. 编写材质、灯光与环境效果
 
