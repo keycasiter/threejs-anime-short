@@ -1,0 +1,14 @@
+{
+  "status": "NOT_RUN",
+  "buildId": "preflight-v1",
+  "threeVersion": "",
+  "browser": "",
+  "renderer": "",
+  "dependencyStrategy": "",
+  "consoleErrors": [],
+  "failedRequests": [],
+  "capture": {
+    "path": "qa/preflight-canvas.png",
+    "sha256": "replace-with-file-sha256"
+  }
+}

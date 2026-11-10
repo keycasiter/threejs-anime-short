@@ -95,6 +95,35 @@ class DeliveryManifestTests(unittest.TestCase):
         self.assertTrue(any("report must PASS" in issue for issue in issues))
         self.assertTrue(any("initialized Three.js rendering backend" in issue for issue in issues))
 
+    def test_blocked_preflight_does_not_require_an_unrun_spatial_gate_file(self) -> None:
+        data = self.minimal_analysis_manifest()
+        data["mode"] = "full-production"
+        data["buildId"] = "scene-v1"
+        report = self.root / "preflight.json"
+        report.write_text(json.dumps({
+            "status": "BLOCKED", "buildId": "preflight-v1", "threeVersion": "0.180.0",
+            "browser": "Chromium", "renderer": None, "dependencyStrategy": "local bundle",
+            "consoleErrors": [], "failedRequests": [], "capture": None,
+            "blocker": "local server cannot bind in this environment",
+        }), encoding="utf-8")
+        blocker = self.root / "preflight-blocker.log"
+        blocker.write_text("PermissionError binding localhost", encoding="utf-8")
+        report_hash = hashlib.sha256(report.read_bytes()).hexdigest()
+        blocker_hash = hashlib.sha256(blocker.read_bytes()).hexdigest()
+        register_ref = {"path": "scene-register.json", "sha256": self.register_digest}
+        data["stages"].extend([
+            {
+                "id": "runtimePreflight", "status": "BLOCKED", "buildId": "preflight-v1",
+                "inputs": [register_ref], "preflightReport": "preflight.json",
+                "evidence": [{"path": "preflight.json", "sha256": report_hash}, {"path": "preflight-blocker.log", "sha256": blocker_hash}],
+            },
+            {"id": "spatialProxy", "status": "NOT_RUN", "buildId": "proxy-v1", "inputs": [], "evidence": []},
+        ])
+        issues = validate_delivery.validate_data(data, self.root, through="spatialProxy")
+        joined = "\n".join(issues)
+        self.assertIn("stage runtimePreflight must be PASS", joined)
+        self.assertNotIn("spatialGatePath must reference", joined)
+
     def test_mechanism_test_scope_does_not_require_the_full_production_chain(self) -> None:
         data = self.minimal_analysis_manifest()
         data["mode"] = "mechanism-test"

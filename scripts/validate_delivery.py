@@ -412,18 +412,20 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
             _run_specialist("validate_scene_register.py", register, base, "visualAnalysis", issues)
 
         if "spatialProxy" in required_stages:
-            gate_rel = data.get("spatialGatePath")
-            gate = _resolve(base, gate_rel)
-            if gate is None:
-                issues.append("spatialGatePath must reference an existing project JSON file")
-            else:
-                if not any(item[0] == gate_rel for item in stage_outputs.get("spatialProxy", set())):
-                    issues.append("spatialProxy evidence must include spatialGatePath with its SHA-256")
-                gate_data = _load_json(gate)
-                gate_proxy = gate_data.get("proxyStage") if gate_data else None
-                if isinstance(gate_proxy, dict) and by_id.get("spatialProxy", {}).get("buildId") != gate_proxy.get("buildId"):
-                    issues.append("spatialProxy stage buildId must match the gate's frozen proxy buildId")
-                _run_specialist("validate_spatial_gate.py", gate, base, "spatialProxy", issues)
+            proxy_stage = by_id.get("spatialProxy", {})
+            if proxy_stage.get("status") == "PASS":
+                gate_rel = data.get("spatialGatePath")
+                gate = _resolve(base, gate_rel)
+                if gate is None:
+                    issues.append("spatialGatePath must reference an existing project JSON file")
+                else:
+                    if not any(item[0] == gate_rel for item in stage_outputs.get("spatialProxy", set())):
+                        issues.append("spatialProxy evidence must include spatialGatePath with its SHA-256")
+                    gate_data = _load_json(gate)
+                    gate_proxy = gate_data.get("proxyStage") if gate_data else None
+                    if isinstance(gate_proxy, dict) and proxy_stage.get("buildId") != gate_proxy.get("buildId"):
+                        issues.append("spatialProxy stage buildId must match the gate's frozen proxy buildId")
+                    _run_specialist("validate_spatial_gate.py", gate, base, "spatialProxy", issues)
 
     if mode == "full-production" and "runtime" in required_stages:
         camera_stage = by_id.get("cameraMotion", {})

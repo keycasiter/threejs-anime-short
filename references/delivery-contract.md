@@ -39,7 +39,7 @@ Stage status must be `PASS` for the selected scope. `FAIL` and `NOT_RUN` remain 
 
 Complete visual analysis and validate the register first. Then run the runtime preflight before scene implementation. Run the delivery validator through the neutral proxy before making formal assets; that command also runs the scene-register and spatial-gate validators. Then validate the full manifest before delivery.
 
-The preflight report records `status`, its stage `buildId`, `threeVersion`, `browser`, initialized `renderer`, `dependencyStrategy`, empty `consoleErrors`/`failedRequests`, and a hashed capture of the minimal Three.js canvas. Choose the dependency strategy from the requested environment: local bundle/vendor files for offline delivery, or a pinned remote module only when network availability is part of the target. The preflight must resolve the same source/version and addon family planned for the scene.
+The preflight report records `status`, its stage `buildId`, `threeVersion`, `browser`, initialized `renderer`, `dependencyStrategy`, empty `consoleErrors`/`failedRequests`, and a hashed capture of the minimal Three.js canvas. Start from `../assets/templates/runtime-preflight.template.json`. Choose the dependency strategy from the requested environment: local bundle/vendor files for offline delivery, or a pinned remote module only when network availability is part of the target. The preflight must resolve the same source/version and addon family planned for the scene.
 
 ```bash
 python3 <skill-root>/scripts/validate_scene_register.py <project-root>/design/scene-register.json
