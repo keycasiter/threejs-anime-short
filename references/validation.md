@@ -124,7 +124,7 @@ node scripts/check_contacts.mjs path/to/contacts.json
 
 ## 可执行离线影片导出
 
-`render_film.mjs` 仅用于渲染自己有权制作的离线影片源码；不是网站浏览或 CUA 权限回退工具。依赖 Node 22+、本机 Chrome；`--video` 额外需要 ffmpeg/ffprobe。通过 `CHROME` 指定其他平台的可执行文件。
+`render_film.mjs` 仅用于渲染自己有权制作的离线影片源码；不是网站浏览或 CUA 权限回退工具。依赖 Node 22+、本机 Chrome；`--video`导出和最终MP4证据校验需要 ffmpeg/ffprobe。通过 `CHROME` 指定其他平台的可执行文件。
 
 ```sh
 node scripts/render_film.mjs --html /absolute/film.html --out /absolute/review
@@ -153,7 +153,7 @@ node scripts/render_film.mjs --html /absolute/film.html --out /absolute/export -
 
 确定性比较要求本次固定浏览器/视口/质量档下，同一时刻复取的PNG SHA256完全相同，没有像素容差。它覆盖指定样本时间的最终可见画面，不证明所有时刻、屏幕外状态或跨设备位级一致。噪声与随机源固定；差异时先查状态、字体和动画时钟，不通过放宽阈值掩盖未解释的变化。
 
-脚本不验证姿态好坏、完整离线依赖、音频听感、编码后视觉质量、实时流畅度或播放器点击行为；这些分别记录。每个MP4都需`videoReviewReport`：完整播放最终编码文件，审看片段帧并检查构图/文字可读性、编码伪影、时序连续性；报告绑定成片SHA-256并引用所有后编码样本ID。带音轨另需`audioReviewReport`。最终交付门禁会对MP4独立运行`ffprobe`，核对其导出报告、运行HTML来源哈希、成片属性、真实抽帧文件、审片报告和最终交付文件一致；哈希/结构校验不证明人实际看过，也不自动判断画面质量。不要把headless逐帧耗时视为实时FPS。
+脚本不验证姿态好坏、完整离线依赖、音频听感、编码后视觉质量、实时流畅度或播放器点击行为；这些分别记录。每个MP4都需`videoReviewReport`：完整播放最终编码文件，审看片段帧并检查构图/文字可读性、编码伪影、时序连续性；报告绑定成片SHA-256并引用所有后编码样本ID。带音轨另需`audioReviewReport`。最终交付门禁会对MP4独立运行`ffprobe`，并用ffmpeg从该MP4逐个重新解码抽帧时间点、核对PNG字节哈希，确认抽帧确实来自同一最终成片；它还核对导出报告、运行HTML来源哈希、媒体属性和最终交付文件。结构及哈希校验不证明人实际看过，也不自动判断画面质量。不要把headless逐帧耗时视为实时FPS。
 
 小片逐帧全量导出即可。该脚本没有实现分段恢复；长片需按源码/资产hash、完成标记和帧范围校验实现缓存。不能把源码 hash 字段称为已具备断点续渲染。
 

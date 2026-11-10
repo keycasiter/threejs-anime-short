@@ -266,7 +266,7 @@ def _validate_video_deliverable(base: Path, item: dict[str, Any], build_id: str,
         return
     _validate_probe_contract(actual_probe, contract, "MP4 deliverable", issues)
     _validate_probe_contract(report.get("video"), contract, "MP4 export report probe", issues)
-    samples = _validate_video_samples(base, report_path.parent, report, delivery_outputs, issues)
+    samples = _validate_video_samples(base, report_path.parent, deliverable_path, report, delivery_outputs, issues)
     _validate_video_review(base, item.get("videoReviewReport"), item, build_id, samples, delivery_outputs, issues)
     if report.get("audioMode") == "wav":
         try:
@@ -276,7 +276,24 @@ def _validate_video_deliverable(base: Path, item: dict[str, Any], build_id: str,
         _validate_audio_review(base, item.get("audioReviewReport"), item, build_id, duration, delivery_outputs, issues)
 
 
-def _validate_video_samples(project_dir: Path, export_dir: Path, report: dict[str, Any], delivery_outputs: set[tuple[str, str]], issues: list[str]) -> list[str]:
+def _verify_video_sample_provenance(video_path: Path, sample_time: float, expected_sha256: str, label: str, issues: list[str]) -> bool:
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-v", "error", "-ss", f"{sample_time:.6f}", "-i", str(video_path),
+             "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"],
+            capture_output=True, check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        issues.append(f"{label} could not be independently decoded from the final MP4 with ffmpeg: {exc}")
+        return False
+    actual = hashlib.sha256(result.stdout).hexdigest()
+    if actual != expected_sha256:
+        issues.append(f"{label} does not match a frame independently decoded from the final MP4")
+        return False
+    return True
+
+
+def _validate_video_samples(project_dir: Path, export_dir: Path, video_path: Path, report: dict[str, Any], delivery_outputs: set[tuple[str, str]], issues: list[str]) -> list[str]:
     samples = report.get("videoSamples")
     if not isinstance(samples, list):
         issues.append("MP4 export report requires post-encode videoSamples")
@@ -293,6 +310,7 @@ def _validate_video_samples(project_dir: Path, export_dir: Path, report: dict[st
             issues.append(f"videoSamples[{index}] requires an id")
         else:
             ids.append(sample_id)
+        sample_time = None
         try:
             sample_time = float(sample.get("t"))
             if not math.isfinite(sample_time) or sample_time < 0:
@@ -319,6 +337,8 @@ def _validate_video_samples(project_dir: Path, export_dir: Path, report: dict[st
                 issues.append(f"videoSamples[{index}] must be a real post-encode PNG")
             elif struct.unpack(">II", header[16:24]) != (report.get("width"), report.get("height")):
                 issues.append(f"videoSamples[{index}] dimensions must match the encoded MP4")
+            if sample_time is not None:
+                _verify_video_sample_provenance(video_path, sample_time, digest, f"videoSamples[{index}]", issues)
     if len(ids) != len(set(ids)):
         issues.append("videoSamples ids must be unique")
     if frame_times != sorted(frame_times) or len(frame_times) != len(set(frame_times)):

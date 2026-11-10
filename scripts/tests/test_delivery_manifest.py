@@ -7,6 +7,7 @@ import tempfile
 import struct
 import zlib
 import subprocess
+import shutil
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -1042,8 +1043,41 @@ class DeliveryManifestTests(unittest.TestCase):
         self._attach_video_review(report, item, delivery_outputs)
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
-        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+        with patch.object(validate_delivery.subprocess, "run", return_value=result), patch.object(validate_delivery, "_verify_video_sample_provenance", return_value=True):
             validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, delivery_outputs, issues)
+        self.assertEqual([], issues)
+
+    def test_video_sample_provenance_decodes_from_the_exact_final_mp4_and_time(self) -> None:
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+        expected = hashlib.sha256(png).hexdigest()
+        decoded = subprocess.CompletedProcess(["ffmpeg"], 0, png, b"")
+        mp4 = self.root / "exports" / "film.mp4"
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=decoded) as run:
+            validate_delivery._verify_video_sample_provenance(mp4, 0.7083333333, expected, "videoSamples[3]", issues)
+        self.assertEqual([], issues)
+        command = run.call_args.args[0]
+        self.assertIn(str(mp4), command)
+        self.assertEqual("0.708333", command[command.index("-ss") + 1])
+        self.assertEqual("-", command[-1])
+
+    def test_video_sample_provenance_rejects_frame_bytes_that_do_not_match_the_final_mp4(self) -> None:
+        decoded = subprocess.CompletedProcess(["ffmpeg"], 0, b"different frame", b"")
+        issues: list[str] = []
+        with patch.object(validate_delivery.subprocess, "run", return_value=decoded):
+            validate_delivery._verify_video_sample_provenance(self.root / "exports" / "film.mp4", .5, "0" * 64, "videoSamples[2]", issues)
+        self.assertIn("does not match a frame independently decoded from the final MP4", "\n".join(issues))
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg is required for encoded-frame provenance")
+    def test_video_sample_provenance_matches_an_actual_frame_from_a_synthetic_mp4(self) -> None:
+        mp4 = self.root / "synthetic.mp4"
+        frame = self.root / "sample.png"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=24:d=1",
+                        "-frames:v", "24", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(mp4)], check=True, capture_output=True)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", "0.500000", "-i", str(mp4), "-frames:v", "1", str(frame)], check=True, capture_output=True)
+        digest = hashlib.sha256(frame.read_bytes()).hexdigest()
+        issues: list[str] = []
+        self.assertTrue(validate_delivery._verify_video_sample_provenance(mp4, .5, digest, "midpoint", issues))
         self.assertEqual([], issues)
 
     def _attach_video_review(self, report: dict, item: dict, evidence: set[tuple[str, str]]) -> None:
@@ -1089,7 +1123,7 @@ class DeliveryManifestTests(unittest.TestCase):
         report, item, runtime_tested, evidence, probe = self._film_export_fixture()
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
-        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+        with patch.object(validate_delivery.subprocess, "run", return_value=result), patch.object(validate_delivery, "_verify_video_sample_provenance", return_value=True):
             validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
         self.assertIn("MP4 deliverable requires videoReviewReport", "\n".join(issues))
 
@@ -1100,7 +1134,7 @@ class DeliveryManifestTests(unittest.TestCase):
         evidence.discard(("exports/video-frame-002.png", hashlib.sha256(frame_path.read_bytes()).hexdigest()))
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
-        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+        with patch.object(validate_delivery.subprocess, "run", return_value=result), patch.object(validate_delivery, "_verify_video_sample_provenance", return_value=True):
             validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
         self.assertIn("delivery evidence must hash encoded frame video-frame-002.png", "\n".join(issues))
 
@@ -1121,7 +1155,7 @@ class DeliveryManifestTests(unittest.TestCase):
         evidence.add(("exports/manifest.json", hashlib.sha256(export_path.read_bytes()).hexdigest()))
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
-        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+        with patch.object(validate_delivery.subprocess, "run", return_value=result), patch.object(validate_delivery, "_verify_video_sample_provenance", return_value=True):
             validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
         joined = "\n".join(issues)
         self.assertIn("videoSamples[0]: SHA-256 mismatch", joined)
@@ -1135,7 +1169,7 @@ class DeliveryManifestTests(unittest.TestCase):
         probe["streams"][0]["width"] = 1920
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
-        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+        with patch.object(validate_delivery.subprocess, "run", return_value=result), patch.object(validate_delivery, "_verify_video_sample_provenance", return_value=True):
             validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, delivery_outputs, issues)
         joined = "\n".join(issues)
         self.assertIn("sourceHash must match runtime testedArtifact", joined)
@@ -1183,7 +1217,7 @@ class DeliveryManifestTests(unittest.TestCase):
         _review, item, evidence, runtime_tested, probe = self._audio_review_fixture()
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
-        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+        with patch.object(validate_delivery.subprocess, "run", return_value=result), patch.object(validate_delivery, "_verify_video_sample_provenance", return_value=True):
             validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
         self.assertEqual([], issues)
 
@@ -1192,7 +1226,7 @@ class DeliveryManifestTests(unittest.TestCase):
         item.pop("audioReviewReport")
         result = subprocess.CompletedProcess(["ffprobe"], 0, json.dumps(probe), "")
         issues: list[str] = []
-        with patch.object(validate_delivery.subprocess, "run", return_value=result):
+        with patch.object(validate_delivery.subprocess, "run", return_value=result), patch.object(validate_delivery, "_verify_video_sample_provenance", return_value=True):
             validate_delivery._validate_video_deliverable(self.root, item, "scene-v1", runtime_tested, evidence, issues)
         self.assertIn("audio-bearing MP4 deliverable requires audioReviewReport", "\n".join(issues))
 
