@@ -3,6 +3,7 @@
   "buildId": "scene-v01",
   "reviewer": "reviewer-name",
   "reviewedSampleIds": ["hero-front", "orbit-back"],
+  "findings": [],
   "checks": [
     {"dimension": "composition", "status": "NOT_RUN", "observation": "", "sampleIds": []},
     {"dimension": "spatial-depth", "status": "NOT_RUN", "observation": "", "sampleIds": []},

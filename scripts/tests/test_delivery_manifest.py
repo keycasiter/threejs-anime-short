@@ -806,12 +806,40 @@ class DeliveryManifestTests(unittest.TestCase):
         validate_delivery.validate_asset_family_reviews(ledger, review, {"front", "orbit-back"}, issues)
         self.assertTrue(any("requires sampleIds from this family's reviewed runtime captures" in issue for issue in issues))
 
+    def test_blocked_family_dimension_must_link_to_an_actionable_finding(self) -> None:
+        required = validate_delivery.ASSET_CHECKS_BY_PRIORITY["ambient"]
+        ledger = {"families": [{
+            "id": "foliage", "priority": "ambient", "objectIds": ["ground"], "routeIds": [],
+            "visualFeatureIds": ["ground-profile", "ground-layer", "ground-material"],
+            "requiredChecks": [{"dimension": dimension, "criterion": "Visible criterion"} for dimension in required],
+        }]}
+        review = {
+            "status": "BLOCK",
+            "findings": [{"id": "leaf-gap", "status": "OPEN", "familyId": "foliage", "dimension": "silhouette"}],
+            "familyReviews": [{
+                "familyId": "foliage", "status": "BLOCK", "reviewedSampleIds": ["front"],
+                "checks": [{"dimension": dimension, "status": "BLOCK" if dimension == "silhouette" else "PASS",
+                            "observation": f"Observed {dimension} in the rendered asset.", "sampleIds": ["front"],
+                            **({"findingIds": ["leaf-gap"]} if dimension == "silhouette" else {})} for dimension in required],
+                "featureReviews": [{"featureId": feature_id, "status": "PASS", "observation": f"Observed the mapped {feature_id} in the final scene.", "reviewedSampleIds": ["front"]}
+                                   for feature_id in ("ground-profile", "ground-layer", "ground-material")],
+            }],
+        }
+        issues: list[str] = []
+        validate_delivery.validate_asset_family_reviews(ledger, review, {"front"}, issues)
+        self.assertEqual([], issues)
+        review["familyReviews"][0]["checks"][0].pop("findingIds")
+        issues = []
+        validate_delivery.validate_asset_family_reviews(ledger, review, {"front"}, issues)
+        self.assertTrue(any("BLOCK requires linked findingIds" in issue for issue in issues))
+
     def test_visual_review_dimensions_require_specific_runtime_samples(self) -> None:
         capture_ids = {"front", "orbit-back"}
         dimensions = sorted(validate_delivery.REVIEW_DIMENSIONS)
         report = {
             "status": "PASS", "buildId": "scene-v1", "reviewer": "visual reviewer",
             "reviewedSampleIds": sorted(capture_ids),
+            "findings": [],
             "checks": [{"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension} in the rendered scene.", "sampleIds": ["front"]} for dimension in dimensions],
         }
         issues: list[str] = []
@@ -822,6 +850,77 @@ class DeliveryManifestTests(unittest.TestCase):
         issues = []
         validate_delivery._validate_visual_review(self.root, path.name, "scene-v1", capture_ids, "interactive-orbit", issues)
         self.assertTrue(any("PASS requires sampleIds from runtime captures" in issue for issue in issues))
+
+    def test_visual_review_pass_cannot_hide_open_findings(self) -> None:
+        capture_ids = {"front", "orbit-back"}
+        report = {
+            "status": "PASS", "buildId": "scene-v1", "reviewer": "visual reviewer",
+            "reviewedSampleIds": sorted(capture_ids),
+            "findings": [{
+                "id": "gap-01", "status": "OPEN", "severity": "MAJOR", "scope": "scene",
+                "dimension": "spatial-depth", "familyId": None,
+                "observation": "Large areas of the scene remain visually empty.", "sampleIds": ["front"],
+                "rootCauseStatus": "UNCONFIRMED", "rootCause": "Need to trace the environment placement field.",
+                "ownerStage": "detailDistribution", "action": "Inspect the empty regions and placement inputs.",
+            }],
+            "checks": [{"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension} in the rendered scene.", "sampleIds": ["front"]} for dimension in sorted(validate_delivery.REVIEW_DIMENSIONS)],
+        }
+        issues: list[str] = []
+        validate_delivery._validate_visual_review(self.root, self.write_manifest(report).name, "scene-v1", capture_ids, "interactive-orbit", issues)
+        self.assertTrue(any("PASS cannot contain OPEN visual findings" in issue for issue in issues))
+
+    def test_resolved_visual_finding_must_be_verified_in_the_current_build(self) -> None:
+        capture_ids = {"front", "orbit-back"}
+        report = {
+            "status": "PASS", "buildId": "scene-v2", "reviewer": "visual reviewer",
+            "reviewedSampleIds": sorted(capture_ids),
+            "findings": [{
+                "id": "depth-gap", "status": "RESOLVED", "severity": "MAJOR", "scope": "scene",
+                "dimension": "spatial-depth", "familyId": None,
+                "observation": "The earlier build had a flat horizon with no middle-distance layers.", "sampleIds": ["front"],
+                "rootCauseStatus": "CONFIRMED", "rootCause": "The background used a single plane with no depth grouping.",
+                "ownerStage": "spatialProxy", "action": "Add overlapping distance layers and atmospheric separation.",
+                "resolution": {"buildId": "scene-v2", "sampleIds": ["front", "orbit-back"],
+                               "change": "Added three depth bands with varied silhouettes and haze falloff.",
+                               "observation": "The middle-distance silhouette now separates from the horizon in both views."},
+            }],
+            "checks": [{"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension} in the rendered scene.", "sampleIds": ["front"]} for dimension in sorted(validate_delivery.REVIEW_DIMENSIONS)],
+        }
+        issues: list[str] = []
+        validate_delivery._validate_visual_review(self.root, self.write_manifest(report).name, "scene-v2", capture_ids, "interactive-orbit", issues)
+        self.assertEqual([], issues)
+        report["findings"][0]["resolution"]["buildId"] = "scene-v1"
+        issues = []
+        validate_delivery._validate_visual_review(self.root, self.write_manifest(report).name, "scene-v2", capture_ids, "interactive-orbit", issues)
+        self.assertTrue(any("requires a resolution for the current buildId" in issue for issue in issues))
+
+    def test_visual_review_block_records_actionable_finding_for_blocked_dimension(self) -> None:
+        capture_ids = {"front", "orbit-back"}
+        dimensions = sorted(validate_delivery.REVIEW_DIMENSIONS)
+        report = {
+            "status": "BLOCK", "buildId": "scene-v1", "reviewer": "visual reviewer",
+            "reviewedSampleIds": sorted(capture_ids),
+            "findings": [{
+                "id": "depth-gap", "status": "OPEN", "severity": "MAJOR", "scope": "scene",
+                "dimension": "spatial-depth", "familyId": None,
+                "observation": "The far landscape collapses into a flat horizon band.", "sampleIds": ["front"],
+                "rootCauseStatus": "UNCONFIRMED", "rootCause": "The current environment layout does not create depth layers.",
+                "ownerStage": "spatialProxy", "action": "Inspect the depth layout and rebuild the far layers.",
+            }],
+            "checks": [{
+                "dimension": dimension,
+                "status": "BLOCK" if dimension == "spatial-depth" else "PASS",
+                "observation": f"Observed {dimension} in the rendered scene.", "sampleIds": ["front"],
+                **({"findingIds": ["depth-gap"]} if dimension == "spatial-depth" else {}),
+            } for dimension in dimensions],
+        }
+        issues: list[str] = []
+        validate_delivery._validate_visual_review(self.root, self.write_manifest(report).name, "scene-v1", capture_ids, "interactive-orbit", issues)
+        self.assertEqual([], issues)
+        report["checks"][next(i for i, item in enumerate(report["checks"]) if item["dimension"] == "spatial-depth")].pop("findingIds")
+        issues = []
+        validate_delivery._validate_visual_review(self.root, self.write_manifest(report).name, "scene-v1", capture_ids, "interactive-orbit", issues)
+        self.assertTrue(any("BLOCK requires findingIds" in issue for issue in issues))
 
     def test_unedited_visual_review_template_cannot_pass_family_gate(self) -> None:
         template_dir = SCRIPT_DIR.parent / "assets" / "templates"

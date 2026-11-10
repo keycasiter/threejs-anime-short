@@ -853,14 +853,80 @@ def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids:
     if report is None:
         issues.append("visualReview: visualReviewReport must be an existing JSON file")
         return
-    if report.get("status") != "PASS" or report.get("buildId") != build_id:
-        issues.append("visualReview: report must PASS and match the current buildId")
+    review_status = report.get("status")
+    if review_status not in {"PASS", "BLOCK"} or report.get("buildId") != build_id:
+        issues.append("visualReview: report must be PASS or BLOCK and match the current buildId")
     if not isinstance(report.get("reviewer"), str) or not report["reviewer"].strip():
         issues.append("visualReview: report requires a reviewer")
     reviewed = report.get("reviewedSampleIds")
     reviewed_ids = {sample for sample in reviewed if isinstance(sample, str)} if isinstance(reviewed, list) else set()
     if not isinstance(reviewed, list) or len(reviewed_ids) != len(reviewed) or reviewed_ids != capture_ids:
         issues.append("visualReview: reviewedSampleIds must match every runtime capture exactly")
+    findings = report.get("findings")
+    if not isinstance(findings, list):
+        issues.append("visualReview: findings must be a list, including an empty list when there are no findings")
+        findings = []
+    finding_by_id: dict[str, dict[str, Any]] = {}
+    open_findings: set[str] = set()
+    allowed_findings = set(REVIEW_DIMENSIONS) | set(ASSET_INTEGRITY_CHECKS)
+    allowed_owners = set(PIPELINE) - {"visualReview"} | {"direction"}
+    for index, finding in enumerate(findings):
+        if not isinstance(finding, dict):
+            issues.append(f"visualReview: findings[{index}] must be an object")
+            continue
+        finding_id = finding.get("id")
+        if not isinstance(finding_id, str) or not finding_id.strip():
+            issues.append(f"visualReview: findings[{index}] requires an id")
+            continue
+        if finding_id in finding_by_id:
+            issues.append(f"visualReview: duplicate finding id {finding_id}")
+        finding_by_id[finding_id] = finding
+        status = finding.get("status")
+        if status not in {"OPEN", "RESOLVED"}:
+            issues.append(f"visualReview: finding {finding_id} status must be OPEN or RESOLVED")
+        if status == "OPEN":
+            open_findings.add(finding_id)
+        if finding.get("severity") not in {"BLOCKER", "MAJOR", "MINOR"}:
+            issues.append(f"visualReview: finding {finding_id} requires BLOCKER, MAJOR, or MINOR severity")
+        if finding.get("scope") not in {"scene", "family", "feature"}:
+            issues.append(f"visualReview: finding {finding_id} scope must be scene, family, or feature")
+        if finding.get("dimension") not in allowed_findings:
+            issues.append(f"visualReview: finding {finding_id} has an unknown dimension")
+        elif finding.get("dimension") not in REVIEW_DIMENSIONS and finding.get("scope") == "scene":
+            issues.append(f"visualReview: scene finding {finding_id} must use a global review dimension")
+        if finding.get("scope") in {"family", "feature"} and (not isinstance(finding.get("familyId"), str) or not finding["familyId"].strip()):
+            issues.append(f"visualReview: finding {finding_id} requires familyId for family/feature scope")
+        if finding.get("scope") == "feature" and (not isinstance(finding.get("featureId"), str) or not finding["featureId"].strip()):
+            issues.append(f"visualReview: feature finding {finding_id} requires featureId")
+        for key in ("observation", "rootCause", "action"):
+            if not isinstance(finding.get(key), str) or len(finding[key].strip()) < 16:
+                issues.append(f"visualReview: finding {finding_id} requires a concrete {key}")
+        if finding.get("rootCauseStatus") not in {"CONFIRMED", "UNCONFIRMED"}:
+            issues.append(f"visualReview: finding {finding_id} rootCauseStatus must be CONFIRMED or UNCONFIRMED")
+        if finding.get("rootCauseStatus") == "UNCONFIRMED" and not isinstance(finding.get("action"), str):
+            issues.append(f"visualReview: unconfirmed finding {finding_id} requires an investigation action")
+        if finding.get("ownerStage") not in allowed_owners:
+            issues.append(f"visualReview: finding {finding_id} requires a responsible production stage")
+        sample_ids = finding.get("sampleIds")
+        if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(capture_ids):
+            issues.append(f"visualReview: finding {finding_id} requires evidence sampleIds from runtime captures")
+        if status == "RESOLVED":
+            resolution = finding.get("resolution")
+            if not isinstance(resolution, dict) or resolution.get("buildId") != build_id:
+                issues.append(f"visualReview: resolved finding {finding_id} requires a resolution for the current buildId")
+            else:
+                after_ids = resolution.get("sampleIds")
+                if not isinstance(after_ids, list) or not after_ids or any(not isinstance(sample, str) for sample in after_ids) or not set(after_ids).issubset(capture_ids):
+                    issues.append(f"visualReview: resolved finding {finding_id} requires current-build resolution sampleIds")
+                for key in ("change", "observation"):
+                    if not isinstance(resolution.get(key), str) or len(resolution[key].strip()) < 16:
+                        issues.append(f"visualReview: resolved finding {finding_id} requires a concrete resolution {key}")
+            if finding.get("rootCauseStatus") != "CONFIRMED":
+                issues.append(f"visualReview: resolved finding {finding_id} requires a confirmed root cause")
+    if review_status == "PASS" and open_findings:
+        issues.append("visualReview: PASS cannot contain OPEN visual findings")
+    if review_status == "BLOCK" and not open_findings:
+        issues.append("visualReview: BLOCK requires at least one OPEN visual finding")
     checks = report.get("checks")
     found: set[str] = set()
     if not isinstance(checks, list):
@@ -878,14 +944,18 @@ def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids:
                 issues.append(f"visualReview: duplicate dimension {dimension}")
             found.add(dimension)
             status = check.get("status")
-            if status not in {"PASS", "NOT_APPLICABLE"}:
-                issues.append(f"visualReview: {dimension} must PASS or be explicitly NOT_APPLICABLE")
-            if status == "PASS" and (not isinstance(check.get("observation"), str) or not check["observation"].strip()):
-                issues.append(f"visualReview: {dimension} PASS requires a concrete observation")
+            if status not in {"PASS", "NOT_APPLICABLE", "BLOCK"} or (status == "BLOCK" and review_status != "BLOCK"):
+                issues.append(f"visualReview: {dimension} must PASS, NOT_APPLICABLE, or BLOCK only when the report is blocked")
+            if status in {"PASS", "BLOCK"} and (not isinstance(check.get("observation"), str) or not check["observation"].strip()):
+                issues.append(f"visualReview: {dimension} {status} requires a concrete observation")
             if status == "PASS":
                 sample_ids = check.get("sampleIds")
                 if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(capture_ids):
                     issues.append(f"visualReview: {dimension} PASS requires sampleIds from runtime captures")
+            if status == "BLOCK":
+                finding_ids = check.get("findingIds")
+                if not isinstance(finding_ids, list) or not finding_ids or any(not isinstance(finding_id, str) or finding_id not in finding_by_id or finding_by_id[finding_id].get("dimension") != dimension for finding_id in finding_ids):
+                    issues.append(f"visualReview: {dimension} BLOCK requires findingIds linked to findings of that dimension")
             if status == "NOT_APPLICABLE" and (dimension not in {"orbit-coverage", "interaction"} or camera_mode == "interactive-orbit" or not isinstance(check.get("reason"), str) or not check["reason"].strip()):
                 issues.append(f"visualReview: {dimension} NOT_APPLICABLE requires a fixed-camera reason")
             if camera_mode == "interactive-orbit" and dimension in {"orbit-coverage", "interaction"} and status != "PASS":
@@ -1111,6 +1181,9 @@ def validate_asset_ledger(base: Path, scene_register_path: Any, asset_ledger_pat
 
 
 def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any], capture_ids: set[str], issues: list[str]) -> None:
+    review_status = review.get("status")
+    findings = review.get("findings", [])
+    finding_by_id = {item.get("id"): item for item in findings if isinstance(item, dict) and isinstance(item.get("id"), str)} if isinstance(findings, list) else {}
     families = ledger.get("families", [])
     expected_ids = {item.get("id") for item in families if isinstance(item, dict) and isinstance(item.get("id"), str)}
     records = review.get("familyReviews")
@@ -1135,8 +1208,14 @@ def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any]
         if not isinstance(samples, list) or not samples or any(not isinstance(sample, str) for sample in samples) or not set(samples).issubset(capture_ids):
             issues.append(f"visualReview: family {family_id} needs reviewedSampleIds from runtime captures")
         family_sample_ids = {sample for sample in samples if isinstance(sample, str)} if isinstance(samples, list) else set()
-        if record.get("status") != "PASS":
-            issues.append(f"visualReview: family {family_id} must PASS")
+        family_open = [finding for finding in finding_by_id.values() if finding.get("familyId") == family_id and finding.get("status") == "OPEN"]
+        if record.get("status") == "BLOCK":
+            if review_status != "BLOCK" or not family_open:
+                issues.append(f"visualReview: family {family_id} BLOCK requires an OPEN family finding in a BLOCK report")
+        elif record.get("status") != "PASS":
+            issues.append(f"visualReview: family {family_id} must PASS or be explicitly BLOCK")
+        elif family_open:
+            issues.append(f"visualReview: family {family_id} PASS cannot contain OPEN findings")
         checks = record.get("checks")
         family = family_by_id[family_id]
         required_checks = family.get("requiredChecks", [])
@@ -1154,7 +1233,20 @@ def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any]
             issues.append(f"visualReview: family {family_id} checks must cover every required dimension exactly")
         for dimension in required & set(seen):
             check = seen[dimension]
-            if check.get("status") != "PASS" or not isinstance(check.get("observation"), str) or not check["observation"].strip():
+            check_status = check.get("status")
+            if check_status == "BLOCK":
+                if not isinstance(check.get("observation"), str) or not check["observation"].strip():
+                    issues.append(f"visualReview: family {family_id} {dimension} BLOCK requires a concrete observation")
+                finding_ids = check.get("findingIds")
+                linked = isinstance(finding_ids, list) and bool(finding_ids) and all(
+                    isinstance(finding_id, str) and finding_id in finding_by_id
+                    and finding_by_id[finding_id].get("familyId") == family_id
+                    and finding_by_id[finding_id].get("dimension") == dimension
+                    for finding_id in finding_ids
+                )
+                if review_status != "BLOCK" or record.get("status") != "BLOCK" or not linked:
+                    issues.append(f"visualReview: family {family_id} {dimension} BLOCK requires linked findingIds in a BLOCK report")
+            elif check_status != "PASS" or not isinstance(check.get("observation"), str) or not check["observation"].strip():
                 issues.append(f"visualReview: family {family_id} {dimension} requires PASS with a concrete observation")
             sample_ids = check.get("sampleIds")
             if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(family_sample_ids & capture_ids):
@@ -1176,7 +1268,19 @@ def validate_asset_family_reviews(ledger: dict[str, Any], review: dict[str, Any]
         for feature_id in set(feature_ids) & set(feature_by_id):
             feature_review = feature_by_id[feature_id]
             sample_ids = feature_review.get("reviewedSampleIds")
-            if feature_review.get("status") != "PASS" or not isinstance(feature_review.get("observation"), str) or len(feature_review["observation"].strip()) < 20:
+            if feature_review.get("status") == "BLOCK":
+                if not isinstance(feature_review.get("observation"), str) or len(feature_review["observation"].strip()) < 20:
+                    issues.append(f"visualReview: family {family_id} feature {feature_id} BLOCK requires a concrete observation")
+                finding_ids = feature_review.get("findingIds")
+                linked = isinstance(finding_ids, list) and bool(finding_ids) and all(
+                    isinstance(finding_id, str) and finding_id in finding_by_id
+                    and finding_by_id[finding_id].get("familyId") == family_id
+                    and finding_by_id[finding_id].get("featureId") == feature_id
+                    for finding_id in finding_ids
+                )
+                if review_status != "BLOCK" or record.get("status") != "BLOCK" or not linked:
+                    issues.append(f"visualReview: family {family_id} feature {feature_id} BLOCK requires linked findingIds in a BLOCK report")
+            elif feature_review.get("status") != "PASS" or not isinstance(feature_review.get("observation"), str) or len(feature_review["observation"].strip()) < 20:
                 issues.append(f"visualReview: family {family_id} feature {feature_id} requires PASS with a concrete observation")
             if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(family_sample_ids & capture_ids):
                 issues.append(f"visualReview: family {family_id} feature {feature_id} needs capture evidence from this family's reviewed runtime views")
