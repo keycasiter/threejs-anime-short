@@ -98,9 +98,11 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 // 薄玻璃的起点，非通用成品参数；由实际厚度、反射和遮挡继续校准。
 const glass = new THREE.MeshPhysicalMaterial({
   transmission: 1, opacity: 1, transparent: false,
-  roughness: .08, metalness: 0, thickness: 0, ior: 1.5
+  color: '#ffffff', roughness: .08, metalness: 0, thickness: 0, ior: 1.5
 });
 ```
+
+**先设计透视层两侧的颜色关系。** 把表面反射、穿过材料看到的物体，以及材料内部吸收分开指定：反射内容来自环境/捕获和光源；窗后物体先由其材料与受光成立；有色体积再用实际厚度与吸收距离校准。以r180的Physical透射路径为例，`color`参与透射颜色的乘算；把“反射偏蓝”直接填成蓝色底色，也会过滤窗后的暖物体。目标需要保留窗后原色时，从接近中性的透射底色起步，再设计环境反射；目标本来就是有色玻璃、液体或树脂时，保留需要的过滤，并按厚度检查`attenuationColor`/`attenuationDistance`。不要将一种材料的起始色复制给所有透视层。
 
 仅为alpha覆盖混合时再开启相应透明路径，明确排序与depthWrite；不能把所有玻璃统一关闭深度写入。以玻璃后的实际物体作代表样件，先固定灯光切换玻璃状态，再固定玻璃比较局部受光；不要同时调整灯强、颜色、透明度和曝光后归因。接收面本身不亮、透视层压平颜色、环境/曝光压平反差是不同问题。多层玻璃和屏幕外信息仍受下表的捕获限制；该配置不保证完整物理透射或最终品质。
 
