@@ -911,7 +911,10 @@ def validate_camera_interaction_report(
         issues.append("camera interaction reset must restore initial distance within 1 percent or 0.02 units")
 
 
-def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids: set[str], camera_mode: str, issues: list[str]) -> None:
+def _validate_visual_review(
+    base: Path, record: Any, build_id: str, capture_ids: set[str], camera_mode: str,
+    issues: list[str], full_orbit_sample_ids: set[str] | None = None,
+) -> None:
     if not isinstance(record, str) or not record.strip():
         issues.append("visualReview: full-production requires visualReviewReport path")
         return
@@ -1019,6 +1022,8 @@ def _validate_visual_review(base: Path, record: Any, build_id: str, capture_ids:
                 sample_ids = check.get("sampleIds")
                 if not isinstance(sample_ids, list) or not sample_ids or any(not isinstance(sample, str) for sample in sample_ids) or not set(sample_ids).issubset(capture_ids):
                     issues.append(f"visualReview: {dimension} PASS requires sampleIds from runtime captures")
+                elif dimension == "composition" and full_orbit_sample_ids and not full_orbit_sample_ids.issubset(set(sample_ids)):
+                    issues.append("visualReview: composition PASS must cite every runtime capture from the full 360-degree view envelope")
             if status == "BLOCK":
                 finding_ids = check.get("findingIds")
                 if not isinstance(finding_ids, list) or not finding_ids or any(not isinstance(finding_id, str) or finding_id not in finding_by_id or finding_by_id[finding_id].get("dimension") != dimension for finding_id in finding_ids):
@@ -2521,7 +2526,17 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
         runtime_ids = _validate_runtime_report(base, runtime_stage.get("runtimeReport"), runtime_stage.get("buildId", ""), camera_contract_path, runtime_stage, issues)
         if "visualReview" in required_stages:
             review_stage = by_id.get("visualReview", {})
-            _validate_visual_review(base, review_stage.get("visualReviewReport"), review_stage.get("buildId", ""), runtime_ids, camera_contract_data.get("mode", "") if camera_contract_data else "", issues)
+            full_orbit_sample_ids: set[str] | None = None
+            if camera_contract_data and camera_contract_data.get("mode") == "interactive-orbit":
+                bounds = camera_contract_data.get("bounds")
+                azimuth_bounds = bounds.get("azimuthDeg") if isinstance(bounds, dict) else None
+                if isinstance(azimuth_bounds, list) and len(azimuth_bounds) == 2 and all(isinstance(value, (int, float)) for value in azimuth_bounds) and azimuth_bounds[1] - azimuth_bounds[0] >= 359.9:
+                    full_orbit_sample_ids = set(runtime_ids)
+            _validate_visual_review(
+                base, review_stage.get("visualReviewReport"), review_stage.get("buildId", ""), runtime_ids,
+                camera_contract_data.get("mode", "") if camera_contract_data else "", issues,
+                full_orbit_sample_ids=full_orbit_sample_ids,
+            )
             ledger_path = _resolve(base, data.get("assetLedgerPath"))
             review_path = _resolve(base, review_stage.get("visualReviewReport"))
             ledger_data = _load_json(ledger_path) if ledger_path else None

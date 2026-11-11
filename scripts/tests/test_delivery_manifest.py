@@ -994,6 +994,34 @@ class DeliveryManifestTests(unittest.TestCase):
         validate_delivery._validate_visual_review(self.root, path.name, "scene-v1", capture_ids, "interactive-orbit", issues)
         self.assertTrue(any("PASS requires sampleIds from runtime captures" in issue for issue in issues))
 
+    def test_interactive_composition_pass_must_cover_every_runtime_view(self) -> None:
+        capture_ids = {f"orbit-{azimuth}" for azimuth in range(0, 360, 45)}
+        dimensions = sorted(validate_delivery.REVIEW_DIMENSIONS)
+        report = {
+            "status": "PASS", "buildId": "scene-v1", "reviewer": "visual reviewer",
+            "reviewedSampleIds": sorted(capture_ids), "findings": [],
+            "checks": [
+                {"dimension": dimension, "status": "PASS", "observation": f"Observed {dimension} in the rendered scene.",
+                 "sampleIds": sorted(capture_ids - {"orbit-90"}) if dimension == "composition" else ["orbit-0"]}
+                for dimension in dimensions
+            ],
+        }
+        issues: list[str] = []
+        validate_delivery._validate_visual_review(
+            self.root, self.write_manifest(report).name, "scene-v1", capture_ids, "interactive-orbit", issues,
+            full_orbit_sample_ids=capture_ids,
+        )
+        self.assertTrue(any("composition PASS must cite every runtime capture" in issue for issue in issues))
+
+        composition = next(check for check in report["checks"] if check["dimension"] == "composition")
+        composition["sampleIds"] = sorted(capture_ids)
+        issues = []
+        validate_delivery._validate_visual_review(
+            self.root, self.write_manifest(report).name, "scene-v1", capture_ids, "interactive-orbit", issues,
+            full_orbit_sample_ids=capture_ids,
+        )
+        self.assertFalse(any("composition PASS must cite every runtime capture" in issue for issue in issues))
+
     def test_visual_review_pass_cannot_hide_open_findings(self) -> None:
         capture_ids = {"front", "orbit-back"}
         report = {
