@@ -1,5 +1,8 @@
 # Spatial blockout: build and release gate
 
+> 制作方式：通用算法与视觉判断按需使用；本文的manifest字段、固定阶段顺序和逐阶段脚本放行适用于显式选择的[正式阶段协议](formal-stage-workflow.md)。默认制作按[生产流程](production-workflow.md)推进完整代表关系，计划请求仅交计划。
+
+
 Use this procedure for the scene-wide placement/support stage between visual analysis and middle-form modeling. It is a spatial construction contract, not a style or final-detail pass. Keep the delivered scene rendered in Three.js. Choose other authoring tools only when they solve a demonstrated geometry or measurement problem.
 
 ## 1. Select representation and tools from the spatial problem

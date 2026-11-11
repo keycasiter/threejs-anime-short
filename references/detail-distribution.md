@@ -1,5 +1,8 @@
 # 细节与分布执行 SOP
 
+> 制作方式：通用算法与视觉判断按需使用；本文的manifest字段、固定阶段顺序和逐阶段脚本放行适用于显式选择的[正式阶段协议](formal-stage-workflow.md)。默认制作按[生产流程](production-workflow.md)推进完整代表关系，计划请求仅交计划。
+
+
 本阶段把已经通过空间白模和代表样件门禁的资产，转成完整场景里的可控细节群体。输入是`scene-register.json`、`visual-build-map.json`、`asset-ledger.json`中已审核的`prototype.formVariants`及冻结的middleForms构建；输出是引用这些原型ID的实际放置记录、分布诊断图、上下文/近景截图和`distribution-report.json`。材质与灯光的最终响应留给下一阶段。
 
 ## 1. 先确定细节要改变的画面关系

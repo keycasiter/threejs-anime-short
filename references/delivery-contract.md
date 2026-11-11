@@ -1,5 +1,8 @@
 # Scope-aware delivery contract
 
+> 制作方式：通用算法与视觉判断按需使用；本文的manifest字段、固定阶段顺序和逐阶段脚本放行适用于显式选择的[正式阶段协议](formal-stage-workflow.md)。默认制作按[生产流程](production-workflow.md)推进完整代表关系，计划请求仅交计划。
+
+
 The production workflow uses a small JSON manifest to record which stages were performed, which exact artifacts they consumed and produced, and which build was reviewed. Run the validator at the relevant handoff, not only at the end. The manifest prevents a delivery from being labeled complete when required stages or evidence are absent; it cannot determine whether a picture is beautiful or a declared observation is truthful.
 
 ## Choose the requested scope

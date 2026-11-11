@@ -2,29 +2,19 @@
 
 将视觉目标落实为Three.js资产、完整场景、材质、摄影、动画与交互，交付可运行代码、HTML或视频。生图默认用于设计参考，最终场景由Three.js渲染。
 
-## 入口与结构
+## 当前方向与入口
 
-- [SKILL.md](SKILL.md)：任务边界、唯一主链路、相机模式与方法入口。
-- [生产流程](references/production-workflow.md)：阶段输入、行动、产物与衔接。
-- [制作规格模板](assets/templates/production-brief.template.json)：整理场景范围、观看方式、空间分区、资产族和视图计划；简短需求流程见[生产流程](references/production-workflow.md)，宏观空间执行见[空间白模SOP](references/spatial-blockout.md)。
-- [资产设计](references/asset-craft.md)：视觉基准、形体/场景选择、实现映射与材料设计。
-- [构图、空间与中层](references/composition-and-form.md)：屏幕关系到视点/透视、空间分组与真实体积过渡，含可执行投影诊断。
-- [细节与分布SOP](references/detail-distribution.md)：从空间分布目标到实际实例、热区图和分组验收。
-- [材质与灯光校准SOP](references/lookdev-calibration.md)：把材料目标连到Three.js消费者，并做固定条件配对对照。
-- [可交互相机验收SOP](references/camera-interaction.md)：以最终页面实操校验完整环绕、缩放、复位和视角完整性。
-- [代码方法](references/threejs-code-sop.md)：几何、生成器、材料/FX及时间函数；按问题选读。
-- [统一验收](references/validation.md)：完整性、视觉品质、动作、相机和最终文件分别判断。
-- [阶段交付契约](references/delivery-contract.md)、[交付模板](assets/templates/delivery-manifest.template.json)、[分布报告模板](assets/templates/distribution-report.template.json)、[材光校准报告模板](assets/templates/lookdev-report.template.json)、[相机交互报告模板](assets/templates/camera-interaction-report.template.json)、[音频审听模板](assets/templates/audio-review.template.json)、[运行报告模板](assets/templates/runtime-report.template.json)与[运行预检模板](assets/templates/runtime-preflight.template.json)：按用户任务范围验证阶段顺序、构建证据和最终交付。
-- 最终HTML会在full-production门禁内静态检查；离线HTML拒绝远程依赖。运行说明必须作为哈希文件随成品交付。
-- MP4导出会在完成前核对媒体属性并记录成片哈希；最终交付门禁会重新探测文件并绑定导出manifest、源HTML和交付文件。
-- 带音轨MP4需随交付提交绑定最终MP4哈希的完整播放/分段审听记录；静音MP4不要求音频审听报告。
-- 所有MP4都会从编码后文件抽取代表帧，需提交完整播放审片报告；帧图与报告均以哈希纳入最终交付证据。
-- 视觉审图的阻塞项要有责任阶段、根因状态、修复动作和当前构建复核证据；PASS不能遗留OPEN问题。
-- [渲染选择](references/rendering-choices.md)：色彩、PBR/IBL、版本、软影与异步完成协议；可选[柔和主光源码](assets/rendering/soft-directional.mjs)随作品复制。
-- [视觉分析空间交接](references/visual-analysis-sop.md)由[`validate_scene_register.py`](scripts/validate_scene_register.py)检查来源、ID、坐标、高程和端口交接；参考图与可建模特征的映射由[`visual-build-map模板`](assets/templates/visual-build-map.template.json)和交付门禁检查；每个资产族的代表样件及逐特征证据由[`asset-ledger模板`](assets/templates/asset-ledger.template.json)检查；空间搭建放行由`validate_spatial_gate.py`检查证据覆盖。
-- 其他references：渲染契约、状态与规模、AI资产及研究方法，条件适用时读取。
+`master`保留R60优化基线，原`main`历史保留；`codex/saltline-production-systems`研究并实现制作系统方向。分支不自动合并，不用机制测试追认整场画质提升。
 
-README供维护者了解版本与验证历史，不作为普通制作的额外规则。作品、模型、渲染帧与本地测试工程不随Skill发布。具体使用边界以当前SKILL.md为准。
+| 工作 | 入口与职责 |
+|---|---|
+| 默认制作 | [SKILL.md](SKILL.md)、[生产流程](references/production-workflow.md)：短需求/宏观设计、运行基础、完整代表关系、扩场、统一表现与交付 |
+| 可执行制作方法 | [制作系统SOP](references/production-systems.md)：资产、表面、空间、环境/后期、动态预算与工作台；[来源索引](references/production-systems-source-map.md)用于维护核对 |
+| 可复制代码 | [资产装配器](assets/scene/asset-assembly.mjs)、[完整工厂样件](assets/examples/hinged-cabinet.mjs)；既有geometry/materials/scene/rendering模块保留 |
+| 专项方法 | 参考目录保留视觉分析、资产设计、构图、中层、分布、材光、渲染与相机方法；按当前问题读取，不要求每次全量加载 |
+| 验证与正式交接 | [统一验收](references/validation.md)、[相机实操](references/camera-interaction.md)；显式选择时再用[正式阶段协议](references/formal-stage-workflow.md)、[交付契约](references/delivery-contract.md)、templates与校验器 |
+
+默认制作保存当前源码、真实画面、问题及运行结果；正式协议保留其完整版本/哈希/阶段证据，不能混用PASS。HTML/视频仍需真实运行/审看实际交付文件。README面向维护者，不作为普通制作的额外历史指令；研究工程、截图、模型与缓存不随Skill发布。
 
 ## 迭代记录
 
@@ -33,6 +23,7 @@ README供维护者了解版本与验证历史，不作为普通制作的额外�
 
 | 日期 / 版本 | 内容与依据 | 验证结果及边界 |
 |---|---|---|
+| 2026-11-11 / R61 制作系统实验分支 | 固定Saltline源码逐段研究，默认流程改为运行基础与完整代表关系；补可执行资产/表面/空间/环境/预算SOP，独立实现静态装配器及真实开孔/铰链工厂样件；原严格manifest链改为明确选用并完整保留 | Node98/98、Python119/119通过；新机制r180/r186.1各17项通过；两机位12张原场景消融，基线复取哈希一致。独立前向计划能区分现有工具和待写能力；独立审查两项P2已修复复核。证明源码研究、方法/机制与计划接力；未执行新版完整作品画质盲评，未宣称达到参考作品效果。 |
 | 2026-11-11 / R60 基线保留 | 保存有限表面补丁资格采样器、附着基部与主体方向分离方法，以及资产/分布/代码指导；`master`保留当前优化，原`main`历史保留，新方向另开分支 | Node 81/81通过（含8项新增patch测试及真实Chrome导出回归）；Python 119项执行，118通过、1跳过；Skill格式通过。初次环境失败为Chrome沙箱及Node/ffmpeg PATH，补齐后复验；不证明完整成品画质提升。 |
 | 2026-11-11 / R59 正式替换与完整承托足迹 | 在现有资产交接中区分功能不变量、可重设计形体和宿主派生量；双端承托提前从实际端面提取完整足迹，限定允许移位与承载区，并按接触误差构造有限基础；网格诊断区分原生拓扑、属性接缝与坐标重合 | 新宿主候选14图及550个独立下接触样本通过指定检查；22处基础的522个实际钢构端面样本通过，48条相同射线的BVH/标准求交一致。平面/斜面、宽帽漏检控制及拓扑等价机制通过；隔离交通枢纽计划实际采用依赖重算和完整足迹方法，12个来源哈希匹配。仅支持机制和一次计划级迁移；当前代表资产仍有地质组织、表面细节及旧消费者未同步问题，完整成品与多题材画质提升未证明。文档改动无新增门禁。 |
 | 2026-11-11 / R58 光区构造与附着足迹 | 细化已有承光面方法：开工先分亮区、暗过渡和反射/背景保留区，用独立接收面材料及局部灯覆盖组织画面，避免透视层后整片同亮。附着方法明确允许区与实际宿主的交集及基部边缘支承，资产设计提前指向该方法 | 两类代表资产各8张当前图经独立审阅，深冷透视区与局部暖工作区的完整映射材料目标通过，最终精修仍FAIL。实际宿主曾检出允许区外的基部落空；修正后四个代表组的428个发出顶点附着样本通过，但组团视觉品质仍FAIL。文档改动无新增门禁；不证明跨题材首次制作或完整Skill成品提升。 |

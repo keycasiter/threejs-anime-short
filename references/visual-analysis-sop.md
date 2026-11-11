@@ -1,5 +1,8 @@
 # Visual-analysis SOP: scene evidence to buildable spatial handoff
 
+> 制作方式：通用算法与视觉判断按需使用；本文的manifest字段、固定阶段顺序和逐阶段脚本放行适用于显式选择的[正式阶段协议](formal-stage-workflow.md)。默认制作按[生产流程](production-workflow.md)推进完整代表关系，计划请求仅交计划。
+
+
 ## Purpose
 
 Convert a creative brief and visual references into an auditable scene description that the next spatial-blockout stage can build without inventing core placement and connection relationships. This stage specifies **what occupies the scene, where it sits, what it touches/connects to, what evidence supports it, and what remains a design assumption**. It does not create the final Three.js scene or claim engineering dimensions.
