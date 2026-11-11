@@ -26,6 +26,8 @@ Three.js中先生成候选，再按顺序做合法性筛选：登记区/孔洞 �
 
 每个最终实例保存稳定`id`、`zoneId`、来自`middleForms`原型目录的`variantId`、世界锚点和尺度；锚点是对象落地/附着点，不是未说明的包围盒中心。`InstancedMesh`可用于同拓扑、变换简单且共享材质的族，但实例矩阵必须从同一份放置数据生成。保存的放置数据、运行网格和诊断图需来自同一build与同一seed。宿主采样使用最终曲面或明确surface ID；高坡度、悬挑、多层地面和洞顶不能由单一`heightAt(x,z)`猜测。数百个以上的重复实例可用独立CSV作为`placementTable`，列为`id,zoneId,variantId,x,y,z,sx,sy,sz`，以便流式校验；小型组可直接嵌入JSON `placements`。两种方式都必须纳入detailDistribution哈希证据。
 
+按真实连接方式检查附着足迹：根部、底座或各支脚需要支承，冠层/挑出部分可以悬空。中心点命中不证明整块基部成立；分布允许区也可能延伸到宿主之外。候选落位先满足允许区与实际可附着区域，再检查足迹边缘；边缘落空时移动、缩小或改附着方式，并保存计划位置、实际位置及修正原因。修正后重新核验受影响的允许区、净空、间距、原型尺度和支承，不继承修正前的通过结论。不能用延长根柱或把未命中的高度设为零掩盖无支承。
+
 ```js
 const placements = buildPlacementPlan({
   zones, exclusions, hostSurface, densityField,
