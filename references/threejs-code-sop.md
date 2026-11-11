@@ -116,6 +116,20 @@ function renderStill() { renderer.render(scene, camera); }
 | 可见边界与覆盖 | 哪些端部、开口、接缝、遮挡边或裁切边需要收尖、封口、内壁、搭接、覆盖或有意保持裸露 | 用适合对象的边界清单逐项核对；例如管件端口、建筑开口、枝条终端采用不同处理，不能把某一类对象的覆盖法则套给所有资产 |
 | 材质细节来源 | 大/中/小尺度分别由几何、顶点色、UV纹理、程序纹理或 shader 哪一层负责 | 使用UV纹理时核对UV密度和接缝；颜色贴图设 `SRGBColorSpace`，数据贴图使用数据色彩空间；没有相应坐标/属性的几何不能假设材质特征会正确显示 |
 
+**先验证自定义网格原型，再调形和扩展。** 对手写索引的生成器，先输出一个中性、单面材质的样件，核对实际顶点/索引的有效性、退化面与预期朝向，再调整轮廓、噪声、灯光或实例数量。`computeVertexNormals()`只计算现有绕序对应的法线，不会修复反向索引。可复制[三角形审计工具](../assets/geometry/audit-triangles.mjs)，直接检查已发出的BufferGeometry：
+
+```js
+import { auditTriangles } from './geometry/audit-triangles.mjs'; // 复制到项目后按实际路径导入
+const report = auditTriangles({
+  positions: geometry.attributes.position.array,
+  indices: geometry.index?.array,
+  expectedDirection: [0, 1, 0], // 仅适用于单值高度场的上表面
+});
+// invalid / degenerate / opposed 非零时，先定位三角形构造。
+```
+
+预期朝向由表面语义决定：高度场上表面可用+Y；端盖、侧壁分组检查；封闭体、折叠面和倒扣不能全局套用+Y，省略该参数只检查有效性/退化，再用外法线设计与单面环绕样件确认朝向。工具检查普通position BufferAttribute的局部坐标，使用尺度相对的退化阈值；交错属性先按getter展开xyz，负缩放/镜像实例另查世界变换和单面视图。工具不检查自交、水密或构图。极点/收尖处应生成单极点扇形连接，不把整圈顶点压到同一点后仍保留零面积面。若双面材质使缺面消失，用它定位背面剔除问题后修正绕序，再恢复目标材质。固定seed、形状和机位比较修复前后，确认可见表面恢复；随后才判断形状是否达标。
+
 实例预算的标准写法是由布局计划推导容量并校验完整写入，不在生成循环里截断。此段以静态、同拓扑对象为例；动态变更时还需决定如何回收槽位、更新相关attribute和维护包围体：
 
 ```js
