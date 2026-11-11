@@ -46,6 +46,19 @@ test('offline validation follows local import-map targets and checks local asset
   assert.match(result.stdout, /"status": "PASS"/);
 });
 
+test('nested modules resolve exact and prefix import-map targets from the HTML, while relative imports remain module-local', async t => {
+  const root=await fixture(t);
+  await mkdir(join(root,'src'),{recursive:true});await mkdir(join(root,'vendor/addons'),{recursive:true});
+  await writeFile(join(root,'index.html'),'<script type="importmap">{"imports":{"three":"./vendor/three.js","three/addons/":"./vendor/addons/"}}</script><script type="module" src="./src/main.js"></script>');
+  await writeFile(join(root,'src/main.js'),'import "three"; import "three/addons/effect.js"; import "./local.js";');
+  await writeFile(join(root,'src/local.js'),'export const local = true;');
+  await writeFile(join(root,'vendor/three.js'),'export const REVISION = 180;');
+  await writeFile(join(root,'vendor/addons/effect.js'),'import "../three.js";');
+  let result=await run(root);assert.equal(result.status,0,result.stdout+result.stderr);
+  await rm(join(root,'src/local.js'));result=await run(root);assert.equal(result.status,1);
+  assert.match(result.stdout,/Missing local module: .*src\/local.js/);
+});
+
 test('offline validation allows embedded data URIs in local JSON assets', async t => {
   const root = await fixture(t);
   await mkdir(join(root, 'assets'), {recursive:true});

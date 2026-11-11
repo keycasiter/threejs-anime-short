@@ -35,12 +35,14 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 ## 品质进入第一批代码的方法
 
-每个主要可见资产族开工前，用一行“**可见特征 → 构造算法/参数 → 材料/受光 → 实际镜头**”明确制作办法，再执行[制作系统SOP](references/production-systems.md)：
+每个主要可见资产族开工前，用一行“**可见特征 → 构造算法/参数 → 材料/受光 → 实际镜头**”明确制作办法，再执行[制作系统SOP](references/production-systems.md)。涉及程序表面、环境/反射、天气、后期或调试时，先读[可调用工具](references/production-toolkit.md)，选择已有模块并把真实消费者接通：
 
 - **结构先有独立控制。** 主体轮廓之外，构建截面转折、内外壁、厚度、框架、开口、接头与承载。按形体选回转、扫掠、分站放样、二维开孔挤出或DCC资产。细分只改善已经正确的结构。
 - **表面表达形成原因。** 材料区、尺度、朝向、接缝、排水/磨损/生长规律决定图案位置；颜色、roughness、metalness与normal使用一致的区域依据。风格化作品可减小纹理复杂度，同时保留材质差异与形体转折。
 - **整体先有组织。** 每个区域有功能、主体/支撑/环境资产及密度变化；近景提供尺度，中景表达关系，远景延续环境。先写有意义的布局骨架，再在组内变化。宏观场景用分区与多尺度结构，逐个区域细化。
 - **运行能力随制作建立。** 参数种子可复现，展柜与场景共用工厂，动件保持层级，静件按材质/阴影/图层合并。预留固定机位、真实时间/状态冻结和质量/效果开关；检查工具必须读回实际状态。
+
+锚点、材料场和环境状态必须进入真实位置、材质或shader/pass，才能形成接力。代表关系完成后改变一个主尺寸，验证连接随动；先固定镜头核对机制贡献，再扩场。学习参考时提取“目标信号→生成方法→成立条件→验证”；新题材重新设计形体与布局，按目标选表现。
 
 这些机制由目标决定，不能机械套用雨、锈、Bloom或工业零件。自然体需要真实分枝/生长层级，连续体需要曲率/组织过渡，建筑需要构造与空间秩序。技术选型可读[资产设计](references/asset-craft.md)和[代码方法](references/threejs-code-sop.md)。
 
@@ -59,6 +61,7 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 | 工作 | 方法 / 可调用资源 |
 |---|---|
 | 模块接力、完整代表关系、表面/环境/预算与诊断入口 | [制作系统SOP](references/production-systems.md)；[资产装配器](assets/scene/asset-assembly.mjs) |
+| 程序材质、天空/局部探针、平面镜像、视觉雨、后期和真实工作台 | [可调用工具与边界](references/production-toolkit.md)；[组合诊断例](assets/examples/production-lab/index.html) |
 | 参考到可建模尺寸、对象/接口、平面/剖面 | [视觉分析](references/visual-analysis-sop.md)，正式空间交接才使用其完整登记协议 |
 | 布局、视点、负形、中层与宏观分区 | [构图与形体](references/composition-and-form.md)；[空间方法](references/spatial-blockout.md) |
 | 截面/真实开孔、表面法线和实际承载 | [截面几何](references/profile-geometry.md)；[表面细节](references/surface-detail.md)；[锚点模块](assets/scene/surface-anchors.mjs) |

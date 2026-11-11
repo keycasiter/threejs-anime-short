@@ -39,7 +39,7 @@ function rememberReference(value, baseFile, owner) {
   localReferences.push({reference, baseFile, owner});
 }
 
-function mapBareSpecifier(specifier, ownerPath) {
+function mapBareSpecifier(specifier) {
   const direct = importMap[specifier];
   if (typeof direct === 'string') return direct;
   const prefix = Object.keys(importMap).filter(key => key.endsWith('/') && specifier.startsWith(key)).sort((a,b) => b.length-a.length)[0];
@@ -55,12 +55,16 @@ function resolveLocalReference(reference, baseFile, owner) {
     return null;
   }
   let mapped = reference;
+  let resolutionBase = baseFile;
   if (!reference.startsWith('.') && !reference.startsWith('/') && !reference.startsWith('?')) {
     mapped = mapBareSpecifier(reference, baseFile);
     if (!mapped) {
       errors.push(`${owner}: bare module specifier cannot be verified offline: ${reference}`);
       return null;
     }
+    // Import-map addresses are relative to the importing HTML's document base,
+    // not the directory of the JS module that happened to use the bare name.
+    resolutionBase = htmlPath;
   }
   if (/^(?:https?:)?\/\//i.test(mapped) || /^[a-z][a-z\d+.-]*:/i.test(mapped)) {
     if (offline) errors.push(`${owner}: import map resolves to non-local dependency ${mapped}`);
@@ -72,7 +76,7 @@ function resolveLocalReference(reference, baseFile, owner) {
     return null;
   }
   const pathPart = decodeURIComponent(mapped.split(/[?#]/, 1)[0]);
-  const path = pathPart ? resolve(dirname(baseFile), pathPart) : baseFile;
+  const path = pathPart ? resolve(dirname(resolutionBase), pathPart) : resolutionBase;
   localDependencies.add(path);
   return path;
 }

@@ -1,0 +1,119 @@
+# 可调用的制作工具
+
+在运行基础、完整代表关系与表现校准阶段按目标选择模块。先确认目标镜头需要看见的信号，再使用对应能力；整体质量仍取决于空间组织、结构与表面共同完成。下列是实际源码，不是要求执行者重新发明的接口。
+
+## 选择与接入
+
+| 可见目标 / 条件 | 已有工具 | 实际输出与限制 |
+|---|---|---|
+| 木纹、矿物区、涂层/金属露底需要共同控制表面通道 | [程序材质目录](../assets/materials/procedural-palette.mjs) | 三类原创配方，输出真实Standard材质及颜色/roughness/metalness/normal；有限参考配方，需按美术目标扩展 |
+| 背景天空与物体环境受光需要一致 | [天空与环境捕获](../assets/rendering/scene-environment.mjs) | 同一美术天空生成可见穹顶与PMREM；太阳盘不进入捕获，主光单独按同方向设置；不是物理大气/云模拟 |
+| 局部室内/遮蔽空间需要反射自身环境 | 同模块 `captureEnvironmentProbe` | 实际CubeCamera→PMREM，完成几何/灯后显式捕获；调用者给目标材质赋envMap；不是实时动态镜像 |
+| 平面需要清晰场景镜像 | [平面反射适配器](../assets/rendering/planar-reflection.mjs) | 复用注入的官方Reflector，加入排除/防递归与状态恢复；输出镜面Mesh与纹理，非PBR粗糙湿地反射/多水位水体 |
+| 目标天气确实需要可见雨丝 | [视觉雨场](../assets/environment/weather-field.mjs) | 有界LineSegments、绝对时间、风速/落速、实际强度与屋顶查询；非流体、体积雾、水花或自动湿润反馈 |
+| 需要接触AO、有限高亮扩散与正确输出 | [后期链](../assets/rendering/post-pipeline.mjs) | 半浮点线性HDR→可选GTAO→可选Bloom→一次Output→可选SMAA；不含体积光、自适应曝光、物体运动模糊 |
+| 需要定位质量责任层、复现镜头/时间、切换真实效果 | [场景工作台](../assets/runtime/scene-workbench.mjs) | 相机/target/FOV、绝对时钟、消费者开关、真实统计、可选DOM；历史模拟需额外reset，不能自动保证像素确定 |
+
+注入**同一锁定版本**的 `THREE` 与官方addons，已验证路径为r180/WebGLRenderer。WebGPU、其他版本、XR、多相机rig需要另外验证。适配器不复制标杆的应用shader。新任务需要表中未覆盖的能力时，显式设计扩展并先做小样，不把近似能力命名成完整能力。
+
+## 最短可执行入口
+
+[组合诊断场景](../assets/examples/production-lab/index.html)和[完整接线源码](../assets/examples/production-lab/main.mjs)同时调用上述模块、现有设备箱工厂和同一材质目录，包含完整关系/结构样件/材质样片视图。
+
+1. 将需要的`assets`源码按原相对结构复制到项目。可从组合例删除不适用的模块，也可把import路径改到项目模块目录。
+2. 将锁定的官方Three.js包`build/`与`examples/jsm/`放到组合例的`vendor/`下，保留许可证；入口importmap已定义`three`和`three/addons/`。用本地HTTP服务打开，模块不能依赖双击file协议运行。
+3. 先保留一个有结构、邻接表面和真实受光的代表区域；用工作台固定时间和机位，再调结构、UV/法线度量、表面区域、受光与反射，最后决定AO/Bloom。
+
+这是机制诊断例。其亭架、样片、镜面和雨天不是新作品的场景或风格模板。
+
+## 程序表面：同源通道、实际尺度和复用
+
+```js
+import {createProceduralPalette} from './assets/materials/procedural-palette.mjs';
+const palette = createProceduralPalette(THREE, {resolution:256, seed:37});
+const wood = palette.get('wood', {
+  variant:0, wetness:.4, tileSizeMeters:[.6,1.2]
+});
+mesh.material = wood;
+```
+
+`wood/stone/coated-metal`配方用同一结构区域产生线性颜色、roughness、metalness、米制高度，再通过已有烘焙器生成法线。`sample(recipe,{u,v,...})`返回同一场的样本；`inspect()`读回缓存参数。涂层露底区域同时影响颜色、金属度、粗糙度和高度，variant改变图案结构。涂层默认`wear:0`是洁净非金属漆面；只有显式`wear:0..1`才生成露底，其他配方不接受非零wear。湿润参数使颜色较暗、粗糙度下降、表面起伏变浅，是静态美术近似。
+
+UV的一个tile必须对应`tileSizeMeters`。盒面投影用局部米制坐标除以tile；适合的索引网格`computeTangents()`，检查正交单位TBN。非均匀缩放、任意UV拉伸与复杂曲面不会被自动修正；细节闪烁先检查采样密度/物理尺度。读[表面细节](surface-detail.md)。程序纹理不会改变轮廓、真实厚度或开口。
+
+现有装配器拒绝输入tangent并输出非索引几何。法线贴图需要显式切线时，先完成装配，再为输出顶点添加保持原分裂边界的顺序index并`computeTangents()`；不要焊接UV/硬法线接缝。组合例的设备箱使用1米UV tile并这样生成切线。复杂曲面不适用该简单面投影时保留独立资产路径，按其真实UV度量处理。
+
+材质/纹理按全部参数缓存并由palette所有。实例共享，变体使用离散参数；不要每帧用连续wetness反复烘焙。动态湿润需另做已验证的uniform路径或有限状态混合。场景释放时`palette.dispose()`，对象不要单独释放共享材质。各模块的`dispose()`只回收其声明所有的资源，外部几何/材料由调用者管理。
+
+## 环境、反射与后期：读回真实消费者
+
+```js
+const sky = createSkyEnvironment(THREE, {renderer, sunDirection:[-.6,.7,.3]});
+scene.add(sky.root); sky.apply(scene);
+// 每帧可跟随相机；修改太阳后按预算显式重捕获，不每帧做PMREM。
+sky.follow(camera.position);
+sky.setSun([-.3,.8,.2]); sky.capture();
+```
+
+与主方向光共享太阳方向和色系。`capture()`自动替换已apply场景的旧环境，释放旧目标；scene.environment后来由其他机制接管时保留该变更。动态对象需要场景镜像时才选平面反射；粗糙金属通常先用PMREM。
+
+```js
+const probe = captureEnvironmentProbe(THREE, {
+  renderer, scene, position:[0,1.5,0], exclude:[receiver]
+});
+receiver.material.envMap = probe.texture;
+const mirror = createPlanarReflection(THREE, {Reflector}, {
+  geometry:planeGeometry, width:512, height:512, exclude:[rainRoot]
+});
+scene.add(mirror.root); // 几何局部+Z是反射面正向
+```
+
+探针完成后再赋材质；重捕获后要把新句柄接给真实材料并释放旧句柄。平面适配器在反射遍排除其他Reflector和显式对象，正常与异常都会恢复visibility、XR、shadow更新及renderer目标/viewport/scissor。`setEnabled(false)`隐藏反射面，基材由场景另建；纹理不能直接当作任意PBR材质的envMap。多平面互相反射不在此适配器范围。
+
+后期构造器注入`EffectComposer/RenderPass/OutputPass`及需要的`GTAOPass/UnrealBloomPass/SMAAPass`。`setEnabled(name,bool)`控制实际pass，`setExposure`写renderer曝光，`resize(w,h,dpr)`重配buffer。链由适配器独占，销毁时恢复借用的renderer颜色设置；不要另叠一套tone mapping。中间半浮点buffer需要设备支持；不支持时显式走forward并说明缺失能力。
+
+## 天气、共享场与工作台
+
+`createWeatherField(THREE,{extent:[24,14,24],shelterHeightAt})`返回真实`root`。每帧`update(time,{anchor:[x,y,z]})`，位置由seed和绝对时间解析；`setIntensity`改变实际drawRange，`setEnabled`控制真实可见性。遮蔽查询返回世界屋顶高度或null，雨丝沿线采样三处；窄小/倾斜结构需要保守屋顶查询，不能声称逐三角精确遮雨。
+
+雨量、表面湿润、水位、风和遮蔽是不同状态。只共享确有消费者的字段；例如`environmentState.wetness`进入材质选择，`rainIntensity`进入雨场，屋顶查询同时供分布与遮蔽。停雨不意味着地面瞬间变干。需要雨环、水花、排水或声音时另外实现与这些字段/事件的真实连接。
+
+```js
+const clock = createSceneClock();
+const bench = createSceneWorkbench(THREE, {
+  renderer, camera, controls, clock, onTime:updateScene,
+  effects:{ao:{get:()=>post.passes.ao.enabled,
+               set:value=>post.setEnabled('ao',value)}},
+  modes:{asset:showSameAssetFactory, scene:showFullScene}
+});
+bench.setTime(12); // freeze并调用真实updateScene
+const shot = bench.snapshot();
+bench.setEffect('ao',false); // 调setter后读回真实状态
+bench.restore(shot); // 相机/target/效果恢复，时间冻结
+// 可选诊断UI：bench.mount(document.body)
+```
+
+工作台支持无parent的PerspectiveCamera及可选OrbitControls。恢复前清空OrbitControls惯性；动画若是累计模拟，`onTime`必须重建/复位其历史。`snapshot.stats`注明最后一次renderer调用或自上次reset以来的累计范围；组合例设`renderer.info.autoReset=false`并每帧reset一次，统计包含反射与后期多遍，不是持续GPU耗时。
+
+## 从调用到效果成立
+
+固定镜头、结构、时间、状态和曝光，复取基线后一次改变一个责任层：
+
+| 机制 | 核对消费者 | 实际图像判断 |
+|---|---|---|
+| 表面 | map的颜色空间、roughness G/metalness B、normalScale、UV/切线度量 | 材料身份和区域是否可读，变化是否符合尺度/美术目标 |
+| 环境/探针 | 当前scene.environment或material.envMap指向实际捕获texture | 金属/玻璃是否反映对应环境，室内是否避免错误天空高亮 |
+| 平面反射 | 实际RT/镜像相机、排除对象、面方向 | 移动/换色物体能否改变镜中内容，遮挡和裁切是否合理 |
+| 天气 | 实际position/drawRange/roof查询 | 轨迹、尺度与空间一致，遮蔽区和环绕方向是否成立 |
+| 后期 | 实际pass.enabled、输出顺序、曝光 | AO是否帮助接触而非涂黑；Bloom是否保留高亮结构 |
+| 共享结构 | 接口/锚点实际进入附件位置 | 结构尺寸变化后连接仍对齐，不能只在metadata里存在 |
+
+像素差能证明开关影响画面，不能证明更美。完整作品至少在目标近景和互补方向看一次；若结构、负形或组团不成立，返回对应生成器/布局，后期不承担修补职责。
+
+## 学习单一标杆的通用方法
+
+把参考拆成“可见信号→输入/算法→真实消费者→成立条件→成本→反例→验证”，形成可迁移机制。港口的磨损、雨天、工业身份、FPS交互与特定调色属于其场景选择，不是通用必需项。
+
+迁移到新题材时从新的目标图/brief重新选择表示：自然体需要生长/地质层级，建筑需要构造/空间秩序，连续有机体需要曲率/组织过渡；同一组螺钉、噪声或雨不能替代它们。抽象是否有效，以新任务中结构参数扰动、同条件机制实验及完整作品盲评分别检验。单标杆只提供方法假设，不能证明跨题材成功率。
+
+官方算法边界可核对：[Reflector](https://github.com/mrdoob/three.js/blob/r180/examples/jsm/objects/Reflector.js)、[OutputPass](https://github.com/mrdoob/three.js/blob/r180/examples/jsm/postprocessing/OutputPass.js)、[PMREMGenerator](https://github.com/mrdoob/three.js/blob/r180/src/extras/PMREMGenerator.js)。
