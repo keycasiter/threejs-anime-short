@@ -489,7 +489,11 @@ def main() -> int:
     failures: list[str] = []
     pending: list[str] = []
     incomplete: list[str] = []
-    base = record_path.resolve().parent
+    resolved_record = record_path.resolve()
+    # Gate evidence paths in production records are project-root-relative (for
+    # example, "qa/orbit-000.png" beside "qa/spatial-gate.json"). Root-level
+    # test fixtures remain supported for compact unit tests.
+    base = resolved_record.parent.parent if resolved_record.parent.name.lower() == "qa" else resolved_record.parent
     for key in sorted(REQUIRED):
         item = data[key]
         if not isinstance(item, dict) or item.get("status") not in STATUSES:

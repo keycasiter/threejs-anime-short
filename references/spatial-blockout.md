@@ -207,6 +207,8 @@ Use the optional record validator when producing a machine-readable gate record:
 python3 <skill-root>/scripts/validate_spatial_gate.py <project-root>/qa/spatial-gate.json
 ```
 
+Paths inside `qa/spatial-gate.json` are relative to the project root, including evidence under `qa/` and contracts under `design/`. Keep that convention even though the gate record itself is stored inside `qa/`.
+
 The script checks coverage and status discipline; it does not inspect a mesh or replace visual review.
 
 ## 4. Handoff to middle-form modeling
