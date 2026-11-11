@@ -90,6 +90,20 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 
 链路尚不确定时，在同构建副本只切换相关状态/通道，固定几何、种子、机位与时刻，确认预期区域确实变化；保留原状态。单变量诊断证明的是参数作用范围，最终是否更好仍回目标图与整镜判断。新反射场与新表面场分别验证，避免联动替换后无法定位。已确定且无相关缺口的通道无需重复探针。
 
+### 薄层与透射先选一种表示
+
+先依据目标选择：alpha混合适合受控薄层叠加；需要透射及保留反射响应时使用支持该路径的Physical材质。以本页核对的r180为例，`MeshPhysicalMaterial`启用非零`transmission`时保持`opacity: 1`，不要把它同时当作另一个透射强度旋钮；当前[官方材质说明](https://threejs.org/docs/pages/MeshPhysicalMaterial.html#transmission)亦有该约定。
+
+```js
+// 薄玻璃的起点，非通用成品参数；由实际厚度、反射和遮挡继续校准。
+const glass = new THREE.MeshPhysicalMaterial({
+  transmission: 1, opacity: 1, transparent: false,
+  roughness: .08, metalness: 0, thickness: 0, ior: 1.5
+});
+```
+
+仅为alpha覆盖混合时再开启相应透明路径，明确排序与depthWrite；不能把所有玻璃统一关闭深度写入。以玻璃后的实际物体作代表样件，先固定灯光切换玻璃状态，再固定玻璃比较局部受光；不要同时调整灯强、颜色、透明度和曝光后归因。接收面本身不亮、透视层压平颜色、环境/曝光压平反差是不同问题。多层玻璃和屏幕外信息仍受下表的捕获限制；该配置不保证完整物理透射或最终品质。
+
 ## 软阴影、玻璃与反射的成本不是一个参数
 
 | 机制 | 数据链与可迁移用途 | 失败条件及验收 |
