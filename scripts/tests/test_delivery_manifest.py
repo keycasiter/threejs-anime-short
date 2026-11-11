@@ -32,6 +32,15 @@ class DeliveryManifestTests(unittest.TestCase):
         self.artifact = self.root / "brief.md"
         self.artifact.write_text("frozen input\n", encoding="utf-8")
         self.digest = hashlib.sha256(self.artifact.read_bytes()).hexdigest()
+        self.preflight_entry = self.root / "vendor" / "three.module.js"
+        self.preflight_entry.parent.mkdir(parents=True, exist_ok=True)
+        self.preflight_entry.write_text("export const REVISION = '180';\n", encoding="utf-8")
+        self.preflight_page = self.root / "preflight" / "preflight.html"
+        self.preflight_page.parent.mkdir(parents=True, exist_ok=True)
+        self.preflight_page.write_text(
+            '<script type="module">import * as THREE from "../vendor/three.module.js";</script>\n',
+            encoding="utf-8",
+        )
         self.register = self.root / "scene-register.json"
         self.register.write_text(json.dumps({
             "evidence": {"e1": {"status": "Designed"}},
@@ -105,6 +114,18 @@ class DeliveryManifestTests(unittest.TestCase):
         path = self.root / "delivery-manifest.json"
         path.write_text(json.dumps(payload), encoding="utf-8")
         return path
+
+    def preflight_entry_records(self) -> dict[str, dict[str, str]]:
+        return {
+            "testedPage": {
+                "path": "preflight/preflight.html",
+                "sha256": hashlib.sha256(self.preflight_page.read_bytes()).hexdigest(),
+            },
+            "dependencyEntry": {
+                "path": "vendor/three.module.js",
+                "sha256": hashlib.sha256(self.preflight_entry.read_bytes()).hexdigest(),
+            },
+        }
 
     def asset_family(self, family_id: str, priority: str, object_ids: list[str], route_ids: list[str], form_variant_ids: list[str] | None = None) -> dict:
         build_map = json.loads(self.visual_build_map.read_text(encoding="utf-8"))
@@ -444,6 +465,78 @@ class DeliveryManifestTests(unittest.TestCase):
         )
         self.assertTrue(any("report must PASS" in issue for issue in issues))
         self.assertTrue(any("initialized Three.js rendering backend" in issue for issue in issues))
+
+    def test_runtime_preflight_binds_report_to_the_entry_actually_loaded_by_page(self) -> None:
+        capture = self.root / "qa" / "preflight.png"
+        capture.parent.mkdir(parents=True, exist_ok=True)
+        capture.write_bytes(png_bytes(640, 360))
+        report = self.root / "qa" / "preflight.json"
+        payload = {
+            "status": "PASS", "buildId": "preflight-v1", "threeVersion": "0.180.0",
+            "browser": "Chromium", "renderer": "WebGL2", "dependencyStrategy": "local vendor ESM",
+            **self.preflight_entry_records(), "consoleErrors": [], "failedRequests": [],
+            "capture": {"path": "qa/preflight.png", "sha256": hashlib.sha256(capture.read_bytes()).hexdigest()},
+        }
+        report.write_text(json.dumps(payload), encoding="utf-8")
+
+        def validate() -> list[str]:
+            report_ref = {"path": "qa/preflight.json", "sha256": hashlib.sha256(report.read_bytes()).hexdigest()}
+            evidence = [report_ref, payload["capture"], payload["testedPage"], payload["dependencyEntry"]]
+            issues: list[str] = []
+            validate_delivery._validate_runtime_preflight(
+                self.root, {"buildId": "preflight-v1", "preflightReport": "qa/preflight.json", "evidence": evidence}, issues,
+            )
+            return issues
+
+        self.assertEqual([], validate())
+
+        self.preflight_page.write_text(
+            '<script type="module">import * as THREE from "../node_modules/three.module.js";</script>\n',
+            encoding="utf-8",
+        )
+        payload["testedPage"] = {
+            "path": "preflight/preflight.html", "sha256": hashlib.sha256(self.preflight_page.read_bytes()).hexdigest(),
+        }
+        report.write_text(json.dumps(payload), encoding="utf-8")
+        self.assertIn("runtimePreflight testedPage must reference the reported dependencyEntry", "\n".join(validate()))
+
+        remote_url = "https://cdn.example.test/three@0.180.0/build/three.module.js"
+        self.preflight_page.write_text(
+            f'<script type="module">import * as THREE from "{remote_url}";</script>\n',
+            encoding="utf-8",
+        )
+        payload["testedPage"] = {
+            "path": "preflight/preflight.html", "sha256": hashlib.sha256(self.preflight_page.read_bytes()).hexdigest(),
+        }
+        payload["dependencyEntry"] = {"url": remote_url, "sha256": "a" * 64}
+        report.write_text(json.dumps(payload), encoding="utf-8")
+        self.assertEqual([], validate())
+
+    def test_final_runtime_must_keep_the_preflight_dependency_entry(self) -> None:
+        dependency = self.preflight_entry_records()["dependencyEntry"]
+        ref = (dependency["path"], dependency["sha256"])
+        issues: list[str] = []
+        validate_delivery._validate_runtime_dependency_handoff(
+            self.root, {"dependencyEntry": dependency}, {"dependencyEntry": dependency}, {ref}, issues,
+        )
+        self.assertEqual([], issues)
+
+        alternate = self.root / "node_modules" / "three.module.js"
+        alternate.parent.mkdir(parents=True, exist_ok=True)
+        alternate.write_text("export const REVISION = '180';\n", encoding="utf-8")
+        alternate_record = {"path": "node_modules/three.module.js", "sha256": hashlib.sha256(alternate.read_bytes()).hexdigest()}
+        issues = []
+        validate_delivery._validate_runtime_dependency_handoff(
+            self.root, {"dependencyEntry": dependency}, {"dependencyEntry": alternate_record},
+            {(alternate_record["path"], alternate_record["sha256"])}, issues,
+        )
+        self.assertIn("runtime report dependencyEntry must match runtimePreflight exactly", "\n".join(issues))
+
+        issues = []
+        validate_delivery._validate_runtime_dependency_handoff(
+            self.root, {"dependencyEntry": dependency}, {"dependencyEntry": dependency}, set(), issues,
+        )
+        self.assertIn("runtime inputs must include the runtimePreflight dependencyEntry", "\n".join(issues))
 
     def test_blocked_preflight_does_not_require_an_unrun_spatial_gate_file(self) -> None:
         data = self.minimal_analysis_manifest()
@@ -1432,6 +1525,7 @@ class DeliveryManifestTests(unittest.TestCase):
         preflight_report.write_text(json.dumps({
             "status": "PASS", "buildId": "preflight-v1", "threeVersion": "0.180.0",
             "browser": "Chromium", "renderer": "WebGL2", "dependencyStrategy": "local bundle", "consoleErrors": [], "failedRequests": [],
+            **self.preflight_entry_records(),
             "capture": {"path": "qa/preflight.png", "sha256": hashlib.sha256(preflight_capture.read_bytes()).hexdigest()},
         }), encoding="utf-8")
         digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -1445,7 +1539,7 @@ class DeliveryManifestTests(unittest.TestCase):
             "stages": [
                 {"id": "direction", "status": "PASS", "buildId": "proxy-v1", "inputs": [], "evidence": [{"path": "brief.md", "sha256": digest(brief)}]},
                 {"id": "visualAnalysis", "status": "PASS", "buildId": "proxy-v1", "inputs": [{"path": "brief.md", "sha256": digest(brief)}], "evidence": [{"path": "scene-register.json", "sha256": digest(register)}, {"path": "visual-reference-index.json", "sha256": digest(self.reference_index)}]},
-                {"id": "runtimePreflight", "status": "PASS", "buildId": "preflight-v1", "inputs": [{"path": "scene-register.json", "sha256": digest(register)}], "evidence": [{"path": "qa/preflight.json", "sha256": digest(preflight_report)}, {"path": "qa/preflight.png", "sha256": digest(preflight_capture)}], "preflightReport": "qa/preflight.json"},
+                {"id": "runtimePreflight", "status": "PASS", "buildId": "preflight-v1", "inputs": [{"path": "scene-register.json", "sha256": digest(register)}], "evidence": [{"path": "qa/preflight.json", "sha256": digest(preflight_report)}, {"path": "qa/preflight.png", "sha256": digest(preflight_capture)}, *self.preflight_entry_records().values()], "preflightReport": "qa/preflight.json"},
                 {"id": "spatialProxy", "status": "PASS", "buildId": "proxy-v1", "inputs": [{"path": "scene-register.json", "sha256": digest(register)}], "evidence": [{"path": "spatial-gate.json", "sha256": digest(gate)}, {"path": "proxy.html", "sha256": digest(proxy)}]},
             ],
         }
@@ -1488,6 +1582,7 @@ class DeliveryManifestTests(unittest.TestCase):
         preflight_report = put_json("qa/preflight.json", {
             "status": "PASS", "buildId": "preflight-v1", "threeVersion": "0.180.0",
             "browser": "Chromium", "renderer": "WebGL2", "dependencyStrategy": "local bundle", "consoleErrors": [], "failedRequests": [],
+            **self.preflight_entry_records(),
             "capture": {"path": "qa/preflight.png", "sha256": hashlib.sha256(preflight_capture.read_bytes()).hexdigest()},
         })
         put_json("proxy-inventory.json", {
@@ -1523,6 +1618,7 @@ class DeliveryManifestTests(unittest.TestCase):
             "status": "PASS", "buildId": "proxy-v1", "method": "freeze and review proxy before assets",
             "evidence": ["qa/proxy.png"], "sourceSnapshot": "proxy-source.html", "sourceSha256": source_hash,
             "inventory": "proxy-inventory.json", "reviewRecord": "proxy-review.json", "visualBuildMap": "visual-build-map.json",
+            "dependencyEntry": self.preflight_entry_records()["dependencyEntry"],
         }
         gate = put_json("spatial-gate.json", gate_data)
         proxy = self.root / "proxy.html"
@@ -1540,13 +1636,22 @@ class DeliveryManifestTests(unittest.TestCase):
             "stages": [
                 {"id": "direction", "status": "PASS", "buildId": "proxy-v1", "inputs": [], "evidence": [ref(brief)]},
                 {"id": "visualAnalysis", "status": "PASS", "buildId": "analysis-v1", "inputs": [ref(brief)], "evidence": [ref(simple_register), ref(self.reference_index), ref(self.visual_build_map), *diagram_evidence]},
-                {"id": "runtimePreflight", "status": "PASS", "buildId": "preflight-v1", "inputs": [ref(simple_register)], "evidence": [ref(preflight_report), ref(preflight_capture)], "preflightReport": "qa/preflight.json"},
-                {"id": "spatialProxy", "status": "PASS", "buildId": "proxy-v1", "inputs": [ref(simple_register), ref(self.visual_build_map)], "evidence": [ref(gate), ref(proxy)]},
+                {"id": "runtimePreflight", "status": "PASS", "buildId": "preflight-v1", "inputs": [ref(simple_register)], "evidence": [ref(preflight_report), ref(preflight_capture), *self.preflight_entry_records().values()], "preflightReport": "qa/preflight.json"},
+                {"id": "spatialProxy", "status": "PASS", "buildId": "proxy-v1", "inputs": [ref(simple_register), ref(self.visual_build_map), ref(self.preflight_entry)], "evidence": [ref(gate), ref(proxy)]},
             ],
         }
         self.assertEqual([], validate_delivery.validate_data(data, self.root))
+        gate_data["proxyStage"]["dependencyEntry"] = {"path": "node_modules/three.module.js", "sha256": "0" * 64}
+        gate.write_text(json.dumps(gate_data), encoding="utf-8")
+        data["stages"][-1]["evidence"][0] = ref(gate)
+        self.assertTrue(any("proxyStage dependencyEntry must match runtimePreflight exactly" in issue for issue in validate_delivery.validate_data(data, self.root)))
+        gate_data["proxyStage"]["dependencyEntry"] = self.preflight_entry_records()["dependencyEntry"]
+        gate.write_text(json.dumps(gate_data), encoding="utf-8")
+        data["stages"][-1]["evidence"][0] = ref(gate)
         data["stages"][-1]["inputs"] = [ref(simple_register)]
         self.assertTrue(any("spatialProxy inputs must include visualBuildMapPath" in issue for issue in validate_delivery.validate_data(data, self.root)))
+        data["stages"][-1]["inputs"] = [ref(simple_register), ref(self.visual_build_map)]
+        self.assertTrue(any("spatialProxy inputs must include the runtimePreflight dependencyEntry" in issue for issue in validate_delivery.validate_data(data, self.root)))
 
     def runtime_fixture(self, sample_count: int = 20) -> tuple[dict, dict, dict]:
         samples = []

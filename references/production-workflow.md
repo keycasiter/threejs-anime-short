@@ -36,7 +36,7 @@
 
 ### 1A. 视觉分析交接后的运行预检
 
-在制作对象专属Three.js几何前，先运行最小场景预检：加载计划使用的Three.js核心和同版本addon，创建renderer、放置一个简单标准几何与光，运行目标浏览器并实际捕获canvas。确认WebGL/WebGPU初始化、依赖可达性、本地服务和目标输出方式。根据最终交付是否需要离线，选择本地bundle/随附文件或明确依赖网络的固定CDN版本；把它记录进runtime preflight报告。离线ESM必须复制完整传递导入依赖或先bundle，不能假定单个入口模块独立；保留许可证。预检报告要基于真实运行的错误/失败请求和canvas，模块文件存在或静态图检查都不能代替浏览器初始化。不要把依赖解析和浏览器启动留到正式资产完成后才发现。
+在制作对象专属Three.js几何前，先运行最小场景预检：加载计划交付的同一Three.js入口/构建产物及同版本addon，创建renderer、放置一个简单标准几何与光，运行目标浏览器并实际捕获canvas。预检页即使只画测试球，也必须引用正式代理和成品将使用的同一个运行时入口；不能用`node_modules`路径通过预检，再从另一个`vendor`副本交付。报告同时记录`testedPage`与`dependencyEntry`的项目相对路径和SHA-256，并把两者及canvas写入阶段证据；校验器确认预检页实际引用报告中的入口。`spatialProxy`的`proxyStage.dependencyEntry`须与预检完全一致，且`spatialProxy.inputs`必须包含该本地入口；full-production的最终`runtimeReport`须重复同一`dependencyEntry`，runtime阶段inputs须同时绑定它与被浏览器打开的最终HTML。确认WebGL/WebGPU初始化、依赖可达性、本地服务和目标输出方式。根据最终交付是否需要离线，选择本地bundle/随附文件或明确依赖网络的固定CDN版本；把它记录进runtime preflight报告。离线ESM必须复制完整传递导入依赖或先bundle，不能假定单个入口模块独立；保留许可证。预检报告要基于真实运行的错误/失败请求和canvas，模块文件存在或静态图检查都不能代替浏览器初始化。不要把依赖解析和浏览器启动留到正式资产完成后才发现。
 
 预检记录浏览器和Three.js版本、renderer backend、依赖策略、console错误、失败请求与canvas截图。若失败，先排除兼容/服务/依赖路径问题；不能恢复时停在预检，不进入场景专属正式资产。完整报告字段与阻断行为见[阶段交付契约](delivery-contract.md)。
 

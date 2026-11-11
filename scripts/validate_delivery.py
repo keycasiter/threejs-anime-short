@@ -10,10 +10,12 @@ import csv
 import hashlib
 import json
 import math
+import posixpath
 import re
 import subprocess
 import sys
 import struct
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any
 from validate_scene_register import point_in_plan_shape_xz
@@ -630,6 +632,33 @@ def _validate_runtime_preflight(base: Path, stage: dict[str, Any], issues: list[
     for field in ("consoleErrors", "failedRequests"):
         if not isinstance(report.get(field), list) or report[field]:
             issues.append(f"runtimePreflight: {field} must be empty for PASS")
+    tested_page = _check_file_record(base, report.get("testedPage"), "runtimePreflight testedPage", issues)
+    dependency_record = report.get("dependencyEntry")
+    dependency_entry: tuple[str, str] | None = None
+    remote_dependency = False
+    if isinstance(dependency_record, dict) and isinstance(dependency_record.get("url"), str):
+        url = dependency_record["url"].strip()
+        digest = dependency_record.get("sha256")
+        parsed = urlparse(url)
+        if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+            issues.append("runtimePreflight dependencyEntry.url must be an absolute HTTP(S) URL")
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+            issues.append("runtimePreflight remote dependencyEntry requires a SHA-256 response hash")
+        remote_dependency = True
+    else:
+        dependency_entry = _check_file_record(base, dependency_record, "runtimePreflight dependencyEntry", issues)
+    if tested_page and remote_dependency:
+        page_path = _resolve(base, tested_page[0])
+        page_text = page_path.read_text(encoding="utf-8", errors="replace") if page_path else ""
+        if not isinstance(dependency_record, dict) or dependency_record.get("url", "") not in page_text:
+            issues.append("runtimePreflight testedPage must reference the reported remote dependencyEntry URL")
+    if tested_page and dependency_entry:
+        page_path = _resolve(base, tested_page[0])
+        page_text = page_path.read_text(encoding="utf-8", errors="replace") if page_path else ""
+        page_dir = Path(tested_page[0]).parent
+        entry_reference = posixpath.relpath(dependency_entry[0], page_dir.as_posix() if page_dir.as_posix() != "." else ".")
+        if entry_reference not in page_text and dependency_entry[0] not in page_text:
+            issues.append("runtimePreflight testedPage must reference the reported dependencyEntry")
     capture = report.get("capture")
     capture_ref = _check_file_record(base, capture, "runtimePreflight capture", issues)
     report_ref = _check_file_record(base, {"path": record, "sha256": _hash(path) if path else ""}, "runtimePreflight report", issues)
@@ -641,6 +670,44 @@ def _validate_runtime_preflight(base: Path, stage: dict[str, Any], issues: list[
         issues.append("runtimePreflight evidence must include preflightReport with its SHA-256")
     if capture_ref and capture_ref not in evidence:
         issues.append("runtimePreflight evidence must include the rendered WebGL capture with its SHA-256")
+    if tested_page and tested_page not in evidence:
+        issues.append("runtimePreflight evidence must include testedPage with its SHA-256")
+    if dependency_entry and dependency_entry not in evidence:
+        issues.append("runtimePreflight evidence must include dependencyEntry with its SHA-256")
+
+
+def _check_page_uses_dependency_entry(base: Path, page_record: Any, dependency_record: Any, label: str, issues: list[str]) -> tuple[str, str] | None:
+    page = _check_file_record(base, page_record, f"{label} page", issues)
+    if not page or not isinstance(dependency_record, dict):
+        return None
+    page_path = _resolve(base, page[0])
+    page_text = page_path.read_text(encoding="utf-8", errors="replace") if page_path else ""
+    url = dependency_record.get("url")
+    if isinstance(url, str):
+        if url not in page_text:
+            issues.append(f"{label} page must reference the reported remote dependencyEntry URL")
+        return None
+    dependency = _check_file_record(base, dependency_record, f"{label} dependencyEntry", issues)
+    if dependency:
+        page_dir = Path(page[0]).parent
+        relative_entry = posixpath.relpath(dependency[0], page_dir.as_posix() if page_dir.as_posix() != "." else ".")
+        if relative_entry not in page_text and dependency[0] not in page_text:
+            issues.append(f"{label} page must reference the reported dependencyEntry")
+    return dependency
+
+
+def _validate_runtime_dependency_handoff(base: Path, preflight_report: Any, runtime_report: Any, runtime_inputs: set[tuple[str, str]], issues: list[str]) -> None:
+    if not isinstance(preflight_report, dict) or not isinstance(runtime_report, dict):
+        return
+    dependency_record = preflight_report.get("dependencyEntry")
+    if dependency_record is None:
+        return
+    if runtime_report.get("dependencyEntry") != dependency_record:
+        issues.append("runtime report dependencyEntry must match runtimePreflight exactly")
+    if isinstance(dependency_record, dict) and isinstance(dependency_record.get("path"), str):
+        dependency_ref = _check_file_record(base, dependency_record, "runtime dependencyEntry", issues)
+        if dependency_ref and dependency_ref not in runtime_inputs:
+            issues.append("runtime inputs must include the runtimePreflight dependencyEntry with its current SHA-256")
 
 
 def _check_full_orbit_matrix(samples: dict[str, dict[str, Any]], bounds: dict[str, tuple[float, float]], issues: list[str]) -> None:
@@ -2388,6 +2455,17 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                     }
                     if not visual_map_file or (visual_map_rel, visual_map_digest) not in proxy_inputs:
                         issues.append("spatialProxy inputs must include visualBuildMapPath with its current SHA-256")
+                    preflight_stage = by_id.get("runtimePreflight", {})
+                    preflight_path = _resolve(base, preflight_stage.get("preflightReport"))
+                    preflight_data = _load_json(preflight_path) if preflight_path else None
+                    dependency_record = preflight_data.get("dependencyEntry") if preflight_data else None
+                    if dependency_record is not None and isinstance(gate_proxy, dict):
+                        if gate_proxy.get("dependencyEntry") != dependency_record:
+                            issues.append("proxyStage dependencyEntry must match runtimePreflight exactly")
+                        if isinstance(dependency_record, dict) and isinstance(dependency_record.get("path"), str):
+                            dependency_ref = _check_file_record(base, dependency_record, "runtimePreflight dependencyEntry", issues)
+                            if dependency_ref and dependency_ref not in proxy_inputs:
+                                issues.append("spatialProxy inputs must include the runtimePreflight dependencyEntry with its current SHA-256")
                     if isinstance(gate_proxy, dict) and gate_proxy.get("visualBuildMap") != visual_map_rel:
                         issues.append("proxyStage must review the same visualBuildMapPath produced by visualAnalysis")
                     _run_specialist("validate_spatial_gate.py", gate, base, "spatialProxy", issues)
@@ -2434,6 +2512,12 @@ def validate_data(data: Any, base: Path, through: str | None = None) -> list[str
                 base, data.get("cameraInteractionReportPath"), camera_contract_path,
                 camera_stage, issues,
             )
+        preflight_stage = by_id.get("runtimePreflight", {})
+        preflight_report_path = _resolve(base, preflight_stage.get("preflightReport"))
+        preflight_data = _load_json(preflight_report_path) if preflight_report_path else None
+        runtime_report_path = _resolve(base, runtime_stage.get("runtimeReport"))
+        runtime_data = _load_json(runtime_report_path) if runtime_report_path else None
+        _validate_runtime_dependency_handoff(base, preflight_data, runtime_data, runtime_inputs, issues)
         runtime_ids = _validate_runtime_report(base, runtime_stage.get("runtimeReport"), runtime_stage.get("buildId", ""), camera_contract_path, runtime_stage, issues)
         if "visualReview" in required_stages:
             review_stage = by_id.get("visualReview", {})
