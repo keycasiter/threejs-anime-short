@@ -7,16 +7,16 @@ Use this procedure for the scene-wide placement/support stage between visual ana
 
 ## 1. Select representation and tools from the spatial problem
 
-First classify each major surface and connection. Do not default every shape to a height function or every problem to a DCC.
+First classify each major surface and connection. Use code-authored geometry throughout this branch; choose the representation that can express each surface and connection.
 
 | Need | Suitable route | Use when | Evidence still required in Three.js |
 |---|---|---|---|
 | Parametric objects, layout, paths, simple single-valued ground | Three.js `BufferGeometry`, shared layout data, surface sampling | Geometry follows explicit points, sections, bounds and stable rules; rendered interaction is the target | Target-camera graybox, mesh/route sampling, sections and orbit views |
 | Measured footprint, site plan, alignment or surveyed elevation | CAD/GIS source plus a documented coordinate/unit conversion | Authoritative real-world coordinates or dimensions affect placement | Register-to-source alignment check, vertical sections, Three.js render |
-| Hand-shaped irregular surface or manual topology repair | Blender or equivalent mesh editor | Shape needs direct sculpting, patching, cleanup or topology control that is costly to express parametrically | Exported mesh loaded in Three.js; bounds, contact, path and orbit checks |
-| Rule-driven terrain, erosion-like forms, repeated procedural layout | Houdini or equivalent procedural DCC | Many related surfaces/variants must follow control curves, masks, height/slope fields or repeatable generation | Exposed controls/provenance, export check, and all spatial relations checked in Three.js |
+| Irregular or multi-valued surface | Explicit section/control meshes, implicit fields with mesh extraction, or code-authored patches | Overhangs, caves and changing topology exceed a single-valued height field | Actual emitted surface, normals, contact/path queries and orbit views |
+| Rule-driven terrain, erosion-like forms, repeated layout | Shared JavaScript fields, structural graph, code mesh generators and workers when needed | Control curves, masks, height/slope fields and stable region/object IDs drive multiple consumers | Rebuildable parameters, final mesh/field agreement and all spatial relations in Three.js |
 
-A tool name alone is not a solution. State the bottleneck it addresses, the data exchanged, and how its output returns to the Three.js scene. For a designed/fictional site without survey constraints, CAD is optional; start with the simplest representation that can express its intended landform. If a height field cannot express an overhang, cliff face, cave or multi-valued surface, change representation instead of forcing it.
+A tool name alone is not a solution. State the bottleneck it addresses, the data exchanged, and how its output returns to the Three.js scene. Imported/prebuilt model geometry is outside this branch. CAD/GIS can provide verified dimensions and boundaries, which the code reconstructs. For a designed/fictional site without survey constraints, CAD is optional; start with the simplest representation that can express its intended landform. If a height field cannot express an overhang, cliff face, cave or multi-valued surface, change representation instead of forcing it.
 
 ## 2. Build the whitebox in dependency order
 

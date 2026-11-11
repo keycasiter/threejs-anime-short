@@ -7,18 +7,20 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 从目标效果出发，建设能反复产出该效果的**资产生成器、表面系统、空间布局、环境渲染与运行工具**。先让一个完整代表关系达到目标，再用同一套能力扩展全场。最终像素、源码与可操作成品共同构成交付。
 
+**本分支采用纯代码三维制作。** 几何由Three.js构造器、显式网格/曲面、规则/场生成或几何算法库产生；材料、环境与动态由代码和shader实现。不引入下载、扫描、AI生成或DCC导出的预制3D模型，也不将其编码成数组/base64伪装为程序造型。算法库与模型数据分别判断。借鉴射击作品的完整构造、空间语法、表面和渲染系统，题材与玩法仍服从用户目标。
+
 ## 任务入口
 
 | 用户请求 | 执行范围 |
 |---|---|
 | 研究实现、比较路线 | 追踪原始代码的输入、生成算法、调用消费者和真实画面；区分源码事实、运行观察、因果实验和推断 |
 | 只要计划、视觉分析或某个机制 | 只交当前范围的可执行方案/研究包/实验，不要求尚未产生的下游图像或填写成品PASS |
-| 制作新作品 | 读[生产流程](references/production-workflow.md)，依下述接力制作；读[制作系统SOP](references/production-systems.md)落实代码与方法 |
+| 制作新作品 | 读[生产流程](references/production-workflow.md)，先按[可生成设计](references/procedural-design.md)补足短需求，再用[构造配方](references/procedural-construction.md)与[制作系统SOP](references/production-systems.md)落实代码 |
 | 修改已有作品 | 核对当前入口与画面，沿实际数据流找到负责层；复用仍有效的资产和设计，不重建无关部分 |
 
 继承用户已确定的风格、范围、素材限制和交付模式。短需求由Agent补全为设计：真实题材查证地理/建筑与空间关系，创作尺寸标作设定。创作方向未定时提供至少5个有实质差异的图文建议并给出理由；用户已选方向或授权自行决定时直接推进。
 
-**图像承担视觉研究。** 用全貌、多视角、单体、连接与材料参考确定具体结构及响应，不限制有价值参考的数量。默认由代码几何、程序纹理、shader或许可清楚的3D资产实现最终场景；生成概念图不直接放进背景平面、sprite或DOM充当交付。模型附带纹理与程序生成表面数据按其真实用途处理。
+**图像承担视觉研究。** 用全貌、多视角、单体、连接与材料参考确定具体结构及响应，不限制有价值参考的数量。最终场景由代码几何、程序纹理和shader实现；生成概念图不直接放进背景平面、sprite或DOM充当交付。参考中的固定视图技法先转成对应三维结构与相机/遮挡关系，再满足本任务观看范围。
 
 ## 制作接力
 
@@ -37,7 +39,7 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 每个主要可见资产族开工前，用一行“**可见特征 → 构造算法/参数 → 材料/受光 → 实际镜头**”明确制作办法，再执行[制作系统SOP](references/production-systems.md)。涉及程序表面、环境/反射、天气、后期或调试时，先读[可调用工具](references/production-toolkit.md)，选择已有模块并把真实消费者接通：
 
-- **结构先有独立控制。** 主体轮廓之外，构建截面转折、内外壁、厚度、框架、开口、接头与承载。按形体选回转、扫掠、分站放样、二维开孔挤出或DCC资产。细分只改善已经正确的结构。
+- **结构先有独立控制。** 主体轮廓之外，构建截面转折、内外壁、厚度、框架、开口、接头与承载。按形体选回转、扫掠、分站放样、带孔挤出、连续控制网格或显式场建模。细分只改善已经正确的结构。
 - **表面表达形成原因。** 材料区、尺度、朝向、接缝、排水/磨损/生长规律决定图案位置；颜色、roughness、metalness与normal使用一致的区域依据。风格化作品可减小纹理复杂度，同时保留材质差异与形体转折。
 - **整体先有组织。** 每个区域有功能、主体/支撑/环境资产及密度变化；近景提供尺度，中景表达关系，远景延续环境。先写有意义的布局骨架，再在组内变化。宏观场景用分区与多尺度结构，逐个区域细化。
 - **运行能力随制作建立。** 参数种子可复现，展柜与场景共用工厂，动件保持层级，静件按材质/阴影/图层合并。预留固定机位、真实时间/状态冻结和质量/效果开关；检查工具必须读回实际状态。
@@ -60,6 +62,8 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 | 工作 | 方法 / 可调用资源 |
 |---|---|
+| 短需求、构造规格、全场分区/资产族与距离分级 | [可生成设计](references/procedural-design.md)；[程序世界](references/procedural-worlds.md) |
+| 从主形到中结构、真实开口/连接、材料与动态的代码步骤 | [构造配方](references/procedural-construction.md)；[参数化开间样件](assets/examples/procedural-bay.mjs) |
 | 模块接力、完整代表关系、表面/环境/预算与诊断入口 | [制作系统SOP](references/production-systems.md)；[资产装配器](assets/scene/asset-assembly.mjs) |
 | 程序材质、天空/局部探针、平面镜像、视觉雨、后期和真实工作台 | [可调用工具与边界](references/production-toolkit.md)；[组合诊断例](assets/examples/production-lab/index.html) |
 | 参考到可建模尺寸、对象/接口、平面/剖面 | [视觉分析](references/visual-analysis-sop.md)，正式空间交接才使用其完整登记协议 |
@@ -67,6 +71,6 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 | 截面/真实开孔、表面法线和实际承载 | [截面几何](references/profile-geometry.md)；[表面细节](references/surface-detail.md)；[锚点模块](assets/scene/surface-anchors.mjs) |
 | 灯光、PBR/IBL、颜色链、反射/透射 | [渲染选择](references/rendering-choices.md)；[材光校准](references/lookdev-calibration.md)；自定义多遍再读[渲染契约](references/render-contracts.md) |
 | 分布、角色/模拟与规模 | [分布方法](references/detail-distribution.md)；[动作与规模](references/motion-and-scale.md) |
-| 接入3D/图像/声音工具 | [AI资产](references/ai-asset-pipeline.md)，按实时能力和用户预算选用 |
+| 图像参考、程序资源/声音、可选几何/查询/后期库 | [程序资源](references/procedural-resources.md)；[库选择与接线](references/library-integration.md) |
 
 修改或发布本Skill时读取[维护约定](AGENTS.md)。

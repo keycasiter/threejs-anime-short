@@ -1,4 +1,4 @@
 interface:
   display_name: "Three.js 视觉作品制作"
-  short_description: "以Three.js制作高品质短片与交互场景，交付代码、资产和运行证据"
-  default_prompt: "使用 $threejs-anime-short，按主链路把视觉目标落实为资产、完整场景、材质与动画，完成 Three.js 渲染、交互验收和可重建交付。图像生成结果只作参考，不直接进入成片。"
+  short_description: "以Three.js制作高品质短片与交互场景，从代码构建几何与表现，交付源码和运行证据"
+  default_prompt: "使用 $threejs-anime-short，按主链路把短需求展开为可生成规格，用Three.js与自定义代码构建几何、完整场景、材质与动画，不导入外部3D模型，完成 Three.js 渲染、交互验收和可重建交付。图像生成结果只作参考，不直接进入成片。"

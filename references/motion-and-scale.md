@@ -1,18 +1,18 @@
-# 资产、动画、GPU状态与场景规模
+# 程序对象、动画、GPU状态与场景规模
 
-用于glTF角色、程序植被、GPU粒子、地形和大量可交互对象。API按当前安装版本和官方文档核对；渲染侧约束见 [rendering-choices.md](rendering-choices.md)。选技术前确认近景需要、运动方式、目标设备和是否必须随机跳帧。
+用于代码生成的角色/机械、程序植被、GPU粒子、地形和大量可交互对象。API按当前安装版本和官方文档核对；渲染侧约束见 [rendering-choices.md](rendering-choices.md)。选技术前确认近景需要、运动方式、目标设备和是否必须随机跳帧。
 
 场景资产的整体细节生产顺序、放置清单和分布图验收见[细节与分布 SOP](detail-distribution.md)；本页补充植被、GPU状态、动画与性能方法。
 
-## 资产管线负责把设计带到运行时
+## 从构造数据到运行对象
 
-完整链为：建模/UV/法线/材质与动画准备 → 导出glTF → 适用的压缩 → 解码/加载 → 语义校验 → 实例/动画 → 释放。Three.js不会仅因能渲染而自动补出高质量资产。用户要求纯代码时，保留程序几何路线；允许外部资产时不必把复杂人体重新拆成基础体。
+完整链为：设计/共享参数 → 几何、UV/法线、材质区域、代码骨架/动作 → 实例或合并 → 程序预热 → 运行与释放。代码路线的具体建造顺序见[构造配方](procedural-construction.md)，空间扩展见[程序世界](procedural-worlds.md)。本分支不接入GLTF/FBX/OBJ等预制模型或外部角色动画包。
 
-按资产配置GLTFLoader、DRACOLoader、KTX2Loader和MeshoptDecoder。Draco/Meshopt主要解决几何/数据传输与解码，KTX2/Basis可转为设备支持的GPU压缩纹理；体积小不等于解码快、显存少或draw calls少。`KTX2Loader.detectSupport(renderer)`及解码器文件路径必须在目标后端成立；离线交付把wasm、worker、纹理、模型与decoder一起纳入依赖清单，实际断网验证。
+由同一份结构数据创建Object3D层级或Bone/Skeleton；柔性网格显式生成skinIndex/skinWeight并bind，机械刚件可各自随一个骨骼或枢轴。动作可用解析轨迹或代码创建KeyframeTrack/AnimationClip；导入动画的便利不能替代本工程的结构和接触设计。树、机械与连续软组织需要不同的生成/变形表示。
 
-load完成后更新世界矩阵再计算包围盒与构图，核对单位、up axis、根缩放、pivot、材质颜色语义和动画clip。材质默认值不一致时先定位导出/加载语义，不随意覆盖所有材料。READY门槛包括真实资产和关键程序预热；纹理/worker失败不能用空模型继续交付。
+生成完成后更新世界矩阵再核对包围盒、单位、up axis、根缩放、pivot、材料角色和活动范围。READY包含真实生成对象与关键程序预热；worker/纹理失败不能用空对象继续交付。压缩的程序缓存仍须绑定生成器、参数和版本，修改输入时重建。
 
-资源共享与销毁明确归属：模型替换时停止并uncache旧mixer，解绑事件/RAF，释放私有geometry、material、texture、render targets、PMREM结果与worker/decoder；共享资产用引用关系，避免销毁仍被别的角色使用的纹理。JS对象移出scene不等于GPU资源释放。
+资源共享与销毁明确归属：替换对象时停止并uncache私有mixer，解绑事件/RAF，释放私有geometry、material、texture、render targets、PMREM结果与worker；共享对象保留引用关系，避免销毁仍被使用的资源。移出scene不等于释放GPU资源。
 
 ## 骨骼、动作与接触：绝对时间之后仍要约束
 

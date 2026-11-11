@@ -1,6 +1,6 @@
 # 可执行的场景制作系统
 
-将视觉目标落实到五类生产能力：资产生成、表面表达、空间组装、环境渲染、运行与检查。每类都回答“输入是什么、怎样生成、谁使用、如何看见”。制作从完整空间草案进入完整代表关系，再扩展资产族；由真实画面决定继续投入哪一层。
+将视觉目标落实到五类生产能力：资产生成、表面表达、空间组装、环境渲染、运行与检查。每类都回答“输入是什么、怎样生成、谁使用、如何看见”。制作从完整空间草案进入完整代表关系，再扩展资产族；由真实画面决定继续投入哪一层。本分支对象几何均由代码生成；设计与原子构造步骤见[可生成设计](procedural-design.md)和[构造配方](procedural-construction.md)，宏观扩展见[程序世界](procedural-worlds.md)。
 
 ## 1 让模块真正接力
 
@@ -40,7 +40,7 @@
 
 ### 把结构变成可复制的生产代码
 
-[资产装配器](../assets/scene/asset-assembly.mjs)提供已经实现的接口：
+[资产装配器](../assets/scene/asset-assembly.mjs)提供已经实现的接口；跨对象端口放置可调用[锚点装配](../assets/scene/anchor-connection.mjs)，实际例见[参数化开间](../assets/examples/procedural-bay.mjs)。静态装配接口如下：
 
 ```js
 import {createAssetAssembly} from './asset-assembly.mjs';
