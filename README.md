@@ -4,18 +4,22 @@
 
 ## 当前方向与入口
 
-`master`保留R60优化基线，原`main`历史保留；`codex/saltline-production-systems`实现纯代码制作系统方向：Three.js、自写几何/曲面/场与shader，不导入预制3D模型。分支不自动合并，不用机制测试追认整场画质提升。
+`master`保留优化基线，原`main`历史保留。`codex/saltline-production-systems`采用代码生成几何、程序表面与Three.js渲染，分支不自动合并。
 
-| 工作 | 入口与职责 |
+[SKILL入口](SKILL.md)负责范围与按需分流，[生产流程](references/production-workflow.md)是唯一制作顺序。方法按职责组织：
+
+| 职责 | 文档 |
 |---|---|
-| 默认制作 | [SKILL.md](SKILL.md)、[生产流程](references/production-workflow.md)：短需求/宏观设计、运行基础、完整代表关系、扩场、统一表现与交付 |
-| 前置设计与代码构造 | [可生成设计](references/procedural-design.md)将短需求转为结构参数；[程序世界](references/procedural-worlds.md)建立区域、规则与距离分级；[构造配方](references/procedural-construction.md)给出主形、中结构、连接、表面和动态的原子步骤 |
-| 可执行制作方法 | [制作系统SOP](references/production-systems.md)：资产、表面、空间、环境/后期、动态预算与工作台；[来源索引](references/production-systems-source-map.md)用于维护核对 |
-| 可复制代码 | [可调用制作工具](references/production-toolkit.md)：程序材质、天空/局部探针、平面镜像、视觉雨、HDR后期与真实工作台；[组合诊断例](assets/examples/production-lab/index.html)。另有[参数化开间](assets/examples/procedural-bay.mjs)与[实际锚点装配](assets/scene/anchor-connection.mjs)；资产装配器与设备箱工厂保留 |
-| 专项方法 | 参考目录保留视觉分析、资产设计、构图、中层、分布、材光、渲染与相机方法；按当前问题读取，不要求每次全量加载 |
-| 验证与正式交接 | [统一验收](references/validation.md)、[相机实操](references/camera-interaction.md)；显式选择时再用[正式阶段协议](references/formal-stage-workflow.md)、[交付契约](references/delivery-contract.md)、templates与校验器 |
+| 参考与可生成规格 | [视觉设计](references/visual-design.md) |
+| 空间、相机构图与世界规则 | [空间搭建](references/scene-layout.md)、[相机操作](references/camera-interaction.md) |
+| 形体与真实关系 | [构造](references/procedural-construction.md)、[几何配方](references/geometry-recipes.md)、[分布](references/detail-distribution.md) |
+| 表面与表现 | [表面](references/surface-detail.md)、[渲染](references/rendering-choices.md)、[效果代码](references/effect-recipes.md) |
+| 实际工具与运行 | [工具目录](references/production-toolkit.md)、[运行/规模](references/motion-and-scale.md)、[条件库接线](references/library-integration.md) |
+| 检查与交付 | [统一验收](references/validation.md)、[视频导出/后验](references/video-export.md) |
 
-默认制作保存当前源码、真实画面、问题及运行结果；正式协议保留其完整版本/哈希/阶段证据，不能混用PASS。HTML/视频仍需真实运行/审看实际交付文件。README面向维护者，不作为普通制作的额外历史指令；研究工程、截图、模型与缓存不随Skill发布。
+源码模块在assets；可执行检查与导出在scripts；测试随对应工具保留。旧严格阶段JSON协议、专属模板与Python门禁已退出此分支，不提供旧审计JSON兼容；原版本保存在Git历史。视频导出的manifest是现有文件/媒体报告，保留其真实检查用途。
+
+README记录维护范围与验证，不作为普通制作的历史指令加载；研究缓存和生成产物不随Skill发布。
 
 ## 迭代记录
 
@@ -24,6 +28,7 @@
 
 | 日期 / 版本 | 内容与依据 | 验证结果及边界 |
 |---|---|---|
+| 2026-11-12 / R64 职责重构与旧协议退休 | 唯一制作顺序保留在production-workflow；26份参考合并为18份，入口76→38行，指令正文字符约减少63%。视觉/总图、空间/投影、构造/真实连接、几何/效果配方、表面渲染、运行与验收各有单一职责。删除旧严格JSON协议、14份模板、3个Python门禁及7份专属测试；保留实际Three工具，提取独立最终视频后验校验 | 保留集与新增工具完整回归144/144通过；6项文档原代码探针通过，格式/内部链接/变更检查通过。独立审查复现并关闭粒子位置改变未刷新包围球的P2，精确原文代码回归覆盖。两题新旧隔离前向计划均能给施工方向，新版正确区分已有/待写API；未制作完整新作品，不证明画质、成功率或制作成本改善。旧审计JSON不再兼容，可从30f4185恢复。 |
 | 2026-11-12 / R63 纯代码构造与世界规则 | 采纳多参考研究，提取射击作品的构造语法、真实厚度/开孔、同源字段、分区/原型与近中远组织；新增可生成设计、程序世界、原子构造、程序资源与条件库接线。移除旧AI/扫描/DCC模型路线及活跃回退；补原创开间工厂和消费真实端口的放置器，不将题材改成射击游戏 | Node137/137、Python119/119、Skill格式及内部链接检查通过。r180真实浏览器5机位与尺寸扰动，孔洞/接口、程序表面、拖动/滚轮、零报错与基线复取一致；独立审查修复矩阵自动更新关闭时的陈旧变换。两题新旧独立计划均已能给出具体代码方向，新版实际发现并正确限定新API；不是完整作品盲测，不能据此宣称画质提升。库接线示意尚无全部版本适配，复杂有机生成器仍需项目实现。 |
 | 2026-11-12 / R62 可调用制作工具 | 根据三个完整作品与固定标杆代码/画面对照，补原创程序材质目录、天空/局部环境、官方平面反射与后期适配、视觉雨、时钟/真实工作台和完整接线例；补真实接口消费/参数扰动引导，修复离线检查器从嵌套模块解析importmap地址的误报 | 冻结后Node128/128、Python119/119通过；格式、200个内部链接/57个锚点通过。实际r180浏览器12张诊断图，基线复取一致、八个开关影响像素、镜像RT消费目标颜色、真实拖动/复位和AO/天空异常恢复通过。独立审查2项P2与1项P3关闭；两个跨题材隔离前向计划及CPU小样完成。初版纹理与复位失败记录保留并校正；这些是工具和引导证据，尚未证明新工具介入后完整作品画质提升，亦未迁移标杆完整体积/粗糙湿地/自适应曝光系统。 |
 | 2026-11-11 / R61 制作系统实验分支 | 固定Saltline源码逐段研究，默认流程改为运行基础与完整代表关系；补可执行资产/表面/空间/环境/预算SOP，独立实现静态装配器及真实开孔/铰链工厂样件；原严格manifest链改为明确选用并完整保留 | Node98/98、Python119/119通过；新机制r180/r186.1各17项通过；两机位12张原场景消融，基线复取哈希一致。独立前向计划能区分现有工具和待写能力；独立审查两项P2已修复复核。证明源码研究、方法/机制与计划接力；未执行新版完整作品画质盲评，未宣称达到参考作品效果。 |

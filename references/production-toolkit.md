@@ -16,6 +16,17 @@
 
 注入**同一锁定版本**的 `THREE` 与官方addons，已验证路径为r180/WebGLRenderer。WebGPU、其他版本、XR、多相机rig需要另外验证。适配器不复制标杆的应用shader。新任务需要表中未覆盖的能力时，显式设计扩展并先做小样，不把近似能力命名成完整能力。
 
+## 几何与关系工具
+
+| 任务 | 实际模块/API | 返回与使用边界 |
+|---|---|---|
+| 厚壁回转、内腔、环口、真实带孔板 | [profile-surfaces](../assets/geometry/profile-surfaces.mjs)，接口见[截面方法](profile-geometry.md) | 实际BufferGeometry/UV与组；复杂自由曲面需项目生成器 |
+| 真实窗洞、厚度、框与端口 | [buildArchitecturalBay](../assets/examples/procedural-bay.mjs)，用法见[构造方法](procedural-construction.md) | root/parts/spec/anchors/dispose；只支持所列居中矩形/半圆拱，非整楼/门洞生成器 |
+| 静件分桶、动件层级与端口连接 | [asset-assembly](../assets/scene/asset-assembly.mjs)、[placeAtAnchor](../assets/scene/anchor-connection.mjs) | 前者合并适用静件；后者对齐真实局部端口，要求单位刚性变换与世界矩阵自动更新；均不自动检查支撑/美观 |
+| 宿主命中、局部朝向与有限足迹 | [surface-anchors](../assets/scene/surface-anchors.mjs)：`createSurfaceSampler`/`surfaceFrame`/`createSurfacePatchSampler` | 前者求实际点/法线和实例框架，后者资格检查离散足迹并返回ACCEPT/REJECT；不自动生成基部或求碰撞/IK |
+| 两侧宿主间的竖直承托 | 同模块`createVerticalBearingSampler(T,lower,upper)` | 给x/z、minY/maxY、上下XZ足迹偏移，有限射线输出bottomY/topY/clearance等；漏点/交叠失败，不是任意斜向接头生成器 |
+| 发出网格的无效/退化/朝向检查 | [auditTriangles](../assets/geometry/audit-triangles.mjs)，调用见[几何配方](geometry-recipes.md) | 独立方向或逐顶点参考；不检查全部自交、水密、曲率或构图 |
+
 ## 最短可执行入口
 
 [组合诊断场景](../assets/examples/production-lab/index.html)和[完整接线源码](../assets/examples/production-lab/main.mjs)同时调用上述模块、现有设备箱工厂和同一材质目录，包含完整关系/结构样件/材质样片视图。
@@ -110,10 +121,8 @@ bench.restore(shot); // 相机/target/效果恢复，时间冻结
 
 像素差能证明开关影响画面，不能证明更美。完整作品至少在目标近景和互补方向看一次；若结构、负形或组团不成立，返回对应生成器/布局，后期不承担修补职责。
 
-## 学习单一标杆的通用方法
+## 方法适用范围
 
-把参考拆成“可见信号→输入/算法→真实消费者→成立条件→成本→反例→验证”，形成可迁移机制。港口的磨损、雨天、工业身份、FPS交互与特定调色属于其场景选择，不是通用必需项。
-
-迁移到新题材时从新的目标图/brief重新选择表示：自然体需要生长/地质层级，建筑需要构造/空间秩序，连续有机体需要曲率/组织过渡；同一组螺钉、噪声或雨不能替代它们。抽象是否有效，以新任务中结构参数扰动、同条件机制实验及完整作品盲评分别检验。单标杆只提供方法假设，不能证明跨题材成功率。
+现有配方、雨场、镜像与诊断场景各自只覆盖表中范围。新题材按自身形态、空间和光照目标选择；复杂有机网格、粗糙湿地反射、体积光和全场天气需要另行实现并实际验证。参考学习见[研究方法](research-methods.md)。
 
 官方算法边界可核对：[Reflector](https://github.com/mrdoob/three.js/blob/r180/examples/jsm/objects/Reflector.js)、[OutputPass](https://github.com/mrdoob/three.js/blob/r180/examples/jsm/postprocessing/OutputPass.js)、[PMREMGenerator](https://github.com/mrdoob/three.js/blob/r180/src/extras/PMREMGenerator.js)。

@@ -1,6 +1,6 @@
 # 截面、厚壁与贯穿孔的代码方法
 
-适用于回转壳体、环套、漏斗，以及沿一条直轴挤出的板件/支架；当前实现以Three 0.180.0执行验证。使用[可复制模块](../assets/geometry/profile-surfaces.mjs)；它负责几何生成，造型、材质和装配关系仍由资产规格决定。现有扫掠/自由曲面方法见[代码SOP](threejs-code-sop.md#用截面生成连续曲面)。
+适用于回转壳体、环套、漏斗，以及沿一条直轴挤出的板件/支架；当前实现以Three 0.180.0执行验证。使用[可复制模块](../assets/geometry/profile-surfaces.mjs)；它负责几何生成，造型、材质和装配关系仍由资产规格决定。现有扫掠/自由曲面方法见[代码SOP](geometry-recipes.md#用截面生成连续曲面)。
 
 ## 从参考到结构参数
 
@@ -63,6 +63,6 @@ const plate = new THREE.Mesh(plateGeometry, [faceMaterial, edgeMaterial]);
 
 先以少量主要截面确定轮廓、腔体和连接，用侧背视角核对；再按目标景别细分和做材料变化。孔在灰模与斜后视仍应成立，厚边要有真实遮挡和投影。代码内的剖面/孔数据同时用于附件定位、碰撞近似和检查尺寸，避免每层另写一份数字。
 
-这些helper返回Geometry，只占资产生成器的一层；组合后的底座、连接、材料和支撑环境仍需达到各自质量目标。静态结构成立后再加动作，承重/铰接关系以共享枢轴和锚点验证。局部开孔或倒角成功不能替代[完整代表镜头审图](validation.md#核心镜头放行标准)。
+这些helper返回Geometry，只占资产生成器的一层；组合后的底座、连接、材料和支撑环境仍需达到各自质量目标。静态结构成立后再加动作，承重/铰接关系以共享枢轴和锚点验证。局部开孔或倒角成功不能替代[完整代表镜头审图](validation.md)。
 
 维护模块时运行`THREE_MODULE=/path/to/three/build/three.module.js node --test scripts/tests/profile-surfaces.test.mjs`；依赖能以包名解析时可省略环境变量。输出用于Three.js渲染，多孔端面的共线T交接不保证逐边焊接的制造网格，制造/后续实体布尔需另做拓扑整理。
