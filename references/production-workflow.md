@@ -44,8 +44,10 @@
 
 1. 读取项目锁文件，确认目标Three.js、addon、构建器和浏览器自动化版本；优先复用项目内已锁定且兼容的依赖，不升级到浮动版本。
 2. 检查依赖是否已安装，再检查当前包管理器的本地离线缓存/存储。使用与项目匹配的包管理器离线查询；npm项目可先运行`npm cache ls three`。只有缓存中确有锁文件指定版本且完整性可核对时，才尝试离线安装。缓存索引命中、其他版本存在或npm报错都不能单独视为依赖已恢复。
-3. 检查允许使用的浏览器与自动化运行时是否已安装，并记录实际可执行文件和版本；浏览器存在仍需启动目标页并验证WebGL/WebGPU、请求与canvas。若headless Chromium没有创建WebGL上下文，可在可信的本地QA页面上尝试显式软件渲染：`--enable-webgl --ignore-gpu-blocklist --use-gl=angle --use-angle=swiftshader`。读取实际renderer/backend并确认canvas确有像素；SwiftShader通过只证明软件路径可绘制，不证明目标硬件性能。Chrome/Chromium版本变化时按[Chromium SwiftShader说明](https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md)核对当前参数；不要为了绕过浏览器策略而在不可信页面上启用unsafe fallback。
+3. 检查允许使用的浏览器与自动化运行时是否已安装，并记录实际可执行文件和版本；浏览器存在仍需启动目标页并验证WebGL/WebGPU、请求与canvas。若headless Chromium能启动但没有创建WebGL上下文，可在可信的本地QA页面上尝试显式软件渲染：`--enable-webgl --ignore-gpu-blocklist --use-gl=angle --use-angle=swiftshader`。读取实际renderer/backend并确认canvas确有像素；SwiftShader通过只证明软件路径可绘制，不证明目标硬件性能。Chrome/Chromium版本变化时按[Chromium SwiftShader说明](https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md)核对当前参数；不要为了绕过浏览器策略而在不可信页面上启用unsafe fallback。
 4. 对registry/CDN失败只做一次有针对性的本地恢复检查，不循环重试同一不可达地址。共享缓存权限异常时，不用`sudo chown`或修改全局缓存所有权；仅在可验证锁文件完整性时使用项目隔离的本地包，否则保留阻断。
+
+Playwright管理的Chromium若因操作系统权限/沙箱错误不能启动，或只能启动却无法连接调试端口，应归类为`browser startup`故障，不是WebGL renderer失败；不要继续更换SwiftShader参数碰运气。检查当前环境是否允许用已安装的Chrome/Chromium二进制以headless方式启动，并通过Chrome DevTools Protocol或已提供且适用的浏览器MCP/CUA驱动同一个可信本地预检页。使用独立临时profile，记录实际浏览器版本、目标页URL、renderer、canvas尺寸/像素、脚本错误和失败请求；如果通过`file:`加载本地ESM，优先改用本地HTTP服务，否则仅对可信本地页启用文件访问。切换执行器后仍须从目标页面实际读回canvas，不能把浏览器进程启动或页面返回HTTP 200当作预检通过。没有其他允许的执行器或所有执行器均失败时，按实际失败阶段记为BLOCK并停止。
 
 报告应区分`缺包`、`缓存不可用`、`无浏览器`、`浏览器启动失败`、`renderer初始化失败`和`本地服务/路径失败`，并指出下一步最小恢复动作。缓存检查不能替代真实运行门槛；找不到可用浏览器或canvas时，`runtimePreflight`仍为BLOCK，完整制作仍停在该阶段。
 
