@@ -17,13 +17,15 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 用户已明确的风格、观看方式、资产限制和交付要求进入规格，跨阶段持续继承。可自行核对的信息先核对；仅追问会改变方案且无法推断的信息。用户要求直接执行时，说明合理假设后推进。
 
+**短需求也要先补成可执行规格。**建模前明确场景范围、观看模式、空间分区、主体层级、关键对象关系、风格材光、细节景别和交付；用可靠资料补足真实场地信息，把推断标成假设。宏观题材的区域覆盖与多尺度视图按[空间白模SOP](references/spatial-blockout.md)设计；不能用对象名称代替场景设计，也不能默默删去请求范围中的重要区域。
+
 **最终呈现由 Three.js 渲染。** 图像生成用于方向、构图、造型、多视角与部件研究；默认不把生成图放入背景平面、sprite、贴图、DOM图片或最终帧。将参考转译为几何、程序纹理、材质、shader与布局规则。用户明确授权图片进入成片时，记录其实际贡献。
 
 **按效果选择资产路线。** 程序化几何、DCC模型、许可清楚的现成模型、AI候选经修整的3D模型均可由Three.js组装与渲染。模型随附材质/纹理按资产约束和来源许可审核，概念参考图不能直接冒充三维表面。先判断目标景别、轮廓/体积复杂度、动作和成本，再选路线；用户明确要求纯代码几何时遵守该限制。参考工程默认用于研究方法，直接复用其资产或专用源码按用户授权及许可范围执行。
 
 ## 制作主链路
 
-制作任务先读[生产流程](references/production-workflow.md)与[统一验收](references/validation.md)。在进入空间搭建前，视觉分析必须按[视觉分析与空间交接SOP](references/visual-analysis-sop.md)交付证据索引、对象/接口关系、共享空间数据、平面/剖面和未知项；对占地、支撑、可走面、上方挑檐/包络等不同语义分开展示，避免用整体bounds暗示可用地面；若一个场或布局驱动多个系统，登记其生产者与所有消费者。空间图与Three.js白模读取同一份登记表，并运行`<skill-root>/scripts/validate_scene_register.py <project-root>/design/scene-register.json`检查字段来源、端口解析、路由端点和空间坐标一致性。用户只要求视觉分析时停在可建模交接包，不自行制作场景。开工按“用途/空间 → 形体/连接 → 材料/受光”组织设计：先安排全场分区、支撑和前中远组，用共同布局与表面数据驱动对象；再把决定身份的形体关系变成实际生成参数；最后在真实环境中校准材光。代表样件包括主形、交界两侧、承载与受光，选定后扩展同类资产。**空间搭建任务必须按[空间白模执行与放行](references/spatial-blockout.md)选表示、构建、逐项验收；几何算法再查[Three.js代码SOP](references/threejs-code-sop.md)。**若登记了共享驱动场，须在固定seed、相机、分辨率和其他输入时，逐一对每个已声明消费者做前后扰动验证。具体构造进入[资产设计](references/asset-craft.md)及其分支方法，避免先完成孤立主体再补背景。
+制作任务先读[生产流程](references/production-workflow.md)与[统一验收](references/validation.md)。在进入空间搭建前，视觉分析必须按[视觉分析与空间交接SOP](references/visual-analysis-sop.md)交付证据索引、对象/接口关系、共享空间数据、平面/剖面和未知项；对占地、支撑、可走面、上方挑檐/包络等不同语义分开展示，避免用整体bounds暗示可用地面；若一个场或布局驱动多个系统，登记其生产者与所有消费者。空间图与Three.js白模读取同一份登记表，并运行`<skill-root>/scripts/validate_scene_register.py <project-root>/design/scene-register.json`检查字段来源、端口解析、路由端点和空间坐标一致性。用户只要求视觉分析时停在可建模交接包，不自行制作场景。开工按“用途/空间 → 形体/连接 → 材料/受光”组织设计：先安排全场分区、支撑和前中远组，用共同布局与表面数据驱动对象；再把决定身份的形体关系变成实际生成参数；最后在真实环境中校准材光。代表样件包括主形、交界两侧、承载与受光，选定后扩展同类资产。**空间搭建任务必须按[空间白模执行与放行](references/spatial-blockout.md)选表示、构建、逐项验收；宏观场景按其中的区域覆盖与多尺度视图契约执行；几何算法再查[Three.js代码SOP](references/threejs-code-sop.md)。**若登记了共享驱动场，须在固定seed、相机、分辨率和其他输入时，逐一对每个已声明消费者做前后扰动验证。具体构造进入[资产设计](references/asset-craft.md)及其分支方法，避免先完成孤立主体再补背景。
 
 **从任务开始记录可验证交接。**按用户的实际交付范围选择 `mechanism-test`、`analysis-only`、`spatial-handoff` 或 `full-production`，从[阶段交付契约](references/delivery-contract.md)和模板创建 `delivery-manifest.json`。每阶段记录真实输入/产物路径、SHA-256与该阶段`buildId`；后续阶段必须引用前序产物。场景制作先完成视觉分析和登记表校验；在空间代理前运行最小Three.js运行预检。完整制作在代理图阶段从Skill安装目录调用`<skill-root>/scripts/validate_delivery.py <project-root>/delivery-manifest.json --through spatialProxy`。仅该前置门禁通过后才开始正式资产。若运行预检或空间门禁为`BLOCKED`、`FAIL`或`NOT_RUN`，停在当前阶段，修复根因并重跑；环境无法恢复时交付当前阶段与阻塞证据，不继续造正式资产或把项目标成完整成品。最终按选定scope运行同一脚本；专项空间校验、真实浏览器运行和视觉审图仍需各自执行，总门禁不代替画面判断。预检阻断时按[生产流程](references/production-workflow.md#生产阶段与放行)核对锁定依赖、离线缓存、浏览器与renderer；缓存命中不等于真实运行，不重复盲目请求不可达网络源。完整制作的运行报告必须记录浏览器实际打开的HTML路径与SHA-256；runtime输入、最终交付阶段证据要逐字匹配该文件，交互环绕报告也必须绑定同一HTML。只给页面URL、截图或“final”构建名不能证明浏览器验收的是最终交付文件。最终交付还必须包含可读的运行说明并列为deliverable；HTML成品由最终门禁执行静态脚本、资源和导入检查，`offline-html`额外禁止网络依赖。MP4成品必须附导出manifest；门禁核对它与实际文件的哈希、源HTML及ffprobe元数据，并从编码后的MP4提取开场、四分位、中点、四分之三和结尾帧，逐张核验尺寸、PNG与哈希；所有抽帧都要进入delivery证据。最终门禁还会用ffmpeg从被交付MP4重新解码每个采样点并比对帧哈希，确认审片图确实来自该成片。每个MP4都必须完整播放并提交绑定最终MP4哈希的`videoReviewReport`，审看构图/文字可读性、编码伪影和时序连续性；浏览器预览截图不能替代成片审片。带音轨成片还须记录同步、动态平衡、失真/底噪和尾音复核。静态通过不替代真实浏览器加载、离线断网运行和交互验证。
 
@@ -112,5 +114,6 @@ flowchart TD
 | 图像/3D/声音生成服务接入 | [AI资产管线](references/ai-asset-pipeline.md)，实施时核对当前工具、成本与API |
 | 视觉、相机、运行与最终文件检查 | [统一验收](references/validation.md) |
 | 研究参考片、逐帧分析与迁移证据 | [研究方法](references/research-methods.md) |
+| 将短需求整理为范围、观看模式和质量目标 | [生产流程](references/production-workflow.md#0a-短需求补全与宏观题材规格)，按需使用[制作规格模板](assets/templates/production-brief.template.json) |
 
 修改或发布本Skill时读取[维护约定](AGENTS.md)。
