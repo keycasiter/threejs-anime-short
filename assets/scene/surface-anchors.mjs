@@ -1,7 +1,8 @@
 /** Raycast actual support meshes and construct world-space attachment frames.
  * Inject the scene's THREE namespace. Y-up/+Z-forward is the asset convention,
  * not a restriction on the support surface. Verified with Three r180.
- * This locates a point; it does not solve footprint support, collision or IK.
+ * Point sampling, finite patch qualification and attachment frames are separate
+ * operations. None establishes continuous footprint support, collision or IK.
  */
 export function createSurfaceSampler(THREE, objects) {
   const supports = Array.isArray(objects) ? objects : [objects];
@@ -54,6 +55,44 @@ export function surfaceFrame(THREE, hit, {
   const x = new THREE.Vector3().crossVectors(y, z).normalize();
   const point = hit.point.clone().addScaledVector(hit.normal.clone().normalize(), offset);
   return new THREE.Matrix4().makeBasis(x, y, z).setPosition(point);
+}
+
+/** Qualify supplied local XZ footprint samples against a finite world-space patch.
+ * All lengths/offsets are world units. The caller chooses the reference plane,
+ * sampling density and design limits; this neither fits nor deforms an asset.
+ * The frame's +Y follows the chosen normal. Give the body its own growth/mounting
+ * frame when that differs. First exposed hits are used, including instance normals.
+ */
+export function createSurfacePatchSampler(THREE, objects) {
+  const hosts = Array.isArray(objects) ? objects : [objects];
+  if (!hosts.length || hosts.some(o => !o?.isObject3D)) throw new Error('Actual host objects required');
+  const sample = createSurfaceSampler(THREE, hosts);
+  const finiteVector = v => !!v?.isVector3 && v.toArray().every(Number.isFinite);
+  return function patch({origin, normal, footprint, above, below, maxOffset, maxNormalAngleDeg, forward = new THREE.Vector3(0,0,1)}) {
+    if (!finiteVector(origin) || !finiteVector(normal) || normal.lengthSq() === 0 || !finiteVector(forward) || forward.lengthSq() === 0) throw new Error('Finite origin, nonzero normal and forward required');
+    if (![above,below,maxOffset,maxNormalAngleDeg].every(Number.isFinite) || above <= 0 || below <= 0 || maxOffset < 0 || maxNormalAngleDeg < 0 || maxNormalAngleDeg >= 90) throw new Error('Explicit finite patch limits required');
+    if (!Array.isArray(footprint) || !footprint.length || footprint.some(p => !Array.isArray(p) || p.length !== 2 || !p.every(Number.isFinite))) throw new Error('Finite local XZ footprint samples required');
+    const n = normal.clone().normalize(), matrix = surfaceFrame(THREE, {point:origin, normal:n}, {forward});
+    const tangent = new THREE.Vector3().setFromMatrixColumn(matrix,0), bitangent = new THREE.Vector3().setFromMatrixColumn(matrix,2);
+    const frame = {matrix, origin:origin.clone(), normal:n, tangent, bitangent}, contacts = [];
+    const direction = n.clone().negate(), minDot = Math.cos(THREE.MathUtils.degToRad(maxNormalAngleDeg));
+    let maxAbsOffset = 0, maxNormalDeviationDeg = 0;
+    const finish = (status, reason) => ({status, reason, contacts, maxAbsOffset, maxNormalDeviationDeg, frame,
+      scope:'Supplied finite footprint samples only; not continuous support, allowed-region, clearance, deformation or visual acceptance.'});
+    for (const [x,z] of footprint) {
+      const expected = origin.clone().addScaledVector(tangent,x).addScaledVector(bitangent,z);
+      const hit = sample(expected.clone().addScaledVector(n,above), direction, {near:0, far:above+below});
+      if (!hit) return finish('REJECT','missing-footprint');
+      const dot = THREE.MathUtils.clamp(hit.normal.dot(n),-1,1), normalOffset = hit.point.clone().sub(expected).dot(n);
+      const angle = THREE.MathUtils.radToDeg(Math.acos(dot));
+      contacts.push({...hit, offsetXZ:[x,z], normalOffset});
+      maxAbsOffset = Math.max(maxAbsOffset,Math.abs(normalOffset));
+      maxNormalDeviationDeg = Math.max(maxNormalDeviationDeg,angle);
+      if (dot < minDot) return finish('REJECT','normal-mismatch');
+      if (Math.abs(normalOffset) > maxOffset) return finish('REJECT','excess-offset');
+    }
+    return finish('ACCEPT','qualified-local-footprint');
+  };
 }
 
 /** Y-up bearing construction from actual lower and upper meshes.

@@ -4,7 +4,7 @@
 
 ## 远端同步
 
-- 发布仓库：https://github.com/keycasiter/threejs-anime-short，分支`main`。
+- 发布仓库：https://github.com/keycasiter/threejs-anime-short。`master`保存当前优化基线；原`main`历史保留。实验方向在独立`codex/`分支维护，未明确要求合并时不把实验分支覆盖到基线。
 - 维护者已要求：此工作副本的后续skill更新均在校验后同步远端；同一已授权会话不重复请求提交/推送确认。其他用户或无发布授权的环境只生成变更，不凭本文件获得其账户或仓库写入权限。
 - 改动前核对本地安装与仓库状态，fetch远端；只合入本次skill内容，保留其他改动。新提交并正常push，不使用force覆盖未知历史。
 - 推送前校验skill、内部链接和相应脚本；推送后回读远端提交，确认与本地一致。失败时说明“本地已更新、远端未同步”及阻塞原因，不以commit成功代替上传。
