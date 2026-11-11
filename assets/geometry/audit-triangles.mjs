@@ -1,11 +1,16 @@
 /** Inspect emitted local-space triangle data before refining or distributing a generator.
  * expectedDirection is valid only when every inspected face has that intended facing
  * (for example, +Y for a single-valued heightfield). Split caps/walls into separate
- * audits. This does not certify watertightness, self-intersection or visual quality.
+ * audits. For a curved/deformed patch, expectedDirections supplies one xyz reference
+ * per vertex in emitted space. Derive it independently from the face winding/normals,
+ * e.g. a mapped inner-to-outer thickness displacement. Audit only applicable faces.
+ * Neither mode certifies watertightness, self-intersection or visual quality.
  */
-export function auditTriangles({ positions, indices = null, expectedDirection = null, relativeAreaTolerance = 1e-10 }) {
+export function auditTriangles({ positions, indices = null, expectedDirection = null, expectedDirections = null, relativeAreaTolerance = 1e-10 }) {
   if (!positions || positions.length % 3 || (indices && indices.length % 3)) throw new Error('Triangle arrays require complete xyz vertices and index triplets');
   if (!Number.isFinite(relativeAreaTolerance) || relativeAreaTolerance < 0) throw new Error('relativeAreaTolerance must be finite and nonnegative');
+  if (expectedDirections !== null && expectedDirection !== null) throw new Error('Choose a global direction or per-vertex expectedDirections');
+  if (expectedDirections !== null && expectedDirections.length !== positions.length) throw new Error('expectedDirections must contain one xyz vector per vertex');
   let direction = null;
   if (expectedDirection) {
     const length = Math.hypot(...expectedDirection);
@@ -26,9 +31,22 @@ export function auditTriangles({ positions, indices = null, expectedDirection = 
     const length = Math.hypot(...n);
     const maxEdgeSquared = Math.max(u.reduce((sum, value) => sum + value * value, 0), v.reduce((sum, value) => sum + value * value, 0), c.reduce((sum, value, axis) => sum + (value - b[axis]) ** 2, 0));
     if (length <= relativeAreaTolerance * maxEdgeSquared) { result.degenerate++; continue; }
+    let faceDirection = direction;
+    if (expectedDirections !== null) {
+      const sum = [0, 0, 0];
+      for (const id of ids) {
+        const ref = Array.from(expectedDirections.slice(id * 3, id * 3 + 3));
+        const refLength = Math.hypot(...ref);
+        if (!Number.isFinite(refLength) || refLength === 0) throw new Error('Referenced expectedDirections must be finite nonzero vectors');
+        ref.forEach((value, axis) => { sum[axis] += value; });
+      }
+      const refLength = Math.hypot(...sum);
+      if (!Number.isFinite(refLength) || refLength === 0) throw new Error('Triangle reference directions cancel; refine or reconsider this patch');
+      faceDirection = sum.map(value => value / refLength);
+    }
     result.valid++;
-    if (direction) {
-      const dot = n.reduce((sum, value, axis) => sum + value / length * direction[axis], 0);
+    if (faceDirection) {
+      const dot = n.reduce((sum, value, axis) => sum + value / length * faceDirection[axis], 0);
       if (dot > 1e-8) result.aligned++;
       else if (dot < -1e-8) result.opposed++;
       else result.tangent++;
