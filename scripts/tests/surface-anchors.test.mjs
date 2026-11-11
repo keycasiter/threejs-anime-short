@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
-import {createSurfaceSampler, surfaceFrame} from '../../assets/scene/surface-anchors.mjs';
+import {createSurfaceSampler, surfaceFrame, createVerticalBearingSampler} from '../../assets/scene/surface-anchors.mjs';
 const THREE = process.env.THREE_MODULE ? await import(pathToFileURL(resolve(process.env.THREE_MODULE)).href) : await import('three');
 const v = (...a) => new THREE.Vector3(...a);
 const close = (a,b,e=1e-6) => assert.ok(a.distanceTo(b)<e, `${a.toArray()} ≈ ${b.toArray()}`);
@@ -61,4 +61,27 @@ test('parallel forward stays finite/right-handed and invalid rays are rejected',
   const sample=createSurfaceSampler(THREE,mesh());
   assert.throws(()=>sample(v(),v()),/nonzero/);
   assert.throws(()=>sample(v(),v(0,0,1),{near:3,far:2}),/interval/);
+});
+
+const boxAt = (y) => { const m=new THREE.Mesh(new THREE.BoxGeometry(4,1,4),new THREE.MeshBasicMaterial());m.position.y=y;return m; };
+test('bearing spans emitted upper underside and lower top, with explicit embed/inset',()=>{
+  const lower=boxAt(1),upper=boxAt(5),sample=createVerticalBearingSampler(THREE,lower,upper);
+  const span=sample({x:0,z:0,minY:-10,maxY:10,embed:.2,headInset:.05,minClearance:1});
+  assert.ok(Math.abs(span.bottomY-1.3)<1e-6);assert.ok(Math.abs(span.topY-4.55)<1e-6);
+  upper.position.y=6;assert.ok(Math.abs(sample({x:0,z:0,minY:-10,maxY:10}).topY-5.5)<1e-6);
+});
+test('bearing rejects overlapping hosts instead of clamping to a small support',()=>{
+  const sample=createVerticalBearingSampler(THREE,boxAt(5),boxAt(2));
+  assert.throws(()=>sample({x:0,z:0,minY:-10,maxY:10}),/overlap/);
+});
+test('bearing footprint checks both hosts and rejects a missing underside',()=>{
+  const lower=boxAt(1),upper=boxAt(5),sample=createVerticalBearingSampler(THREE,lower,upper);
+  assert.throws(()=>sample({x:0,z:0,minY:-10,maxY:10,upperOffsets:[[0,0],[3,0]]}),/missed/);
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(4,4),new THREE.MeshBasicMaterial());plane.rotation.x=-Math.PI/2;plane.position.y=5;
+  assert.throws(()=>createVerticalBearingSampler(THREE,lower,plane)({x:0,z:0,minY:-10,maxY:10}),/missed/);
+});
+test('bearing refuses invalid ranges and empty footprints',()=>{
+  const sample=createVerticalBearingSampler(THREE,boxAt(1),boxAt(5));
+  assert.throws(()=>sample({x:0,z:0,minY:5,maxY:5}),/range/);
+  assert.throws(()=>sample({x:0,z:0,minY:-10,maxY:10,lowerOffsets:[]}),/footprint/);
 });

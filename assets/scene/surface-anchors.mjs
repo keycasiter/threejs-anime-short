@@ -55,3 +55,31 @@ export function surfaceFrame(THREE, hit, {
   const point = hit.point.clone().addScaledVector(hit.normal.clone().normalize(), offset);
   return new THREE.Matrix4().makeBasis(x, y, z).setPosition(point);
 }
+
+/** Y-up bearing construction from actual lower and upper meshes.
+ * Supply both footprint offset sets; center-only defaults locate a span, not an
+ * area bearing. Missing rays and overlapping hosts are errors, never short piles.
+ * Explicit embed/inset describe intentional penetrations; verify emitted support
+ * faces independently afterward. Nonvertical joints use surfaceFrame instead.
+ */
+export function createVerticalBearingSampler(THREE, lowerObjects, upperObjects) {
+  const lowerSample = createSurfaceSampler(THREE, lowerObjects);
+  const upperSample = createSurfaceSampler(THREE, upperObjects);
+  return function bearing({ x, z, minY, maxY, lowerOffsets = [[0, 0]], upperOffsets = [[0, 0]], embed = 0, headInset = 0, minClearance = 0 }) {
+    if (![x,z,minY,maxY,embed,headInset,minClearance].every(Number.isFinite) || maxY <= minY || Math.min(embed,headInset,minClearance) < 0) throw new Error('Invalid bearing range or offsets');
+    function cast(offsets, sampler, y, direction) {
+      if (!Array.isArray(offsets) || !offsets.length || offsets.some(v => !Array.isArray(v) || v.length !== 2 || !v.every(Number.isFinite))) throw new Error('Bearing footprint requires finite xz offsets');
+      return offsets.map(([dx,dz]) => {
+        const hit = sampler(new THREE.Vector3(x+dx,y,z+dz), direction, { far: maxY-minY });
+        if (!hit) throw new Error('Bearing footprint missed a host surface');
+        return hit.point.y;
+      });
+    }
+    const lower = cast(lowerOffsets, lowerSample, maxY, new THREE.Vector3(0,-1,0));
+    const upper = cast(upperOffsets, upperSample, minY, new THREE.Vector3(0,1,0));
+    const clearance = Math.min(...upper)-Math.max(...lower);
+    if (clearance <= 0 || clearance < minClearance) throw new Error('Bearing hosts overlap or have insufficient clearance');
+    const bottomY = Math.min(...lower)-embed, topY = Math.max(...upper)+headInset;
+    return { bottomY, topY, height: topY-bottomY, centerY: (topY+bottomY)/2, clearance, lowerRangeY: [Math.min(...lower),Math.max(...lower)], upperRangeY: [Math.min(...upper),Math.max(...upper)] };
+  };
+}
