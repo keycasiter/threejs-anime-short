@@ -87,6 +87,8 @@ const material = new THREE.MeshStandardMaterial({
 | 数据存储 | 两图均RGBA8、NoColorSpace、flipY=false，首行是低v；roughness只写G。RGB8法线有量化，平坦XY为128，存在很小的不可避免偏斜 |
 | 边界/过滤 | clamp边缘用单边差分，repeat用周期邻居且要求输入真正周期；默认生成mipmap并使用线性缩小过滤，不补偿微法线方差到粗糙度 |
 
+仅在需要属性等价焊接、角度法线或匹配烘焙器的 Mikk 切线时，使用[按需几何后处理](geometry-postprocess.md)；先保留原有解析法线与接缝，并按对象归属、完整 drawRange 和切线约定逐项检查。
+
 UV度量沿面变化时，先分区/参数化并提供正确切线框架；或采用[三维局部场与表面梯度](effect-recipes.md#表面位移与受光法线)的着色路线。一个平均tile尺寸不能保证整张曲面具有精确物理高度。
 
 不要再把同一个高度同时挂到bumpMap叠算。只有数据通道确实需要颜色含义时才解码sRGB；normal、roughness、mask保持数据语义。Canvas绘制的颜色图可单独生成并标sRGB，概念参考图仍不进入纹理。
