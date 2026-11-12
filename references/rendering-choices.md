@@ -59,6 +59,8 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 
 场景中的可见主光、投影主灯、IBL及水/雾等方向性响应由同一个环境意图派生；区分世界方向向量与灯的位置/target，附加补光明确其用途。局部捕获的far与图层需覆盖预期环境，捕获内容按下表记录。用真实曲面看宽窄反射带与接触暗部，再决定粗糙度和曝光，不能用总亮度替代体积塑造。
 
+方向光阴影先按实际收影区域配置正交shadow camera。世界阴影texel大小近似为`(right-left)/mapSize.x`及`(top-bottom)/mapSize.y`；覆盖过大时即使影图不小也会粗糙。先收紧到当前需要的区域、检查near/far包含投影者与接收者，再按预算提高mapSize。bias/normalBias处理数值自遮挡，过大会脱离接触，不能用来掩盖几何间隙；光照/阴影算法决定radius等参数是否有效。固定几何、灯与曝光单项比较，完成后回看接触与侧背。
+
 程序几何、实例、动画及资源生命周期见[motion-and-scale.md](motion-and-scale.md)。本分支不加载预制模型；程序纹理/环境按实际数据语义生成。复用的算法代码与字体等依赖保留各自许可。
 
 ### 从画面任务分配灯光角色
@@ -83,7 +85,7 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 | 目标响应 | 生成与接入方法 | 有区分力的局部检查 |
 |---|---|---|
 | 凹凸、颗粒与折转受光 | 轮廓/厚度/大褶皱进几何；微高度求normal/bump，粗糙区进roughness；颜色独立。字段烘焙见[表面方法](surface-detail.md) | 固定几何、机位与光，按问题关闭一种通道；颜色有斑而受光不变时先查消费者/方向/尺度，不先加噪声 |
-| 薄层透见、遮罩和体积透射 | 按目标选alpha混合、裁切/抖动覆盖或transmission；明确深度写入、排序和需要的捕获/厚度。alpha进入混合需对应透明路径，shader输出alpha本身不充分 | 在带前后遮挡物的实际样件看前/后和掠视，核对本项目版本的[Material状态](https://threejs.org/docs/pages/Material.html)；不能一律关闭depthWrite或把所有玻璃改transmission |
+| 薄层透见、遮罩和体积透射 | 按目标选alpha混合、裁切/抖动覆盖或transmission；明确深度写入、排序和需要的捕获/厚度。alpha进入混合需对应透明路径，shader输出alpha本身不充分 | 在带前后遮挡物的实际样件看前/后和掠视，核对本项目版本的Material状态；不能一律关闭depthWrite或把所有玻璃改transmission |
 | 金属/涂层/湿面的反射内容 | 主辅光与环境亮暗带共同设计；列清IBL/局部捕获实际包含什么，按需要选择天空、布光环境或场景捕获 | 实际曲面与最终环境中看反射带是否揭示中层；PMREM对传入环境预过滤，不会自动把未捕获的场景加入反射 |
 | 连续介质及触发反馈 | 来源、沿程包络/截面、局部破裂/覆盖、接触足迹和强度从共享场/锚点派生；实体/薄层/碎屑/雾各用合适表示 | 静帧看外形与厚度，连续片段看来源到接触反馈；颜色滚动、独立圆环或粒子数量不能证明流动形态和反馈关系成立 |
 
@@ -97,7 +99,7 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 
 ### 薄层与透射先选一种表示
 
-先依据目标选择：alpha混合适合受控薄层叠加；需要透射及保留反射响应时使用支持该路径的Physical材质。以本页核对的r180为例，`MeshPhysicalMaterial`启用非零`transmission`时保持`opacity: 1`，不要把它同时当作另一个透射强度旋钮；当前[官方材质说明](https://threejs.org/docs/pages/MeshPhysicalMaterial.html#transmission)亦有该约定。
+先依据目标选择：alpha混合适合受控薄层叠加；需要透射及保留反射响应时使用支持该路径的Physical材质。以本页核对的r180为例，`MeshPhysicalMaterial`启用非零`transmission`时保持`opacity: 1`，不要把它同时当作另一个透射强度旋钮；当前官方材质说明亦有该约定。
 
 ```js
 // 薄玻璃的起点，非通用成品参数；由实际厚度、反射和遮挡继续校准。

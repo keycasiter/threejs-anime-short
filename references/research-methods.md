@@ -17,14 +17,14 @@
 
 ## 按当前缺口查教程与示例
 
-需要补足实现方法时，从当前可见问题选一条学习路径；不通读全站，也不把示例集合当制作质量标准。下列站点正文用于定位机制，API与行为再核对项目安装包及其官方实现。
+需要补足实现方法时，先从当前可见问题读对应本地步骤；只有现有内容不能回答的具体未知才查外部实现。来源链接统一在[出处](source-notes.md)，API与行为按项目锁定安装包核对。
 
-| 当前缺口 | 可定位的机制来源 | 回到当前作品必须设计的内容 |
+| 当前缺口 | 本地实现指导 | 回到当前作品必须设计的内容 |
 |---|---|---|
-| 曲面、管线或型材轮廓 | [样条控制点](https://www.webgl3d.cn/pages/717f0f/)、[截面沿路径扫描](https://www.webgl3d.cn/pages/a06aed/) | 截面/路径/厚度、连续性和端口；映射到[代码SOP](geometry-recipes.md)与适用的[截面模块](profile-geometry.md)，不能把绘线当实体 |
-| 表面方向、塑料感与反射不分材质 | [UV](https://www.webgl3d.cn/pages/71e307/)、[PBR](https://www.webgl3d.cn/pages/ca9079/)、[环境反射](https://www.webgl3d.cn/pages/780376/) | [形成规律、尺度与数据通道](surface-detail.md)，以及[实际颜色/光照消费者](rendering-choices.md)；示例默认参数不作为设计值 |
-| 指向/选中不符合观看意图 | [Raycaster](https://www.webgl3d.cn/pages/a448b6/)、[场景层级拾取](https://www.webgl3d.cn/pages/dd2774/) | canvas坐标、实际命中对象到语义实体的映射、遮挡/触控与相机写入权；真实操作验证而非仅改相机坐标 |
-| 细节增加后卡顿或纹理成本过高 | [Mesh数量](https://www.webgl3d.cn/pages/6f7d51/)、[纹理像素规模](https://www.webgl3d.cn/pages/d5e3f0/) | 当前目标机位的占像素、draw calls/显存/捕获时间；选择复用、实例、LOD或纹理尺寸，保留核心轮廓和材料区别；不统一减细分 |
+| 曲面、管线或型材轮廓 | [扫掠/局部架代码](geometry-recipes.md#通用沿路径构造可变截面)、[可调用loft](algorithm-recipes.md#随包工具宽深独立的沿程放样) | 截面/路径/厚度、连续性和端口；不能把绘线当实体 |
+| 表面方向、塑料感与反射不分材质 | [UV/通道/梯度](surface-detail.md)、[材光与反射](rendering-choices.md) | 形成规律、米制尺度、实际颜色/光照消费者；参数不照抄教程 |
+| 指向/选中不符合观看意图 | [指针到语义对象](camera-interaction.md#从屏幕指针到语义对象) | canvas坐标、实际命中到语义实体、遮挡/触控与相机写入权 |
+| 细节增加后卡顿或纹理成本过高 | [资源与规模](motion-and-scale.md)、[表面采样](surface-detail.md) | 当前机位像素、draw calls/显存/捕获成本；保留核心轮廓和材料区别 |
 
 示例HTML可能通过import map和运行时拼接寻找依赖，沿调用处到实际URL核对。镜像文档、示例与正文可能来自不同Three版本，不能拼装为一套当前工程。
 
@@ -102,4 +102,4 @@
 
 ## 已核对的实现线索
 
-[Saltline固定源码](https://github.com/realcodebear/saltline-fable-5.2/blob/09c51774cd77aad750bd2d6c42af2b1020cb668d/index.html)可研究工厂、动静分离、程序表面与世界字段消费者；[Claude of Duty上游建筑](https://github.com/mshumer/Claude-of-Duty/blob/main/src/world/buildings.js)与[构造kit](https://github.com/mshumer/Claude-of-Duty/blob/main/src/world/kit.js)可研究真实洞口、壁厚和开间语法。上游与线上部署是否一致分别核对，不由最终作品推断作者提示词、一次生成成功率或行业排名。迁移机制，具体题材、布局和参数重新设计；保留实际复用代码的许可。
+Saltline固定源码可研究工厂、动静分离、程序表面与世界字段消费者；Claude of Duty上游建筑与构造kit可研究真实洞口、壁厚和开间语法。上游与线上部署是否一致分别核对，不由最终作品推断作者提示词、一次生成成功率或行业排名。迁移机制，具体题材、布局和参数重新设计；保留实际复用代码的许可。

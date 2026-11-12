@@ -50,7 +50,7 @@
 
 ## 工作台接线
 
-已有[场景工作台](production-toolkit.md#天气共享场与工作台)负责相机、时间与效果快照。结构参数可用原生表单，或按已安装版本使用[lil-gui](https://github.com/georgealways/lil-gui)/[Tweakpane](https://github.com/cocopon/tweakpane)。不要同时增加两套面板；诊断UI可折叠/隐藏，最终产品只保留对用户有意义的控件。
+已有[场景工作台](production-toolkit.md#天气共享场与工作台)负责相机、时间与效果快照。结构参数优先按下例用原生表单；若工程已有lil-gui，可用`gui.add(design,key,min,max,step).onChange(updateUniform)`处理轻量变化，昂贵重建用`.onFinishChange(rebuild)`，`save()/load()`只保存/恢复输入，仍需实际消费者回调。Tweakpane是同类替代，v4为ESM，按已安装API绑定值与监测。保留一套面板；诊断UI可折叠/隐藏，最终产品只保留对用户有意义的控件。
 
 下面是不依赖GUI库的真实DOM接线：`THREE`与`scene`由项目提供，材料由调用者所有，先导入随包loft模块。例子只调一个中段全宽，端点不动。
 

@@ -154,7 +154,7 @@ function facingSide(asset, frontLocal, anchorLocal, camera) {
 }
 ```
 
-`frontLocal`为非零法线，相机与锚点重合返回`null`；正值不保证内容在画内或未被遮挡。用[锚点投影](scene-layout.md#把实际世界锚点投影到视口)判断取景；有必要时用第一遮挡射线定位自身背板、外壳和场景遮挡，再审实际画面。实例/骨骼/shader形变使用最终实例/变形锚点；中心射线不等于整面可见率。此片段适用可逆仿射Object3D变换，法线按[逆转置矩阵](https://threejs.org/docs/pages/Matrix3.html#method:getNormalMatrix)变换，不能只把局部向量当世界方向。
+`frontLocal`为非零法线，相机与锚点重合返回`null`；正值不保证内容在画内或未被遮挡。用[锚点投影](scene-layout.md#把实际世界锚点投影到视口)判断取景；有必要时用第一遮挡射线定位自身背板、外壳和场景遮挡，再审实际画面。实例/骨骼/shader形变使用最终实例/变形锚点；中心射线不等于整面可见率。此片段适用可逆仿射Object3D变换，法线按逆转置矩阵变换，不能只把局部向量当世界方向。
 
 ## 用截面生成连续曲面
 

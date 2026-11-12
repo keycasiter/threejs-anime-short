@@ -2,6 +2,29 @@
 
 交互3D默认完整水平环绕、合理俯仰、缩放与复位；导演影片只覆盖约定视锥/运镜。模式并存时分开保存相机，场景时钟不能覆盖用户视角。固定点全景与绕物三维分别交付。
 
+## 从屏幕指针到语义对象
+
+指针先从页面坐标减去canvas实际CSS矩形，再归一成NDC；不是除以整个窗口，也不乘DPR。以下使用当前Three、真实相机和要参与遮挡/拾取的roots；它读取最近命中，沿父链寻找`userData.entityId`。未标记的最近实体作为遮挡，不透过它选后方物体。
+
+```js
+function pickEntity(event,canvas,camera,roots){
+  const rect=canvas.getBoundingClientRect();if(rect.width<=0||rect.height<=0)return null;
+  const x=(event.clientX-rect.left)/rect.width,y=(event.clientY-rect.top)/rect.height;
+  if(x<0||x>1||y<0||y>1)return null;
+  camera.updateWorldMatrix(true,false);for(const root of roots)root.updateWorldMatrix(true,true);
+  const ray=new THREE.Raycaster();ray.layers.mask=camera.layers.mask;ray.setFromCamera(new THREE.Vector2(x*2-1,1-y*2),camera);
+  const hit=ray.intersectObjects(roots,true).find(h=>{
+    for(let o=h.object;o;o=o.parent)if(!o.visible)return false;
+    const m=Array.isArray(h.object.material)?h.object.material[h.face?.materialIndex??0]:h.object.material;
+    return m?.visible!==false;
+  });if(!hit)return null;
+  for(let o=hit.object;o;o=o.parent)if(o.userData.entityId!==undefined)return {entityId:o.userData.entityId,entity:o,hit};
+  return null;
+}
+```
+
+将地面/道具等实际遮挡物纳入roots；需要选择穿透时显式设计另一种模式。复杂透明、alpha裁边、实例、蒙皮和shader形变需匹配实际可见/交互语义：CPU三角形命中不自动知道shader裁掉的像素，instanceId也需映射到稳定实体。拖动Orbit与点击选择使用明确阈值或指针状态区分，避免拖完即误选。
+
 ## 空间草案时确定包络
 
 定义target、方位、俯仰、距离、FOV与near/far。全场围绕这个实际可达域建设承托、侧背、远景与天空；把8个水平代表方向各自需要读出的主体关系、环境层次及允许遮挡写入布局。每角度可以看同一主体，但不能只剩无信息背墙、黑幕或场地外壳。

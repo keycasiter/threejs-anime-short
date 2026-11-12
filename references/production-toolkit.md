@@ -130,4 +130,4 @@ bench.restore(shot); // 相机/target/效果恢复，时间冻结
 
 现有配方、雨场、镜像与诊断场景各自只覆盖表中范围。新题材按自身形态、空间和光照目标选择；复杂有机网格、粗糙湿地反射、体积光和全场天气需要另行实现并实际验证。参考学习见[研究方法](research-methods.md)。
 
-官方算法边界可核对：[Reflector](https://github.com/mrdoob/three.js/blob/r180/examples/jsm/objects/Reflector.js)、[OutputPass](https://github.com/mrdoob/three.js/blob/r180/examples/jsm/postprocessing/OutputPass.js)、[PMREMGenerator](https://github.com/mrdoob/three.js/blob/r180/src/extras/PMREMGenerator.js)。
+官方算法边界可核对：Reflector、OutputPass、PMREMGenerator。
