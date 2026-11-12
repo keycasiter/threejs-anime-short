@@ -20,7 +20,7 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 继承用户已选方向与约束。短需求由Agent补成具体设计，不把缺少长提示词当成省略环境、结构和细节的理由。自由交互场景默认水平360°环绕、合理俯仰、缩放与复位；影片使用导演相机，两者并存时分别管理状态。
 
-选生成器、接模块或实现结构重建时，先读[实现基础](references/implementation-foundations.md)：按轮廓/孔腔/连接/动作选择可表达目标的表示，明确局部与世界数据、更新依赖和资源所有者。其[运行例](assets/examples/foundation-lab/index.html)连接真实网格/表面/附件与失败回退；已有工具和待开发能力分开选择。
+选生成器、接模块或实现结构重建时，先读[实现基础](references/implementation-foundations.md)：按轮廓/孔腔/连接/动作选择可表达目标的表示，明确局部与世界数据、更新依赖和资源所有者。其[运行例](assets/examples/foundation-lab/index.html)连接真实网格/表面/附件与失败回退；已有工具和待开发能力分开选择。 涉及方向/坐标运算、扇区、静态面积、路径距离或旋转顺序时，读[空间操作](references/spatial-operations.md)的完整本地ESM，先核对度量空间和副作用。
 
 制作任意截面/闭合凸边界口沿/曲壳/融合体、分层区域或统一PBR/分段受光时，读[核心三线接力](references/core-systems.md)，按视觉标尺进入对应真实生成器，并在[完整空间入口](assets/examples/core-lab/index.html)核对几何—世界—材光的消费链；原例的布局/数值只作方法演示。
 

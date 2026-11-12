@@ -47,6 +47,8 @@
 
 几何局部点进入世界用`root.localToWorld`/`matrixWorld`，法线用normal matrix；世界框架进入parent用`inverse(parent.matrixWorld)*frame`。`createSurfaceSampler`查询实际Mesh并返回世界点/法线。根缩放不充当生成尺寸参数；现端口工具只接受单位刚性变换。
 
+需要父/局部/世界位移、前后或XZ扇区、静态三角面积、直线/线段距离或旋转乘序时，读[条件空间运算](spatial-operations.md)，先确定坐标、退化输入与测量副作用边界。
+
 **材质需要跟随部件的坐标时，在摆放/合批前捕获。**按[形成坐标接力](formation-coordinates.md)选择部件自身、资产共同架或世界场；前两者通过显式`aFormationPosition`交给装配器的`invariantAttributes`，与真实索引同序展开，摆放矩阵只变换位置/法线。合批后再读单一modelMatrix无法恢复源部件架。保持原坐标、材料语义区和资源所有者三条信息；它们互不替代。需要让内置材质读取字段时，接[材质扩展桥](material-shader-bridge.md)，验证真实GPU消费后再设计材料形成场。
 
 承托和连接按真实轮廓检查：中心线落在底座上不能证明整个截面落在底座上；转折、倾斜、厚度和端盖共同决定接口包络。样例为水平承托约束底部路径切向，再用实际顶点和射线验证；不要求所有对象底部都沿同一方向。
