@@ -25,6 +25,9 @@
 | 静件分桶、动件层级与端口连接 | [asset-assembly](../assets/scene/asset-assembly.mjs)、[placeAtAnchor](../assets/scene/anchor-connection.mjs) | 前者合并适用静件；后者对齐真实局部端口，要求单位刚性变换与世界矩阵自动更新；均不自动检查支撑/美观 |
 | 宿主命中、局部朝向与有限足迹 | [surface-anchors](../assets/scene/surface-anchors.mjs)：`createSurfaceSampler`/`surfaceFrame`/`createSurfacePatchSampler` | 前者求实际点/法线和实例框架，后者资格检查离散足迹并返回ACCEPT/REJECT；不自动生成基部或求碰撞/IK |
 | 两侧宿主间的竖直承托 | 同模块`createVerticalBearingSampler(T,lower,upper)` | 给x/z、minY/maxY、上下XZ足迹偏移，有限射线输出bottomY/topY/clearance等；漏点/交叠失败，不是任意斜向接头生成器 |
+| 宽深/偏心/滚转独立的连续主形 | [section-loft](../assets/geometry/section-loft.mjs)：`createSectionLoftGeometry(T,{stations,...})`，用法见[放样配方](algorithm-recipes.md#随包工具宽深独立的沿程放样) | 椭圆环/传输架、实际端盖、米制UV/接缝法线；不含分枝、内壁、任意截面或防自交 |
+| 已设计连接图与沿边地块 | [corridor-layout](../assets/scene/corridor-layout.mjs)：`compileCorridorGraph`/`generateFrontageLots`，见[世界配方](algorithm-recipes.md#世界连接图与局部语法) | 真实宽度矩形、节点/分量与接受地块；道路厚度、地形基础/门口和任意路口需项目构造，不是自动城市 |
+| 连续高度与共享世界梯度 | [height-field](../assets/environment/height-field.mjs)：`createFractalHeightField`/`createHeightFieldGeometry`，见[场配方](algorithm-recipes.md#地形水系与侵蚀) | 原创value-noise fBm、归一振幅、解析导数和单值上表面；非侵蚀/完整地貌，接触用最终三角网格 |
 | 发出网格的无效/退化/朝向检查 | [auditTriangles](../assets/geometry/audit-triangles.mjs)，调用见[几何配方](geometry-recipes.md) | 独立方向或逐顶点参考；不检查全部自交、水密、曲率或构图 |
 
 ## 最短可执行入口
@@ -36,6 +39,8 @@
 3. 先保留一个有结构、邻接表面和真实受光的代表区域；用工作台固定时间和机位，再调结构、UV/法线度量、表面区域、受光与反射，最后决定AO/Bloom。
 
 这是机制诊断例。其亭架、样片、镜面和雨天不是新作品的场景或风格模板。
+
+另有[算法诊断样件](../assets/examples/algorithm-lab/index.html)及[源码](../assets/examples/algorithm-lab/main.mjs)：三种模式分别运行连接图/沿边地块、变截面与共享高度/梯度，面板改值真正重建几何/摆放，保留完整环绕/缩放/复位。Three包同样复制到该例`vendor/`。它使用代理体检查生成机制，不是成品美术模板或最终画质评测。
 
 ## 程序表面：同源通道、实际尺度和复用
 

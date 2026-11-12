@@ -25,14 +25,16 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 | 当前工作 | 方法 | 可执行能力 |
 |---|---|---|
 | 参考、宏微观拆解、短需求到规格 | [视觉设计](references/visual-design.md) | 总图/剖面、对象族、特征到构造与目标视图 |
-| 构图、白模、完整世界与多尺度 | [空间搭建](references/scene-layout.md) | 共享布局/表面、投影诊断、区域/关系、近中远规则 |
+| 构图、白模、完整世界与多尺度 | [空间搭建](references/scene-layout.md)；生成图/街区/房间时读[算法配方](references/algorithm-recipes.md#世界连接图与局部语法) | 共享布局/表面、可调用连接图/地块、区域与近中远规则 |
 | 主形、中层、厚度/开口、连接与资产工厂 | [构造方法](references/procedural-construction.md)；[几何配方](references/geometry-recipes.md) | [截面工具](references/profile-geometry.md)、[开间样件](assets/examples/procedural-bay.mjs)、端口/静态装配 |
 | 群体与具体资产细节 | [分布方法](references/detail-distribution.md)；[表面方法](references/surface-detail.md) | 原型/实例、实际宿主/完整足迹、区域与米制通道 |
 | 材光、反射、后期与自写效果 | [渲染选择](references/rendering-choices.md)；[效果配方](references/effect-recipes.md) | 自定义多遍时再读[渲染契约](references/render-contracts.md) |
 | 动作、资源、预算与交互 | [运行与规模](references/motion-and-scale.md)；[相机方法](references/camera-interaction.md) | 绝对时间/历史重建、真实接触、交互与观看范围 |
-| 复用现有模块或补算法 | [工具目录](references/production-toolkit.md)；[条件库接线](references/library-integration.md) | 真实API、调用示例、所有权、适用条件和未提供的能力 |
+| 复用现有模块或补算法 | [工具目录](references/production-toolkit.md)；[算法配方](references/algorithm-recipes.md)；[条件库接线](references/library-integration.md) | 随包实现与需适配方法分明，按结构、场、运动与规模选择 |
 | 最终检查与交付 | [统一验收](references/validation.md)；影片再读[导出方法](references/video-export.md) | HTML依赖、真实操作、接触粗检、视频导出与独立后验 |
 
 按需读相关小节，已有工具先确认输入输出与版本，未实现的项目函数不当作现成API。品质依据是目标与当前真实画面：字段齐全、工具通过或参考好看均不等于作品达标。只交用户要求的阶段或成品；制作时使用简明brief、共享数据、源码和问题/验证记录。
+
+从参考特征进入生成器前，按[参数设计](references/parameter-design.md)给主轮廓、内部分段与连接独立控制量，明确单位、实际消费者及更新依赖。先选能够表达目标的表示，再调结构与形成规则；段数、噪声层数和实例数负责采样/规模，不能替代美术设计。
 
 修改或发布本Skill时读取[维护约定](AGENTS.md)。

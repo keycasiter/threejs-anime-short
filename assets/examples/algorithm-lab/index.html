@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>算法与参数诊断</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#e7e8e1;color:#24392e;font:14px system-ui}canvas{display:block}aside{position:fixed;top:24px;left:24px;width:290px;padding:22px;background:#f9faf4ed;border:1px solid #c4cebf;border-radius:4px}h1{font-size:23px;font-weight:500;margin:8px 0 16px}.eyebrow{font-size:10px;letter-spacing:2px}p{font-size:12px;line-height:1.7}select,input{width:100%;margin:10px 0 16px}button{padding:8px 12px;background:#294b3b;color:white;border:0;border-radius:3px;cursor:pointer}output{font-variant-numeric:tabular-nums}#stats{white-space:pre-line;font-size:11px;color:#45604d}footer{position:fixed;bottom:20px;right:24px;font-size:11px;letter-spacing:1px}@media(max-width:600px){aside{top:10px;left:10px;width:220px;padding:14px}p{font-size:11px}}
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/build/three.module.js","three/addons/":"./vendor/examples/jsm/"}}</script></head>
+<body><aside><span class="eyebrow">PROCEDURAL STUDIES / THREE.JS</span><h1>从参数到可见结构</h1>
+<label for="mode">机制</label><select id="mode"><option value="layout">连接图 → 路带与地块</option><option value="loft">截面站位 → 连续网格</option><option value="field">共享高度 → 法线与落位</option></select>
+<label for="parameter" id="parameter-label">主路宽度（米）</label><input id="parameter" type="range" min="2" max="8" step=".5" value="4"><output id="value">4</output>
+<p id="description"></p><p id="stats"></p><button id="reset">复位视角</button><p>机制诊断样件。盒体与标记是代理，不代表最终作品美术。</p></aside><footer>拖动环绕 · 滚轮缩放</footer><script type="module" src="./main.mjs"></script></body></html>
