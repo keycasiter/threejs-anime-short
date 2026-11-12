@@ -120,7 +120,28 @@ slot不支持异步builder、worker取消或全世界事务。异步构建需要
 
 ## 5 运行与检查
 
-复制所需`assets`保持相对路径；在[foundation-lab](../assets/examples/foundation-lab/index.html)的`vendor/`下提供同一个r180包的`build/`、`examples/jsm/`及许可证，用本地HTTP打开。入口包含renderer、布光、360°环绕/缩放/复位、两种表示、独立结构控制、材质控制、失败注入、重复重建与退出清理，不需要预制模型。
+复制所需`assets`保持相对路径；入口包含renderer、布光、360°环绕/缩放/复位、两种表示、独立结构控制、材质控制、失败注入、重复重建与退出清理，不需要预制模型。
+
+### 准备依赖并启动
+
+以下命令在独立项目根目录执行，`assets/`已从Skill复制；依赖统一锁定为Three `0.180.0`（r180）。已有项目先核对其锁文件，选择完整同版依赖，不能混用不同版本的build和addons。
+
+```sh
+npm install --save-exact three@0.180.0
+mkdir -p assets/examples/foundation-lab/vendor
+cp -R node_modules/three/build node_modules/three/examples node_modules/three/LICENSE assets/examples/foundation-lab/vendor/
+python3 -m http.server 8080 --bind 127.0.0.1
+```
+
+浏览器打开 `http://127.0.0.1:8080/assets/examples/foundation-lab/`。HTML的importmap与相对模块路径要求HTTP服务；不要直接双击`file://`入口。发布运行包时保留实际使用的同版模块及LICENSE，开发时复制的完整examples目录可按真实导入闭包裁减。
+
+需要复验随包行为测试时，同时复制`references/`与`scripts/tests/`，在相同项目根目录运行：
+
+```sh
+node --test scripts/tests/implementation-foundations.test.mjs scripts/tests/profile-relation.test.mjs
+```
+
+两组测试检查真实Three几何、端口和资源事件，并执行本页的ESM组合代码；不需要WebGL上下文。浏览器中的渲染、拖转和退出另按下表操作，Node通过不替代这些检查。
 
 | 检查 | 看实际消费者 |
 |---|---|
