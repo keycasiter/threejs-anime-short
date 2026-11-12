@@ -91,3 +91,90 @@ test('holes are bounded arrays, cannot touch outer rings, or overlap each other'
  const base={levels:[level('g',[],[])],regions:[]},reg={id:'r',level:'g',role:'buildable',outline:square(0,0,10,10)};
  for(const holes of [{},Array.from({length:33},()=>square(1,1,2,2)),[square(0,1,2,2)],[square(1,1,4,4),square(3,3,5,5)]])assert.throws(()=>compile({...base,regions:[{...reg,holes}]}));
 });
+
+
+// Removing open-end support must fail actual cap, port, snapshot and occupancy assertions.
+test('open ends suppress only selected degree-one disks and leave defaults round',()=>{
+ const base=level('g',[n('a',0,0),n('b',10,0)],[edge('ab','a','b',2)]);
+ const build=openEnds=>compile({levels:[openEnds===undefined?base:{...base,openEnds}],regions:[]});
+ const round=build(),empty=build([]),single=build(['b']),both=build(['b','a']);
+ const circleArea=12*Math.sin(Math.PI/12);
+ assert.deepEqual(empty.levels[0].surfaces,round.levels[0].surfaces);
+ assert.ok(Math.abs(surfaceArea(single.levels[0].surfaces)-(20+circleArea/2))<1e-7);
+ assert.ok(Math.abs(surfaceArea(both.levels[0].surfaces)-20)<1e-7);
+ assert.equal(inSurface([10.3,0],round.levels[0].surfaces),true);
+ assert.equal(inSurface([10.3,0],single.levels[0].surfaces),false);
+ assert.equal(inSurface([-.3,0],single.levels[0].surfaces),true,'unselected endpoint remains capped');
+ assert.deepEqual(both.levels[0].openEnds,['a','b']);
+ assert.deepEqual(round.ports,[]);
+});
+
+test('ports derive world coordinates, actual width and outward left/right independently of edge direction',()=>{
+ const base=level('deck',[n('a',1,2),n('b',7,10)],[edge('ab','a','b',6)],3);
+ const input={levels:[{...base,openEnds:['b','a']}],regions:[]},saved=JSON.stringify(input);
+ const world=compile(input),[a,b]=world.ports;
+ assert.equal(JSON.stringify(input),saved);
+ assert.deepEqual({...a,left:undefined,right:undefined},{id:JSON.stringify(['deck','a']),level:'deck',nodeId:'a',edgeId:'ab',center:[1,3,2],normal:[-.6,0,-.8],width:6,left:undefined,right:undefined});
+ for(const [got,want] of [[a.left,[-1.4,3,3.8]],[a.right,[3.4,3,.2]]])want.forEach((x,i)=>assert.ok(Math.abs(got[i]-x)<1e-12));
+ assert.equal(b.id,JSON.stringify(['deck','b']));assert.equal(b.level,'deck');assert.equal(b.nodeId,'b');assert.equal(b.edgeId,'ab');
+ assert.deepEqual(b.center,[7,3,10]);assert.deepEqual(b.normal,[.6,0,.8]);assert.equal(b.width,6);
+ for(const port of [a,b]){
+  assert.ok(Math.abs(Math.hypot(...port.normal)-1)<1e-12);
+  assert.ok([...port.center,...port.normal,...port.left,...port.right].every(Number.isFinite));
+  assert.ok(Math.abs(Math.hypot(...port.left.map((x,i)=>x-port.right[i]))-6)<1e-12);
+  const expected=[port.center[0]+port.normal[2]*3,3,port.center[2]-port.normal[0]*3];
+  expected.forEach((x,i)=>assert.ok(Math.abs(port.left[i]-x)<1e-12));
+  for(const endpoint of [port.left,port.right])assert.ok(world.levels[0].surfaces[0].outer.some(p=>Math.hypot(p[0]-endpoint[0],p[1]-endpoint[2])<1e-7),'port endpoint is a real surface vertex');
+ }
+ assert.deepEqual(world.levels[0].ports,world.ports);
+ const reversed=compile({levels:[{...base,nodes:[...base.nodes].reverse(),edges:[edge('ab','b','a',6)],openEnds:['a','b']}],regions:[]});
+ assert.deepEqual(reversed.ports,world.ports);
+ assert.deepEqual(world.snapshot.ports,world.ports);
+ assert.deepEqual(compile(world.snapshot).snapshot,world.snapshot);
+ assert.ok(Object.isFrozen(world.ports)&&Object.isFrozen(a)&&Object.isFrozen(a.center)&&Object.isFrozen(a.left)&&Object.isFrozen(world.snapshot.ports));
+ assert.throws(()=>{a.left[0]=99;},TypeError);
+ input.levels[0].openEnds.length=0;input.levels[0].nodes[0].x=999;
+ assert.deepEqual(world.levels[0].openEnds,['a','b']);assert.deepEqual(a.center,[1,3,2]);
+});
+
+test('footprint qualification uses the same open surface and exact end-face clearance',()=>{
+ const base=level('g',[n('a',0,0),n('b',10,0)],[edge('ab','a','b',2)]);
+ const regions=[{id:'yard',level:'g',role:'buildable',outline:square(-5,-5,15,5)}];
+ const round=compile({levels:[base],regions}),open=compile({levels:[{...base,openEnds:['b']}],regions});
+ const query={level:'g',polygon:square(10.2,-.2,10.4,.2)};
+ assert.equal(round.footprintAllowed(query),false);
+ assert.equal(open.footprintAllowed(query),true);
+ assert.equal(open.footprintAllowed({...query,clearance:.15}),true);
+ assert.equal(open.footprintAllowed({...query,clearance:.25}),false);
+ assert.equal(open.footprintAllowed({...query,polygon:square(10,-.2,10.4,.2)}),false,'touching the actual flat end is blocked');
+});
+
+test('openEnds rejects non-arrays, duplicate or unknown IDs, and every non-degree-one node',()=>{
+ const base=level('g',[n('a',0,0),n('b',10,0),n('c',20,0),n('isolated',0,10)],[edge('ab','a','b'),edge('bc','b','c')]);
+ for(const openEnds of [null,{},'a',1,new Array(1),['a','a'],['missing'],['b'],['isolated'],[null],[2],[{}]])assert.throws(()=>compile({levels:[{...base,openEnds}],regions:[]}),/openEnds/);
+});
+
+test('open endpoint union triangulates with real Three and ports are stable across levels',async()=>{
+ const a={...level('a',[n('s',0,0),n('e',10,0)],[edge('se','s','e',2)],2),openEnds:['s','e']};
+ const b={...level('b',[n('s',20,0),n('e',20,10)],[edge('se','s','e',4)],8),openEnds:['s','e']};
+ const links=[{id:'transfer',fromLevel:'a',fromNode:'e',toLevel:'b',toNode:'s',width:1}];
+ const world=compile({levels:[b,a],regions:[],links}),T=await import(pathToFileURL(process.env.THREE_MODULE));
+ assert.equal(new Set(world.ports.map(p=>p.id)).size,4);
+ assert.deepEqual(world.ports.map(p=>[p.level,p.nodeId]),[['a','e'],['a','s'],['b','e'],['b','s']]);
+ assert.deepEqual(world.links[0].start,world.ports.find(p=>p.level==='a'&&p.nodeId==='e').center);
+ assert.equal(world.links[0].width,1,'link width remains independent; consumers resolve real port width explicitly');
+ for(const l of world.levels){
+  let sum=0;
+  for(const s of l.surfaces){const outer=s.outer.map(p=>new T.Vector2(...p)),holes=s.holes.map(h=>h.map(p=>new T.Vector2(...p))),points=[...outer,...holes.flat()];for(const face of T.ShapeUtils.triangulateShape(outer,holes)){const tri=face.map(i=>points[i]);sum+=Math.abs(area(tri.map(p=>[p.x,p.y])));assert.ok(inSurface(tri.reduce((s,p)=>[s[0]+p.x/3,s[1]+p.y/3],[0,0]),l.surfaces));}}
+  assert.ok(Math.abs(sum-surfaceArea(l.surfaces))<1e-7);
+ }
+});
+
+test('ports reject end faces covered by another disk or road instead of publishing fictitious boundaries',()=>{
+ const short=level('g',[n('a',0,0),n('b',1,0)],[edge('ab','a','b',4)]);
+ assert.throws(()=>compile({levels:[{...short,openEnds:['b']}],regions:[]}),/openEnds.*exposed/);
+ assert.doesNotThrow(()=>compile({levels:[{...short,openEnds:['a','b']}],regions:[]}),'both flat ends form an exposed short rectangle');
+ const crowded=level('g',[n('a',-10,0),n('b',10,0),n('c',0,2),n('d',0,8)],[edge('ab','a','b',6),edge('cd','c','d',2)]);
+ assert.throws(()=>compile({levels:[{...crowded,openEnds:['c']}],regions:[]}),/openEnds.*exposed/);
+ assert.doesNotThrow(()=>compile({levels:[crowded],regions:[]}),'legacy overlapping surfaces remain supported');
+});

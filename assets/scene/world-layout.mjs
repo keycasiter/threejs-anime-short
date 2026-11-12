@@ -52,18 +52,47 @@ function polygonUnion(polys){if(!polys.length)return [];const edges=polys.flatMa
  const surfaces=loops.filter(r=>area(r)>0).map(r=>({outer:canonical(r,true),holes:[]}));for(const h of loops.filter(r=>area(r)<0)){const candidates=surfaces.filter(s=>location(h[0],s.outer)>0).sort((a,b)=>area(a.outer)-area(b.outer));if(!candidates.length)throw new Error('unassigned road hole');candidates[0].holes.push(canonical(h,false));}
  for(const s of surfaces)s.holes.sort((a,b)=>cmp(JSON.stringify(a),JSON.stringify(b)));return surfaces.sort((a,b)=>cmp(JSON.stringify(a.outer),JSON.stringify(b.outer)));
 }
-function roadSurfaces(graph){const polys=graph.edges.map(e=>canonical(e.quad,true));for(const n of graph.junctions)if(n.radius>0)polys.push(Array.from({length:ROUND_SEGMENTS},(_,i)=>[n.x+n.radius*Math.cos(i*2*Math.PI/ROUND_SEGMENTS),n.z+n.radius*Math.sin(i*2*Math.PI/ROUND_SEGMENTS)]));return polygonUnion(polys);}
+function roadSurfaces(graph,openEnds){const polys=graph.edges.map(e=>canonical(e.quad,true));for(const n of graph.junctions)if(n.radius>0&&!openEnds.includes(n.id))polys.push(Array.from({length:ROUND_SEGMENTS},(_,i)=>[n.x+n.radius*Math.cos(i*2*Math.PI/ROUND_SEGMENTS),n.z+n.radius*Math.sin(i*2*Math.PI/ROUND_SEGMENTS)]));return polygonUnion(polys);}
 const graphId=(level,node)=>JSON.stringify([level,node]);
+function endpointPorts(level,graph){
+ const input=level.openEnds===undefined?[]:level.openEnds;
+ if(!Array.isArray(input))throw new Error(`level ${level.id}: openEnds must be an array`);
+ const openEnds=Array.from(input,nodeId=>{if(typeof nodeId!=='string'||!nodeId.length)throw new Error(`level ${level.id}: openEnds requires nonempty node IDs`);return nodeId;}).sort(cmp);
+ if(new Set(openEnds).size!==openEnds.length)throw new Error(`level ${level.id}: duplicate openEnds node ID`);
+ const ports=openEnds.map(nodeId=>{
+  const node=graph.junctions.find(n=>n.id===nodeId),edges=graph.edges.filter(e=>e.from===nodeId||e.to===nodeId);
+  if(!node||node.degree!==1||edges.length!==1)throw new Error(`level ${level.id}: openEnds node ${nodeId} must exist and have degree one`);
+  const edge=edges[0],neighbor=graph.nodes.find(n=>n.id===(edge.from===nodeId?edge.to:edge.from));
+  const nx=(node.x-neighbor.x)/edge.length,nz=(node.z-neighbor.z)/edge.length,h=edge.width/2;
+  // Viewer is inside the road looking outward, with world +Y up: left = up × normal.
+  return {id:graphId(level.id,nodeId),level:level.id,nodeId,edgeId:edge.id,center:[node.x,level.y,node.z],normal:[nx,0,nz],width:edge.width,left:[node.x+nz*h,level.y,node.z-nx*h],right:[node.x-nz*h,level.y,node.z+nx*h]};
+ });
+ return {openEnds,ports};
+}
+// A degree-one graph node is not sufficient when other road primitives cover its face.
+// Require the whole intended face to belong to the final union boundary, facing outward.
+function exposedPort(port,surfaces){
+ const a=[port.left[0],port.left[2]],b=[port.right[0],port.right[2]],d=sub(b,a),length=dist(a,b),ranges=[];
+ for(const surface of surfaces)for(const boundary of [surface.outer,...surface.holes])for(const [p,q]of segments(boundary)){
+  if(Math.abs(cross(d,sub(p,a)))>EPS*length||Math.abs(cross(d,sub(q,a)))>EPS*length)continue;
+  const v=sub(q,p);if(v[0]*d[0]+v[1]*d[1]<=0)continue;
+  const ts=cuts(a,b,p,q);if(ts.length===2)ranges.push(ts);
+ }
+ ranges.sort((a,b)=>a[0]-b[0]);let end=0;
+ for(const [lo,hi]of ranges){if(lo>end+EPS/length)return false;end=Math.max(end,hi);}
+ return end>=1-EPS/length;
+}
 function connections(levels,links){const nodes=levels.flatMap(l=>l.nodes.map(n=>({id:graphId(l.id,n.id),level:l.id,nodeId:n.id,position:[n.x,l.y,n.z]}))),edges=levels.flatMap(l=>l.edges.map(e=>({id:JSON.stringify(['corridor',l.id,e.id]),from:graphId(l.id,e.from),to:graphId(l.id,e.to),kind:'corridor',width:e.width}))).concat(links.map(l=>({id:JSON.stringify(['link',l.id]),from:graphId(l.fromLevel,l.fromNode),to:graphId(l.toLevel,l.toNode),kind:'link',width:l.width})));
  const adj=new Map(nodes.map(n=>[n.id,[]]));for(const e of edges){adj.get(e.from).push(e.to);adj.get(e.to).push(e.from);}const visited=new Set(),components=[];for(const n of nodes)if(!visited.has(n.id)){const stack=[n.id],part=[];visited.add(n.id);while(stack.length){const k=stack.pop();part.push(k);for(const next of adj.get(k))if(!visited.has(next)){visited.add(next);stack.push(next);}}components.push(part.sort(cmp));}return {nodes,edges,components};
 }
 export function compileWorldLayout({levels,regions,links=[]}={}){
  if(!Array.isArray(levels)||!levels.length||levels.length>16||!Array.isArray(regions)||regions.length>128||!Array.isArray(links)||links.length>128)throw new Error('levels (1..16), regions (<=128), links (<=128) arrays required');
- const compiled=levels.map(l=>{id(l.id);number(l.y,'level.y');if(!Array.isArray(l.nodes)||l.nodes.length>64||!Array.isArray(l.edges)||l.edges.length>128)throw new Error('level supports <=64 nodes / <=128 edges');for(const n of l.nodes){number(n.x,'node.x');number(n.z,'node.z');}for(const e of l.edges)width(e.width);const graph=compileCorridorGraph(l);for(const e of graph.edges)if(e.length<MIN)throw new Error('road length below supported precision');return {id:l.id,y:l.y,...graph,surfaces:roadSurfaces(graph)};}).sort((a,b)=>cmp(a.id,b.id));unique(compiled,'level');const map=new Map(compiled.map(l=>[l.id,l]));
+ const compiled=levels.map(l=>{id(l.id);number(l.y,'level.y');if(!Array.isArray(l.nodes)||l.nodes.length>64||!Array.isArray(l.edges)||l.edges.length>128)throw new Error('level supports <=64 nodes / <=128 edges');for(const n of l.nodes){number(n.x,'node.x');number(n.z,'node.z');}for(const e of l.edges)width(e.width);const graph=compileCorridorGraph(l);for(const e of graph.edges)if(e.length<MIN)throw new Error('road length below supported precision');const {openEnds,ports}=endpointPorts(l,graph),surfaces=roadSurfaces(graph,openEnds);for(const port of ports)if(!exposedPort(port,surfaces))throw new Error(`level ${l.id}: openEnds node ${port.nodeId} requires a fully exposed end face`);return {id:l.id,y:l.y,...graph,openEnds,ports,surfaces};}).sort((a,b)=>cmp(a.id,b.id));unique(compiled,'level');const map=new Map(compiled.map(l=>[l.id,l]));
  const rs=regions.map(r=>normalizeRegion(r,map)).sort((a,b)=>cmp(a.id,b.id));unique(rs,'region');
  const ls=links.map(l=>{id(l.id);const from=map.get(l.fromLevel),to=map.get(l.toLevel),a=from?.nodes.find(n=>n.id===l.fromNode),b=to?.nodes.find(n=>n.id===l.toNode);if(!a||!b)throw new Error(`link ${l.id}: unknown level/node endpoint`);if(from.id===to.id)throw new Error(`link ${l.id}: cross-level link required`);return {id:l.id,fromLevel:from.id,fromNode:a.id,toLevel:to.id,toNode:b.id,width:width(l.width),start:[a.x,from.y,a.z],end:[b.x,to.y,b.z]};}).sort((a,b)=>cmp(a.id,b.id));unique(ls,'link');
- const snapshot={levels:compiled.map(l=>({id:l.id,y:l.y,nodes:l.nodes.map(n=>({...n})),edges:l.edges.map(e=>({id:e.id,from:e.from,to:e.to,width:e.width}))})),regions:rs,links:ls.map(({start,end,...l})=>l)};
- const connectionGraph=connections(compiled,ls);freeze(compiled);freeze(rs);freeze(ls);freeze(snapshot);freeze(connectionGraph);
+ const ports=compiled.flatMap(l=>l.ports);
+ const snapshot={ports,levels:compiled.map(l=>({id:l.id,y:l.y,openEnds:[...l.openEnds],nodes:l.nodes.map(n=>({...n})),edges:l.edges.map(e=>({id:e.id,from:e.from,to:e.to,width:e.width}))})),regions:rs,links:ls.map(({start,end,...l})=>l)};
+ const connectionGraph=connections(compiled,ls);freeze(compiled);freeze(ports);freeze(rs);freeze(ls);freeze(snapshot);freeze(connectionGraph);
  function footprintAllowed({level,polygon,regionId,clearance=0}={}){if(!map.has(level))throw new Error('footprint: unknown level');number(clearance,'clearance');if(clearance<0)throw new Error('clearance must be nonnegative');const p=ring(polygon,'footprint');let candidates=rs.filter(r=>r.level===level&&r.role!=='forbidden');if(regionId!==undefined){const r=rs.find(r=>r.id===regionId);if(!r||r.level!==level||r.role==='forbidden')throw new Error('footprint: unknown/wrong-level/forbidden regionId');candidates=[r];}
   const fits=r=>contained(p,r.outline)&&(clearance===0||ringDistance(p,r.outline)+EPS>=clearance)&&r.holes.every(h=>!overlap(p,h)&&ringDistance(p,h)+EPS>=clearance);
   if(!candidates.some(fits))return false;
@@ -71,5 +100,5 @@ export function compileWorldLayout({levels,regions,links=[]}={}){
   for(const s of blocked){if(s.holes.some(h=>contained(p,h)&&ringDistance(p,h)>EPS&&ringDistance(p,h)+EPS>=clearance))continue;if(overlap(p,s.outer)||ringDistance(p,s.outer)<clearance-EPS)return false;}
   return true;
  }
- return Object.freeze({levels:compiled,regions:rs,links:ls,connectionGraph,snapshot,metadata:freeze({roundSegments:ROUND_SEGMENTS,epsilon:EPS,minFeature:MIN,maxCoordinate:LIMIT}),footprintAllowed});
+ return Object.freeze({levels:compiled,ports,regions:rs,links:ls,connectionGraph,snapshot,metadata:freeze({roundSegments:ROUND_SEGMENTS,epsilon:EPS,minFeature:MIN,maxCoordinate:LIMIT}),footprintAllowed});
 }

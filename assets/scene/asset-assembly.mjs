@@ -161,6 +161,17 @@ export function createAssetAssembly(THREE, {mergeGeometries} = {}) {
     }
   }
 
-  const api = {add,dynamic,anchor,finish};
+  // Own the builder from creation when a multi-asset build can abort before
+  // finish(). Caller materials, source geometry and dynamic subtrees are borrowed.
+  function dispose() {
+    if (state === 'disposed') return;
+    if (state === 'finishing') throw new Error('Cannot dispose an assembly during merge');
+    state = 'disposed';
+    releaseSnapshots();
+    result?.dispose();
+    anchors.clear();dynamicRoots.length = 0;
+  }
+
+  const api = {add,dynamic,anchor,finish,dispose};
   return api;
 }

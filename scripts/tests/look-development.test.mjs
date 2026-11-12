@@ -95,6 +95,25 @@ test('lighting rejects ambiguous keys, invalid bounds, zero direction and unsupp
  for(const options of [{bounds:null},{bounds:{min:[0,0,0],max:[1,1,1]}},{bounds:new T.Box3()},{bounds:new T.Box3(new T.Vector3(),new T.Vector3())},{keyDirection:[0,0,0]},{keyDirection:[1,Infinity,0]},{keyIntensity:-1},{fillIntensity:NaN},{ambientIntensity:-1},{shadowMapSize:1000},{shadowMapSize:8192},{renderer:{}}])assert.throws(()=>lighting(options));
 });
 
+test('sky and ground indirect light reaches an owned hemisphere source and mutable source state',()=>{
+ const r=lighting({hemisphereIntensity:.6,skyColor:0xaabbff,groundColor:'#685746',ambientIntensity:.07});
+ assert.equal(r.hemisphere.isHemisphereLight,true);assert.equal(r.hemisphere.parent,r.root);assert.equal(r.hemisphere.intensity,.6);
+ assert.equal(r.hemisphere.color.getHex(),0xaabbff);assert.equal(r.hemisphere.groundColor.getHex(),0x685746);assert.equal(r.ambient.intensity,.07);
+ r.hemisphere.intensity=.9;r.hemisphere.color.set(0xffeecc);r.hemisphere.groundColor.set(0x332211);
+ assert.deepEqual(r.readState().hemisphere,{skyColor:0xffeecc,groundColor:0x332211,intensity:.9});
+ // r180 Light.dispose is a no-op for lights without shadows; it emits no event.
+ const scene=new T.Scene();scene.add(r.root);let releases=0;const dispose=r.hemisphere.dispose;
+ r.hemisphere.dispose=function(){releases++;return dispose.call(this);};
+ r.dispose();r.dispose();assert.equal(releases,1);assert.equal(r.hemisphere.parent,null);
+ const legacy=lighting();assert.equal(legacy.hemisphere.intensity,0);assert.equal(legacy.ambient.intensity,.12);legacy.dispose();
+});
+
+test('hemisphere validates intensity and both colors before constructing owned sources',()=>{
+ for(const options of [{hemisphereIntensity:-1},{hemisphereIntensity:Infinity},{skyColor:'bad'},{groundColor:-1},{groundColor:new T.Color(NaN,0,0)}])assert.throws(()=>lighting(options));
+ const skyColor=new T.Color(.2,.3,.4),groundColor=new T.Color(.1,.2,.3),r=lighting({hemisphereIntensity:1,skyColor,groundColor});
+ skyColor.set(0);groundColor.set(0);near(r.hemisphere.color.r,.2);near(r.hemisphere.groundColor.b,.3);r.dispose();
+});
+
 test('maps:false keeps role BRDF identity on uncharted geometry and shares only its own scalar material',()=>{
  for(const mode of ['pbr','toon']){
  const p=palette({mode});

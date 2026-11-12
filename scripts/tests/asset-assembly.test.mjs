@@ -157,3 +157,21 @@ test('later merge failure releases earlier generated geometry and all private sn
   assert.equal(generatedReleases,1);assert.equal(inputReleases,0);
   assert.throws(()=>a.add(input,material()),/failed|closed/i);
 });
+
+test('aborting an unfinished assembly releases private snapshots without merging or disposing borrowed inputs',()=>{
+ const privateGeometry=[],Runtime={...THREE,BufferGeometry:class extends THREE.BufferGeometry {constructor(){super();privateGeometry.push(this);}}};
+ const input=triangle(),m=material(),rig=new THREE.Group();let sourceDisposed=0,materialDisposed=0,privateDisposed=0,merges=0;
+ input.addEventListener('dispose',()=>sourceDisposed++);m.addEventListener('dispose',()=>materialDisposed++);
+ const a=createAssetAssembly(Runtime,{mergeGeometries:(...args)=>{merges++;return mergeGeometries(...args);}});
+ a.add(input,m);a.add(input,m);a.dynamic(rig);for(const g of privateGeometry)g.addEventListener('dispose',()=>privateDisposed++);
+ assert.equal(typeof a.dispose,'function');a.dispose();a.dispose();
+ assert.equal(privateDisposed,2);assert.equal(sourceDisposed,0);assert.equal(materialDisposed,0);assert.equal(merges,0);assert.equal(rig.parent,null);
+ assert.throws(()=>a.finish(),/closed|disposed/i);assert.throws(()=>a.add(input,m),/closed|disposed/i);input.dispose();m.dispose();
+});
+
+test('assembly ownership may span construction and finish and releases generated geometry only once',()=>{
+ const a=assembly(),input=triangle(),m=material();a.add(input,m);const result=a.finish();let generated=0,source=0;
+ result.root.children[0].geometry.addEventListener('dispose',()=>generated++);input.addEventListener('dispose',()=>source++);
+ assert.equal(typeof a.dispose,'function');a.dispose();a.dispose();result.dispose();assert.equal(generated,1);assert.equal(source,0);
+ input.dispose();m.dispose();
+});
