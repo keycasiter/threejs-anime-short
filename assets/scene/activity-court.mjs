@@ -456,7 +456,8 @@ function cover(poly,hostIds,owner,index,budget,mode='walk'){
  }
  const sum=pieces.reduce((s,p)=>s+area(p.ring),0),target=area(poly),tolerance=Math.max(1e-6,2e-8*target);
  if(Math.abs(sum-target)>tolerance)fail('precision',owner,{value:sum,limit:target,polygon:poly});
- return {pieces,minY,maxY,maxGrade,maxStep,faceIds:pieces.map(p=>({hostId:p.face.hostId,faceId:p.face.id}))};
+ budget.take(1,owner);
+ return {request:poly,pieces,minY,maxY,maxGrade,maxStep,faceIds:pieces.map(p=>({hostId:p.face.hostId,faceId:p.face.id}))};
 }
 function rigid(origin,yaw){const c=Math.cos(yaw),s=Math.sin(yaw);return p=>[origin[0]+c*p[0]+s*p[1],origin[1]-s*p[0]+c*p[1]];}
 function worldPoint(transform,p,y){const [x,z]=transform([p[0],p[2]]);return [number(x,'world.x'),number(p[1]+y,'world.y'),number(z,'world.z')];}
@@ -567,6 +568,9 @@ function requireFullProfile(intervals,a,b,owner,budget,code,peerId){
 }
 function profile(a,b,proof,owner,budget){
  budget.take(1,owner);
+ // The checked request is convex: both endpoints in it certify the whole cap.
+ // A source triangle can extend beyond the area checked for support and clearance.
+ if(!insideExact(a,proof.request,budget,owner)||!insideExact(b,proof.request,budget,owner))fail('walk-gap',owner,{polygon:[a,b]});
  const origin=qpoint(a),section={origin,direction:qvector(qpoint(b),origin)},out=[];
  for(const piece of proof.pieces){
   budget.take(1,owner);
@@ -608,7 +612,7 @@ function atPoint(p,proof,owner,budget){
 }
 function edgeSection(edge,node,budget){
  budget.take(1,node.id);
- const d=sub(edge.end,edge.start),len=length(d),tangent=[-d[1]/len,d[0]/len],half=edge.width/2;
+ const tangent=edge.tangent,half=edge.width/2;
  // This is the actual constructed edge cap, not a second cap recomputed from
  // the approximately perpendicular port normal or its nominal width.
  return {
@@ -728,18 +732,35 @@ function solveMembers(n,index,frameTransform,budget){
 }
 function makeWalkCandidate(n,members,frameTransform,budget){
  const nodes=n.nodes.map(node=>{
-  if(node.uv)return {id:node.id,xz:frameTransform(node.uv),ports:[]};const m=members.find(m=>m.id===node.memberId),p=m.worldPorts.find(p=>p.id===node.portId);return {id:node.id,xz:[p.anchorPosition[0],p.anchorPosition[2]],ports:[p]};
+  if(node.uv){budget.take(1,node.id);return {id:node.id,uv:node.uv,xz:frameTransform(node.uv),ports:[]};}
+  const m=members.find(m=>m.id===node.memberId),p=m.worldPorts.find(p=>p.id===node.portId);return {id:node.id,xz:[p.anchorPosition[0],p.anchorPosition[2]],ports:[p]};
  });
  const gate=nodes.find(x=>x.id===n.gateId);if(distance(gate.xz,[n.gatePort.position[0],n.gatePort.position[2]])>2e-5)invalid('arrival gate and recipe gate XZ mismatch');
  gate.ports.push({...n.gatePort,anchorPosition:n.gatePort.position,declaredY:n.gatePort.position[1]});
  nodes.push({id:n.startId,xz:[n.sourcePort.position[0],n.sourcePort.position[2]],ports:[{...n.sourcePort,anchorPosition:n.sourcePort.position,declaredY:n.sourcePort.position[1]}]});
  for(const node of n.arrivalNodes)nodes.push({id:node.id,xz:[node.position[0],node.position[2]],ports:[],declaredY:node.position[1]});
  nodes.sort((a,b)=>cmp(a.id,b.id));nodes.forEach(n=>n.xz.forEach(v=>number(v,'node world coordinate')));const nodeMap=new Map(nodes.map(v=>[v.id,v]));
+ budget.take(1,n.id);
+ const rotate=rigid([0,0],n.frame.yawRadians);
  const adjacency=new Map(nodes.map(v=>[v.id,[]])),edges=n.edges.map(e=>{
-  const start=nodeMap.get(e.a).xz,end=nodeMap.get(e.b).xz,d=sub(end,start),len=length(d);if(len<MIN)invalid('authored physical edge length below .015m',true);const tangent=[-d[1]/len,d[0]/len],h=e.width/2;
+  budget.take(1,e.key);
+  const a=nodeMap.get(e.a),b=nodeMap.get(e.b),start=a.xz,end=b.xz,d=sub(end,start),len=length(d);
+  if(len<MIN)invalid('authored physical edge length below .015m',true);
+  let tangent;
+  if(a.uv&&b.uv){
+   // Equal-width collinear UV strips need identical caps even at different
+   // lengths. Reduce to the same exact component ratio before rounding and yaw.
+   const u=qvector(qpoint(b.uv),qpoint(a.uv));
+   const scale=qcompare(qmul(u[0],u[0]),qmul(u[1],u[1]))>=0?u[0]:u[1];
+   if(scale.n===0n)fail('precision',e.key);
+   const sign=scale.n<0n?-1:1;
+   const [x,z]=u.map(q=>sign*roundedFraction(qdiv(q,scale))),norm=Math.hypot(x,z);
+   tangent=rotate([-z/norm,x/norm]);
+  }else tangent=[-d[1]/len,d[0]/len];
+  const h=e.width/2;
   const polygon=canonical([[start[0]+tangent[0]*h,start[1]+tangent[1]*h],[start[0]-tangent[0]*h,start[1]-tangent[1]*h],[end[0]-tangent[0]*h,end[1]-tangent[1]*h],[end[0]+tangent[0]*h,end[1]+tangent[1]*h]]);polygon.flat().forEach(v=>number(v,'route world coordinate'));
   budget.take(1,e.key);
-  const out={...e,start,end,polygon,portSections:new Map()};adjacency.get(e.a).push(out);adjacency.get(e.b).push(out);return out;
+  const out={...e,start,end,tangent,polygon,portSections:new Map()};adjacency.get(e.a).push(out);adjacency.get(e.b).push(out);return out;
  });
  return {nodes,nodeMap,edges,adjacency};
 }

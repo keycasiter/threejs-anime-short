@@ -634,3 +634,59 @@ for(const [name,middleWidth,height]of [
  }
  assert.equal(JSON.stringify(f),before);
 });
+
+function joinedStripFixture(offset){
+ const f=fixture();
+ f.site.hostFaces[0].faces=flatRect(-20,-20,20,20);
+ f.recipe.members[0].uv[0]=offset;
+ f.recipe.nodes.push({id:'j1',uv:[0,.5]},{id:'j2',uv:[offset,1]},{id:'j3',uv:[offset,1.5]});
+ f.recipe.edges=[['gate','j1'],['j1','j2'],['j2','j3'],['j3','end']]
+  .map(([a,b])=>({a,b,width:1.2,hostIds:['floor']}));
+ return f;
+}
+
+test('R4 N2 an offset strip cannot borrow the flat host beyond its checked cap',()=>{
+ const offset=.00025,f=joinedStripFixture(offset);
+ // The next strip starts in d·(p−j1) >= 0, d=(offset,.5).
+ // At p=(-.6,.5) the incoming cap lies about .000300m outside it.
+ const signedDistance=-.6*offset/Math.hypot(offset,.5);
+ assert.ok(signedDistance<-.000299 && signedDistance>-.000301);
+ const r=reject(f,'walk-gap');
+ assert.equal(r.diagnostics.reasons[0].ownerId,'j1');
+});
+
+test('R4 N2 collinear strips share the entire checked 1.2m cap on the same host',()=>{
+ const r=qualify(joinedStripFixture(0));
+ assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+ for(const [a,b] of [['gate','j1'],['j1','j2']]){
+  const route=r.snapshot.routes.find(e=>key(e.a,e.b)===key(a,b));
+  const cap=route.polygon.filter(([,z])=>z===.5).map(([x])=>x).sort((x,y)=>x-y);
+  assert.deepEqual(cap,[-.6,.6]);
+ }
+});
+
+function rotatedStripFixture(offset){
+ const f=joinedStripFixture(offset),port=f.prototypes[0].ports[0];
+ // Give the independent terminal service face margin: its width must not
+ // reject the case before the interior joint can be checked.
+ port.width=1.25;port.witness=[[-.625,.8,-.5],[.625,.8,-.5]];
+ f.site.hostFaces[0].faces=[{id:'flat',p:[[-40,0,-40],[0,0,40],[40,0,-40]]}];
+ return transformFixture(f,[5,6],Math.PI/3);
+}
+test('R4 N2 a 60 degree rigid frame preserves an authored collinear full cap',()=>{
+ const r=qualify(rotatedStripFixture(0));
+ assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+ const poly=(a,b)=>r.snapshot.routes.find(e=>key(e.a,e.b)===key(a,b)).polygon;
+ const first=poly('gate','j1'),next=poly('j1','j2');
+ const common=first.filter(p=>next.some(q=>p[0]===q[0]&&p[1]===q[1]));
+ assert.equal(common.length,2);
+ approx(Math.hypot(common[0][0]-common[1][0],common[0][1]-common[1][1]),1.2);
+});
+test('R4 N2 the same rigid frame preserves the real offset at the interior joint',()=>{
+ const r=reject(rotatedStripFixture(.00025),'walk-gap');
+ assert.equal(r.diagnostics.reasons[0].ownerId,'j1');
+});
+test('R4 N2 rigid rotation keeps the original collinear floor and exact-width service face',()=>{
+ const r=qualify(transformFixture(joinedStripFixture(0),[5,6],Math.PI/3));
+ assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+});
