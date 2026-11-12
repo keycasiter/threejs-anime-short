@@ -35,6 +35,14 @@
 
 ## 最短可执行入口
 
+选择几何表示或搭建模块生命周期时，读[实现基础](implementation-foundations.md)，运行[foundation-lab](../assets/examples/foundation-lab/index.html)及其[源码](../assets/examples/foundation-lab/main.mjs)。它复用现回转壳/放样与真实表面/端口，分别验证结构重建、无关对象保持、共享材质与释放；不是新的完整形体算法库或成品画质模板。
+
+| 公共基础 | 已实现API | 所有权与范围 |
+|---|---|---|
+| 显式资源/监听清理 | [createResourceScope](../assets/runtime/resource-scope.mjs)：own/defer/dispose/inspect | 逆序、去重、跨scope重复所有权拒绝、清理异常聚合；借用不登记，无递归/引用计数 |
+| 候选构建与提交 | [createAssetSlot](../assets/runtime/asset-slot.mjs)：replace/current/revision/dispose | 同步builder；失败释放候选并保留旧件；提交后旧件清理错误仍保留新件；只保证单handle |
+| 表示与完整接力 | [buildProfileRelation](../assets/examples/profile-relation.mjs) | 厚壁轴对称或独立宽深弯轴实心，真实表面接口/附属件/支撑；借用材料、拥有生成资源，尺寸域为样例约束 |
+
 将设计写成生产代码时，先按[代码接力](code-guidance.md)选择当前小节。[完整构造工厂](../assets/examples/guided-assembly.mjs)与[全场接线入口](../assets/examples/guided-world/index.html)把真实面附着、动件、材料、独立实例变化、波面和消费者检查连接起来。示例的弯曲主体与水槽是教学设计，不能作为新作品默认造型。
 
 | 当前关系 | 已实现入口 | 范围 |

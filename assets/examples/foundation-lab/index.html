@@ -1,0 +1,11 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Three.js · 表示与数据接力</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#e9ede8;color:#213936;font:13px system-ui,sans-serif}canvas{display:block;touch-action:none}aside{position:fixed;top:18px;left:18px;width:260px;padding:20px;background:#fafcf6ef;border:1px solid #c7d2c9;border-radius:6px}small{letter-spacing:1.8px;font-size:10px}h1{font-size:21px;font-weight:600;margin:10px 0}p{line-height:1.65;font-size:12px}label{display:block;margin:12px 0 4px}input{width:100%}button{border:0;border-radius:3px;background:#305c50;color:#fff;padding:9px 11px;margin:8px 3px 0 0;cursor:pointer}pre{font:10px/1.5 monospace;white-space:pre-wrap;max-height:22vh;overflow:auto}footer{position:fixed;bottom:18px;right:20px;pointer-events:none;font-size:11px}@media(max-width:650px){aside{width:205px;left:10px;top:10px;padding:13px}h1{font-size:18px}}</style>
+<!-- Supply locked r180 build/ and examples/jsm/ at ./vendor/, retaining LICENSE. -->
+<script type="importmap">{"imports":{"three":"./vendor/build/three.module.js","three/addons/":"./vendor/examples/jsm/"}}</script></head><body>
+<aside><small>REPRESENTATION / HANDOFF</small><h1>一套设计，明确接力</h1><p>左：轴对称厚壁与内腔。右：宽深独立、可弯曲的实心放样。两者都有底座和真实表面接点，分别承担不同结构能力。</p>
+<label for="height">左侧高度 / m</label><input id="height" type="range" min="2" max="4.5" step=".1" value="3">
+<label for="bend">右侧沿程弯曲 / m</label><input id="bend" type="range" min="0" max=".9" step=".05" value=".6">
+<label for="roughness">共享金属粗糙度</label><input id="roughness" type="range" min=".12" max=".85" step=".01" value=".3">
+<button id="invalid">试验无效重建</button><button id="reset">复位镜头</button><button id="cycle">重建10次</button>
+<pre id="status" aria-live="polite">加载中</pre></aside><footer>拖动360°环绕 · 滚轮缩放 · 机制样例，非最终画质基准</footer>
+<script type="module" src="./main.mjs"></script></body></html>
