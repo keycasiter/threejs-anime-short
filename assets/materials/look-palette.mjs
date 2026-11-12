@@ -1,5 +1,5 @@
 import {createProceduralPalette} from './procedural-palette.mjs';
-import {createRegionMaterial} from './surface-fields.mjs';
+import {createRegionMaterial,disposeMaterialResources} from './surface-fields.mjs';
 
 const DEFAULTS = {stone:[1,1],coating:[.8,.8],metal:[.5,.5],wood:[.6,1.2]};
 function keys(options, allowed) {
@@ -102,6 +102,12 @@ export function createLookPalette(T, options={}) {
       entries:[...cache.values()].map(({config,material})=>({...structuredClone(config),materialUuid:material.uuid,type:material.type})),
       style:mode==='toon'?'stepped dielectric diffuse with PBR metal reflections':'PBR for all roles',
       ownership:'palette owns shared materials, maps and gradient; callers borrow and must not mutate or dispose them'};},
-    dispose() {if(disposed)return;disposed=true;for(const {material} of cache.values())material.dispose();cache.clear();procedural.dispose();for(const baked of metals.values())baked.dispose();metals.clear();gradient?.dispose();gradient=null;}
+    dispose() {
+      if(disposed)return;disposed=true;
+      const children=[...Array.from(cache.values(),entry=>entry.material),procedural,...metals.values()];
+      if(gradient)children.push(gradient);
+      cache.clear();metals.clear();gradient=null;
+      disposeMaterialResources(children,'Look palette');
+    }
   };
 }

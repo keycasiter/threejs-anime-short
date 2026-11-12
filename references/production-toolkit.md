@@ -9,6 +9,8 @@
 | 木纹、矿物区、涂层/金属露底需要共同控制表面通道 | [程序材质目录](../assets/materials/procedural-palette.mjs) | 三类原创配方，输出真实Standard材质及颜色/roughness/metalness/normal；有限参考配方，需按美术目标扩展 |
 | 自写基色/粗糙度/微法线但保留内置受光 | [材质扩展桥](material-shader-bridge.md) | r180原生Standard/Physical/Toon独立变体、结构cache key与稳定uniform；Toon没有PBR粗糙度锚点，输出转换沿用原链 |
 | 变换/静态合批后仍需源部件米制坐标 | [形成坐标与装配](formation-coordinates.md) | 实际BufferAttribute和显式不变schema；按同一索引快照，不重复应用pose；不自动建立材料方向/UV/TBN |
+| 无UV曲面或合批部件需要连续层纹、沿向纤维、聚集微表面 | [形成响应](formation-response.md)：`createFormationResponse` | 同一米制场接基色、PBR粗糙度和主层微法线，按屏幕微分退场；保留原生光照，普通静态Mesh先验证，非任意材料/变形/clearcoat同步 |
+| 多个真实材料语义槽共享形成规律 | [形成palette](formation-palette.md)：`createFormationPalette` | 按角色和实际base身份缓存，候选校验后绑定；借用base/贴图，拥有派生响应；默认保留已有UV表面图 |
 | 背景天空与物体环境受光需要一致 | [天空与环境捕获](../assets/rendering/scene-environment.mjs) | 同一美术天空生成可见穹顶与PMREM；太阳盘不进入捕获，主光单独按同方向设置；不是物理大气/云模拟 |
 | 局部室内/遮蔽空间需要反射自身环境 | 同模块 `captureEnvironmentProbe` | 实际CubeCamera→PMREM，完成几何/灯后显式捕获；调用者给目标材质赋envMap；不是实时动态镜像 |
 | 平面需要清晰场景镜像 | [平面反射适配器](../assets/rendering/planar-reflection.mjs) | 复用注入的官方Reflector，加入排除/防递归与状态恢复；输出镜面Mesh与纹理，非PBR粗糙湿地反射/多水位水体 |

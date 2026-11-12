@@ -5,8 +5,11 @@
 <aside><details id="workbench"><summary>场景工作台</summary><small>FORM / SPACE / LIGHT</small><h1>同一世界，三条接力</h1><p>曲面壳、非圆截面与连续连接进入完整区域；道路、承托、邻件与材光共享实际数据。</p>
 <label for="configuration">空间结构</label><select id="configuration"><option value="grid">轴网与四个区域</option><option value="ring">环路与分支区域</option><option value="terraced">上下层与实际连接</option></select>
 <label for="look">材光目标</label><select id="look"><option value="pbr">PBR / 材料与环境响应</option><option value="toon">分段受光 / 金属反射</option></select>
+<label for="formation">形成响应 <input id="formation" type="checkbox" checked style="width:auto;vertical-align:middle"></label>
+<label for="environment">反射来源</label><select id="environment"><option value="world">完整世界 / 静态捕获</option><option value="sky">渐变天空</option></select>
 <label for="view">观察任务</label><select id="view"><option value="overview">全貌</option><option value="region">代表区域</option><option value="connection">结构与接点</option><option value="reverse">互补背面</option><option value="level-link" disabled>层间接口</option></select>
 <label for="roofLift">曲壳结构抬升 / m</label><input id="roofLift" type="range" min="0" max=".8" step=".1" value="0">
 <button id="reset">复位镜头</button><button id="play">暂停</button><button id="invalid">无效重建</button><button id="cycle">重建10次</button>
+<button id="captureFail1">捕获1次后失败</button><button id="captureFail2">捕获2次后失败</button>
 <pre id="status" aria-live="polite">加载中</pre></details></aside><footer>纯代码几何 · 360°环绕 · 缩放 · 源码与画面同源</footer>
 <script type="module" src="./main.mjs"></script></body></html>

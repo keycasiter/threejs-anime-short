@@ -166,3 +166,11 @@ test('rejects invalid dimensions, seeds, recipes and ambiguous or invalid recipe
   for (const point of [{u: NaN, v: 0}, {u: 0}, {u: 0, v: Infinity}]) assert.throws(() => palette.sample('stone', point));
   assert.equal(palette.inspect().entries.length, 0);palette.dispose();
 });
+test('deep release continues across baked materials, maps and sibling recipes',()=>{
+ const p=createProceduralPalette(THREE,{resolution:64}),a=p.get('wood'),b=p.get('stone');
+ const counts=new Map(),items=[a,b,...[a,b].flatMap(m=>[m.map,m.metalnessMap,m.normalMap,m.roughnessMap])];
+ for(const item of items)item.addEventListener('dispose',()=>counts.set(item,(counts.get(item)??0)+1));
+ for(const item of [a,a.map,a.normalMap])item.addEventListener('dispose',()=>{throw Error(item.uuid);});
+ assert.throws(()=>p.dispose(),AggregateError);p.dispose();assert.deepEqual(p.inspect().entries,[]);
+ for(const item of items)assert.equal(counts.get(item),1,item.uuid);
+});

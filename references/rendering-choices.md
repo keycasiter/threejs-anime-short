@@ -101,6 +101,8 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 
 先依据目标选择：alpha混合适合受控薄层叠加；需要透射及保留反射响应时使用支持该路径的Physical材质。以本页核对的r180为例，`MeshPhysicalMaterial`启用非零`transmission`时保持`opacity: 1`，不要把它同时当作另一个透射强度旋钮；当前官方材质说明亦有该约定。
 
+使用thickness/attenuation、clearcoat、sheen或anisotropy图时，按[Physical通道与单位](physical-material-channels.md)区分mesh单位、世界单位、薄膜nm与实际采样通道；只为当前材料启用需要的层。
+
 ```js
 // 薄玻璃的起点，非通用成品参数；由实际厚度、反射和遮挡继续校准。
 const glass = new THREE.MeshPhysicalMaterial({

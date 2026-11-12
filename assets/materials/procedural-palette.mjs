@@ -1,4 +1,4 @@
-import { createRegionMaterial } from './surface-fields.mjs';
+import { createRegionMaterial, disposeMaterialResources } from './surface-fields.mjs';
 
 /** Original deterministic material recipes; no images, geometry or renderer.
  *
@@ -135,8 +135,9 @@ export function createProceduralPalette(THREE, options = {}) {
     dispose() {
       if (disposed) return;
       disposed = true;
-      for (const {baked} of cache.values()) baked.dispose();
+      const children=Array.from(cache.values(),entry=>entry.baked);
       cache.clear();fields.clear();
+      disposeMaterialResources(children,'Procedural palette');
     }
   };
 }

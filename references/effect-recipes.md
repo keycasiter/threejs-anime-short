@@ -2,7 +2,7 @@
 
 在标准材质/现有工具不能表达目标时使用。具体材料通道与尺度读[表面方法](surface-detail.md)，深度/透明/多遍契约读[渲染契约](render-contracts.md)。本页不是水面/布料/粒子的统一美术模板。
 
-保留Standard/Physical/Toon受光、只扩展表面信号时，先用[内置材质扩展桥](material-shader-bridge.md)的真实锚点/缓存/uniform配方。场依赖源部件方向与米制尺度时，先按[形成坐标接力](formation-coordinates.md)把字段送到最终网格，再写shader；明确基色、粗糙度和视空间微法线分别进入哪个消费者。ShaderMaterial全接管和内置材质局部扩展是不同责任范围，按所需控制选择。
+保留Standard/Physical/Toon受光、只扩展表面信号时，先判断[形成响应](formation-response.md)的层纹、纤维或聚集场能否表达目标；需要其它形成规则时，再用[内置材质扩展桥](material-shader-bridge.md)的真实锚点/缓存/uniform配方。场依赖源部件方向与米制尺度时，先按[形成坐标接力](formation-coordinates.md)把字段送到最终网格；明确基色、粗糙度和视空间微法线分别进入哪个消费者。ShaderMaterial全接管和内置材质局部扩展是不同责任范围，按所需控制选择。
 
 ## 实现数据链
 

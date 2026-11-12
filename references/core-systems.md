@@ -71,6 +71,9 @@
 function applyLook(palette, bindings) {
   const geometry=bindings.map(b=>b.object.geometry);
   const candidate=bindings.map(b=>b.slots.map(s=>palette.get(s.role,s.options)));
+  // Formation providers validate the actual source coordinates before mutation;
+  // the original base palette has no validateMesh method and stays compatible.
+  if(typeof palette.validateMesh==='function')bindings.forEach((b,i)=>palette.validateMesh(b.object,candidate[i]));
   bindings.forEach((b,i)=>{
     b.object.material=candidate[i].length===1?candidate[i][0]:candidate[i];
     if(b.object.geometry!==geometry[i]) throw Error('Look change rebuilt geometry');
@@ -78,7 +81,26 @@ function applyLook(palette, bindings) {
 }
 ```
 
-完整renderer、PMREM、灯、相机/交互与释放见[main.mjs](../assets/examples/core-lab/main.mjs)。直接输出只做一次颜色/色调转换；使用Composer时按其OutputPass契约接线。
+完整入口由[buildCorePresentation(T, options)](../assets/examples/core-presentation.mjs)拥有每个候选的world、PBR/Toon base与formation palettes、灯架及两份静态PMREM。初始`materialFor`和切换表读取同一候选provider；真实`materialBindings`完成两look/formed/base候选解析、实际source坐标验证后再赋值。`formation-palette`只在无表面贴图时叠加响应，已有物理UV贴图保留原路线；Toon非金属仍没有roughness消费者。石材aggregate、涂层aggregate、木材z向fibres和金属bands的米制参数是此完整例可替换的设计数据，形成基元不承担几何中层造型或全部真实材料。
+
+| 组合输入或操作 | 实际消费者与边界 |
+|---|---|
+| `renderer / mergeGeometries / MarchingCubes / skyTexture` | 借用同版r180 renderer/addons与无太阳盘天空PMREM。天空必须使用二维 CubeUVReflectionMapping 图集：面边长 N 为不小于 16 的 2 的幂，宽 3×max(N,112)、高 4N，且不超过设备纹理上限；无太阳盘和预过滤内容由调用方保证。每候选独立材料，贴图只在其base palette内共享 |
+| `configuration / roofLift / seed / resolution / shadowMapSize / time` | 原world结构、稳定role种子、材料及捕获分辨率（64..1024）、原灯影区和源世界解析时间；不修改布局/观察任务 |
+| `look / formationEnabled / environmentMode` | 默认`pbr / true / world`；返回的`setLook`、`setFormationEnabled`、`setEnvironmentMode`选择已解析材料表/灯光/显式反射纹理，保持几何、相机和时钟 |
+| `probePosition` | 可选有限xyz；默认由完整world bounds中心XZ与maxY上方得到；near/far覆盖完整源世界 |
+| `diagnostics: {failAfterCapture: 0\|1\|2}` | 默认0；第1或第2个真实target完成后抛错，供slot验证迟失败回收；不进入world设计 |
+| `readState / dispose` | 分离的palette/资格/实际envMap UUID及强度、捕获位置/时间/类型DTO；dispose幂等，异常时继续清理所有已登记资源 |
+
+捕获只在临时私有Scene中放当前候选world与灯架，PBR和Toon各以formed材料/相应灯光执行一次`CubeCamera → PMREM`；背景/间接环境来自无太阳盘天空，背景强度1、环境强度0.8。捕获后脱离私有Scene，恢复请求的look/形成开关，返回无parent的root，才由slot提交。该probe是全场静态近似，不能提供分区、视差修正或动态反射。`environmentMode='sky'`与`'world'`对base和formed表都生效；支持IBL的材料显式envMap强度按原值乘一次0.8，切换不累计乘；Toon非金属不添加不存在的envMap属性。
+
+候选捕获暂时启用完整color/depth/stencil清除、shadow更新和shader错误检查，并在成功/失败后还原 renderer target/face/mip、逻辑 viewport/scissor 与绑定目标的实际像素裁剪和测试开关、clear、XR、shadowMap.autoUpdate/needsUpdate、输出与 debug 回调。有绑定目标时读取 GL 当前 scissor 状态，可能产生同步开销；返回后目标自身的矩形属性保持原值。旧`onShaderError`仍被调用，其外部副作用无法由候选沙箱撤销；检测到编译失败会拒绝候选。候选失败保留旧slot世界；退役时world/灯、formation wrappers和base材料先于环境targets释放，每个 base palette、烘焙材质和贴图组合均尝试释放其所有子资源，汇总异常；借用 sky/renderer 不释放。
+
+天空与世界probe共用显式拥有资源的`CubeCamera → PMREM.fromCubemap`路径。天空的私有源Scene只有原Sphere与`capture=1`材料，仍排除太阳盘；可见天空随相机移动，源Sphere保持原点。该路径避开native `fromScene`在渲染异常时无法回收的私有背景网格；天空不再保留闲置generator，每次尝试的cube、generator与内部资源均由临时owner清理。失败保留旧纹理、已应用场景和计数，可继续重试。相较直接`fromScene`，多一次拥有明确归属的cube捕获，天空采样路线与成本可能变化，须以实际GPU画面/资源比较核对，不保证字节相同。
+
+PMREM输出使用锁版r180归属边界：同步调用期间只临时包装当前generator实例的native `_allocateTargets`，native完成LOD、ping-pong与blur初始化后立即登记/校验返回的输出，再继续原`fromCubemap`转换/模糊。成功或失败都还原实例方法，不修改全局原型、不复制PMREM算法。只给fresh generator传显式target会跳过必要初始化；版本/接口不符明确拒绝，升级Three必须重新核对并验证此私有协议。输出释放异常不跳过其它已登记清理。旧shader回调异常延迟到输出归属安全后拒绝候选，回调本身的外部副作用仍不回滚。
+
+相机/交互/时钟与最终输出见[main.mjs](../assets/examples/core-lab/main.mjs)。工作台的形成开关和天空/世界反射选择用于固定几何/机位比较；两种迟捕获失败按钮用于资源与保留旧世界检查。主Scene继续保留天空环境供外部物体使用；直接输出只做一次ACES/sRGB转换，PBR/Toon最终曝光仍为1.1/1.05。使用Composer时按其OutputPass契约接线。CPU真实world与显式fake GPU hooks的测试不替代真实WebGL、原参考同景别审图或资源测量。
 
 分段受光也需要间接亮度/补光与材料身份；看暗部里的结构，不以黑影面积证明体积。金属反射需要真实环境。柔影、AO或Bloom按目标接现工具，保留少变量对照。
 
@@ -86,7 +108,7 @@ function applyLook(palette, bindings) {
 
 静态合并同时保留语义身份和渲染状态：`role + 规范化options`标明原材料区，材质实例、投影标志等决定绘制兼容。多个区在灰模阶段可以借用同一Material；`material.uuid`相同不代表它们以后都是木材或涂层。合并时按语义分桶或保留真实组区间，切换look读取原槽；用共享灰模→差异材质与直接差异材质构建对照，检查实际三角分布和几何身份。
 
-当前core/context还在源部件自有几何上写入`aFormationPosition`，经真实材质组提取和静态装配交给所有materialBindings；写入时排除lot的刚性摆放。读取方式、共同资产frame和借用边界见[形成坐标](formation-coordinates.md)。字段传到网格并不意味着当前look已用它生成材料；[材质扩展桥](material-shader-bridge.md)提供真实可编译接点，材料形成场与环境校准仍须另行实现和审图。
+当前core/context在源部件自有几何上写入`aFormationPosition`，经真实材质组提取和静态装配交给所有materialBindings；写入时排除lot的刚性摆放。读取方式、共同资产frame和借用边界见[形成坐标](formation-coordinates.md)。完整入口默认由[形成palette](formation-palette.md)将字段交给[形成响应](formation-response.md)，关闭形成开关则切回同一候选的base表；自定义其它场时再用[材质扩展桥](material-shader-bridge.md)。字段存在、通过校验和实际受光可见分别核对，完整效果仍与原目标审图比较。
 
 灯架可选`hemisphereIntensity/skyColor/groundColor`提供真实天空/地面半球补光。把主光照亮的面、朝天暗面和朝地暗面分开检查；这不是GI，也不替代接触阴影。近场阴影bounds覆盖必要投影者/受影者，远景地形不与近景共享无限扩大的拟合区。远层投影策略显式决定，避免增加场景后阴影精度随之消失。
 

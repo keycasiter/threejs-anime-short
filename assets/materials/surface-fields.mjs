@@ -4,6 +4,14 @@
  * Neither creates a renderer, geometry, random field or external image.
  */
 
+// Dispose only this owner's explicit children. Shared/borrowed references on
+// a material never enter the list; a listener failure cannot skip a sibling.
+export function disposeMaterialResources(children,label) {
+  const errors=[];
+  for(const child of children)try{child.dispose();}catch(error){errors.push(error);}
+  if(errors.length)throw new AggregateError(errors,label+' cleanup failed');
+}
+
 /**
  * heightAt({u,v,x,y}) returns height in the SAME unit as physicalSize.
  * roughnessAt({u,v,x,y}) returns a multiplier in [0,1]. Each is sampled once per
@@ -98,7 +106,7 @@ export function createSurfaceMaps(THREE, {
   let disposed = false;
   return {normalMap, roughnessMap, metadata, dispose() {
     if (disposed) return;
-    disposed = true;normalMap.dispose();roughnessMap.dispose();
+    disposed = true;disposeMaterialResources([normalMap,roughnessMap],'Surface maps');
   }};
 }
 
@@ -158,6 +166,6 @@ export function createRegionMaterial(THREE, {regionAt, ...options} = {}) {
   return {material, maps: {map, metalnessMap, roughnessMap: surface.roughnessMap, normalMap: surface.normalMap},
     metadata: {...surface.metadata, regionChannels: 'sRGB color; raw roughness G / metalness B; height -> normal',
       limits: 'caller-designed regional field; physical UV/unit TBN and band-limited fields required; no geometry, displacement, lighting or normal-variance compensation'},
-    dispose() {if (disposed) return;disposed = true;material.dispose();map.dispose();metalnessMap.dispose();surface.dispose();}
+    dispose() {if (disposed) return;disposed = true;disposeMaterialResources([material,map,metalnessMap,surface],'Region material');}
   };
 }
