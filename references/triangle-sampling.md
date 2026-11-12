@@ -170,4 +170,3 @@ if (import.meta.url.startsWith('file:') && process.argv[1] && resolve(process.ar
 这里的允许区/净空谓词、离散足迹与次数仅用于可计算夹具；实际制作仍从当前布局、宿主 ID 和真实基部提取它们。接受记录只生成一次，两个部件使用同一条世界架，父级逆矩阵直接转实例局部，不做可能丢失 shear 的 TRS 分解。调整位置、密度或快照后必须重跑全部资格；离散足迹通过不等于连续支承，也不等于 GPU 已绘制或画质改善。应用结束时调用 `releaseExample()`；生产接入时只释放自己创建的资源，借入宿主不注册到本 scope。
 
 原理与原生接口来源：[MeshSurfaceSampler](https://threejs.org/docs/#examples/en/math/MeshSurfaceSampler)；[已审计的提供方源码](https://www.webgl3d.cn/threejs/examples/jsm/math/MeshSurfaceSampler.js)。制作时本地规则和接线已完整给出，无需重新阅读网站。
-
