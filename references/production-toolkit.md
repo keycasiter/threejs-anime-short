@@ -29,6 +29,9 @@
 | 已设计连接图与沿边地块 | [corridor-layout](../assets/scene/corridor-layout.mjs)：`compileCorridorGraph`/`generateFrontageLots`，见[世界配方](algorithm-recipes.md#世界连接图与局部语法) | 真实宽度矩形、节点/分量与接受地块；道路厚度、地形基础/门口和任意路口需项目构造，不是自动城市 |
 | 连续高度与共享世界梯度 | [height-field](../assets/environment/height-field.mjs)：`createFractalHeightField`/`createHeightFieldGeometry`，见[场配方](algorithm-recipes.md#地形水系与侵蚀) | 原创value-noise fBm、归一振幅、解析导数和单值上表面；非侵蚀/完整地貌，接触用最终三角网格 |
 | 发出网格的无效/退化/朝向检查 | [auditTriangles](../assets/geometry/audit-triangles.mjs)，调用见[几何配方](geometry-recipes.md) | 独立方向或逐顶点参考；不检查全部自交、水密、曲率或构图 |
+| 重复铺覆的完整轮廓与封边 | [bounded-profile](../assets/geometry/bounded-profile.mjs)：`clipConvexPolygon` / `createBoundedProfileGeometry`，见[边界代码](visual-construction.md#2-重复单元先归属区域再裁完整轮廓) | 凸域交集、局部XY、一维profile与Z厚度的闭合网格；非通用CSG/曲面贴合；角点在epsilon内归并采样层，真正Float32塌缩拒绝 |
+| 关键表面被谁遮挡、HUD样点冲突 | [view-readability](../assets/scene/view-readability.mjs)：`inspectFeatureVisibility`，见[观看代码](visual-construction.md#1-先让关键部位能被看清) | 实际世界样点、三角遮挡/命中实体与CSS矩形；仅普通深度WebGL透视/正交；不是可见面积或美术评分 |
+| 最近景别的曲率/特征采样估计 | [projected-sampling](../assets/geometry/projected-sampling.mjs)：`estimateSamplingStep`，见[采样代码](visual-construction.md#4-按最近目标景别分配采样) | 当前投影/zoom、世界尺度与局部step；不是自适应网格器、全局误差保证或成本自动优化器 |
 
 ## 最短可执行入口
 

@@ -40,6 +40,8 @@ function pickEntity(event,canvas,camera,roots){
 
 控制器自动推开/抬高后，重新检查实际构图与查看范围。透明排序、反射、阴影和细件按侧背/掠射角补测，不只测试正面。
 
+页面存在标题/说明时，按[模型与界面代码](visual-construction.md#6-近景同时设计模型与界面)统一canvas投影与DOM坐标，为合法近景设计折叠/留白；模型不穿体与页面读得清分别检查。
+
 ## 最终入口的实际操作
 
 1. 记录初始相机位置/target、azimuth、polar、distance，保存目标视口。

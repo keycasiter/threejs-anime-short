@@ -11,6 +11,7 @@
 | 扩展群体并留出空隙 | [组团代码](#3-先结构组团再分布成员) | 有身份的簇/包络/开口→稳定实例；结构与表面随机流独立 |
 | 做材料、动画和波面 | [表现接线](#4-表面受光和位移一起接线) | 材料形成区/实际环境→PBR；同一位移→位置/法线/附着物 |
 | 调参数、看动作与控制成本 | [消费者检查](#5-写完当前关系就读回消费者) | 参数→真实顶点/矩阵；合法保持与空节点有区别 |
+| 构造存在但目标读不清、重复件收口或近景粗糙 | [视觉构造代码](visual-construction.md) | 实际表面样点/遮挡、完整足迹裁切、内部原型、采样预算与材料响应 |
 
 完整可运行入口为[代码接力场景](../assets/examples/guided-world/index.html)，[main.mjs](../assets/examples/guided-world/main.mjs)包含renderer、光照、工厂、材质、波面、交互和释放。复制`assets`目录及锁定Three包到项目；在该例`vendor/`放Three的`build/`和`examples/jsm/`，保留LICENSE，用本地HTTP打开。下列片段假设项目根有同一`assets`目录；`T/scene/renderer/camera`等上下文由完整入口建立。
 
