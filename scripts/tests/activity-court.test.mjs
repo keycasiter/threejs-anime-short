@@ -318,3 +318,213 @@ test('one long source edge and two short opposite source edges prove a complete 
  const r=qualify(f);assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));vector(r.snapshot.members[0].position,[0,0,3]);
  const route=r.snapshot.routes.find(e=>key(e.a,e.b)===key('end','gate'));approx(area(route.polygon),3);assert.equal(route.maxStep,0);assert.ok(route.faceIds.length>=3);
 });
+
+// Fix round 1: independent review counterexamples. These assertions must fail
+// if a positive geometric feature is discarded or an input contract is merged.
+function notComplete(f,codes){
+ const result=qualify(f);
+ assert.equal(result.status,'unsatisfied',JSON.stringify(result));
+ assert.equal(result.snapshot,null);
+ assert.ok(codes.includes(result.diagnostics.reasons[0].code),JSON.stringify(result.diagnostics));
+ return result;
+}
+
+test('C1 a 1e-14 half-plane cut cannot disappear from the full-width corner',()=>{
+ const f=fixture();
+ const delta=1e-14;
+ f.site.hostFaces.push({owner:f.site.owner,id:'trimmed',faces:[{
+  id:'diagonal',p:[[-10,0,9.4+delta],[10,0,20],[10,0,-10.6+delta]]
+ }]});
+ f.recipe.hostScopes.push('trimmed');
+ f.recipe.edges[0].hostIds=['trimmed'];
+ notComplete(f,['walk-gap','precision']);
+});
+
+test('C1 an extra supporting layer with a 1e-14 intrusion is never an empty intersection',()=>{
+ const f=fixture();
+ f.site.hostFaces.push({owner:f.site.owner,id:'intruder',faces:[{
+  id:'tip',p:[[.6-1e-14,.1,1],[1.6,.1,1.5],[1.6,.1,.5]]
+ }]});
+ f.recipe.hostScopes.push('intruder');
+ f.recipe.edges[0].hostIds.push('intruder');
+ notComplete(f,['walk-overlap','precision']);
+});
+
+test('C1 a positive 1e-14 member overlap is not allowed by SAT tolerance',()=>{
+ const f=fixture();
+ f.recipe.members.push({...f.recipe.members[0],id:'second',uv:[2-1e-14,3]});
+ notComplete(f,['occupied','precision']);
+});
+
+test('C2 a collinear intermediate vertex preserves a low beam and reserved solid',()=>{
+ for(const intermediate of [false,true]){
+  const f=fixture();
+  const polygon=rect(-.2,.5,.2,1);
+  if(intermediate)polygon.splice(1,0,[0,.5]);
+  f.site.blocks.push({owner:f.site.owner,id:'beam',polygon,yMin:1.4,yMax:1.7});
+  reject(f,'blocked-clearance');
+
+  const solid=fixture();
+  const footprint=rect(-.2,2.8,.2,3.1);
+  if(intermediate)footprint.splice(1,0,[0,2.8]);
+  solid.site.reservedSolids.push({owner:solid.site.owner,id:'solid',polygon:footprint});
+  reject(solid,'occupied');
+ }
+});
+
+test('C3 an unrelated source-side wall stays blocking after source ID ordering changes',()=>{
+ for(const sourceId of ['source','A']){
+  const f=fixture();
+  f.site.arrival.sourcePort.id=sourceId;
+  f.site.arrival.startId=sourceId;
+  f.site.arrival.edges[0].a=sourceId;
+  f.site.blocks.push({owner:f.site.owner,id:'wall',polygon:rect(-.3,-2.5,.3,-2),yMin:.4,yMax:1.5});
+  reject(f,'blocked-clearance');
+ }
+});
+
+test('C3 an unregistered same-height solid cannot impersonate the registered cross sill',()=>{
+ const f=fixture();
+ f.site.blocks.push({owner:f.site.owner,id:'unregistered',polygon:rect(-.2,.5,.2,1),yMin:-.125,yMax:0});
+ reject(f,'blocked-clearance');
+});
+
+test('I1 recipe and arrival edge namespaces cannot substitute for each other',()=>{
+ const f=fixture();
+ f.recipe.edges[0].headroom=2.1;
+ [f.recipe.edges,f.site.arrival.edges]=[f.site.arrival.edges,f.recipe.edges];
+ assert.throws(()=>qualify(f),e=>e.code==='invalid-input');
+});
+
+test('I1 every declared arrival middle node must belong to its source-to-gate component',()=>{
+ const f=fixture();
+ f.site.arrival.nodes.push({id:'bad',position:[0,432,-1]});
+ reject(f,'disconnected');
+});
+
+test('I2 a shifted finite cross witness must cover the whole final anchored section',()=>{
+ for(const shift of [1e-5,1e-14,2**-52]){
+  const f=fixture();
+  const port=f.site.arrival.sourcePort;
+  port.servicePosition[0]+=shift;
+  port.witness.forEach(point=>point[0]+=shift);
+  reject(f,'port-width');
+ }
+});
+
+test('I2 a shifted finite serve face must cover the whole final anchored section',()=>{
+ for(const shift of [1e-5,1e-14,2**-52]){
+  const f=fixture();
+  const port=f.prototypes[0].ports[0];
+  port.servicePosition[0]+=shift;
+  port.witness.forEach(point=>point[0]+=shift);
+  reject(f,'port-width');
+ }
+});
+
+test('I3 exhausted budget stops before reading any unbounded reserve polygon getter',()=>{
+ const f=fixture();
+ let reads=0;
+ f.limits={maxPairs:6};
+ f.recipe.reserves=Array.from({length:24},(_,i)=>({
+  id:`reserve${i}`,hostIds:['floor'],
+  get polygon(){reads++;return rect(-2,.5,2,1.5);}
+ }));
+ reject(f,'budget');
+ assert.equal(reads,0,'unpaid reserve work must never be read');
+});
+
+test('I3 an unbounded catalogue cannot read element getters before reserving its input work',()=>{
+ const f=fixture();
+ let reads=0;
+ const original=f.prototypes[0];
+ f.limits={maxPairs:1};
+ f.prototypes=Array(100);
+ for(let i=0;i<100;i++)Object.defineProperty(f.prototypes,i,{get(){reads++;return {...original,id:`p${i}`};}});
+ reject(f,'budget');
+ assert.equal(reads,0,'array length must be checked against budget before map reads');
+});
+
+test('I4 malformed face IDs fail before precision diagnostics and never freeze caller state',()=>{
+ const f=fixture();
+ const callerOwned={callerOwned:'unfrozen'};
+ f.site.hostFaces[0].faces=[{id:callerOwned,p:[[0,0,0],[0,0,1e-12],[1e-12,0,0]]}];
+ assert.throws(()=>qualify(f),e=>e.code==='invalid-input');
+ assert.equal(Object.isFrozen(callerOwned),false);
+ assert.equal(Object.isFrozen(f.site.hostFaces[0].faces[0]),false);
+});
+
+test('I5 a measured 8 micrometre footprint receives a stable precision result at the old layout boundary',()=>{
+ const f=fixture();
+ const p=f.prototypes[0];
+ p.envelope=[-4e-6,0,-.5,4e-6,1,.5];
+ p.parts[0].box=[...p.envelope];
+ p.bearings=[
+  {prototypeOwner:p.prototypeOwner,ring:[[-4e-6,-.5],[4e-6,-.5],[4e-6,.5]],bottomY:0},
+  {prototypeOwner:p.prototypeOwner,ring:[[-4e-6,-.5],[4e-6,.5],[-4e-6,.5]],bottomY:0}
+ ];
+ p.ports[0].width=4e-6;
+ p.ports[0].witness=[[-2e-6,.8,-.5],[2e-6,.8,-.5]];
+ const result=reject(f,'precision');
+ assert.equal(result.diagnostics.reasons[0].ownerId,'m');
+});
+
+test('I6 local arrival anchors require Y zero while world port Y remains an actual measurement',()=>{
+ const f=fixture();
+ f.prototypes[0].ports[0].position[1]=.5;
+ assert.throws(()=>qualify(f),e=>e.code==='invalid-input');
+ const world=fixture();
+ world.site.arrival.sourcePort.position[1]=.5;
+ reject(world,'seam-step');
+});
+
+test('C1 exact line and point contacts remain genuine zero-area contacts',()=>{
+ const touching=fixture();
+ touching.recipe.members.push({...touching.recipe.members[0],id:'second',uv:[2,3]});
+ assert.equal(qualify(touching).status,'complete');
+ const point=fixture();
+ point.site.hostFaces.push({owner:point.site.owner,id:'touch',faces:[{
+  id:'tip',p:[[.6,.1,1],[1.6,.1,1.5],[1.6,.1,.5]]
+ }]});
+ point.recipe.hostScopes.push('touch');
+ point.recipe.edges[0].hostIds.push('touch');
+ assert.equal(qualify(point).status,'complete');
+});
+
+test('I3 a fixed-size face page still reserves work before reading its element getters',()=>{
+ const f=fixture();
+ let reads=0;
+ const face=f.site.hostFaces[0].faces[0];
+ const faces=Array(1000);
+ for(let i=0;i<faces.length;i++)Object.defineProperty(faces,i,{get(){reads++;return {...face,id:`f${i}`};}});
+ f.site.hostFaces[0].faces=faces;
+ f.limits={maxPairs:200};
+ reject(f,'budget');
+ assert.equal(reads,0,'the fixed hard cap does not pay for reading its entire page');
+});
+
+test('C1 physical overlap of full source pieces is classified before rounded intersection construction',()=>{
+ for(const delta of [0,2**-50,2**-55]){
+  const f=fixture();
+  f.site.hostFaces.push(
+   {owner:f.site.owner,id:'left',faces:flatRect(-20,-20,.125,20,0,'left')},
+   {owner:f.site.owner,id:'right',faces:flatRect(.125-delta,-20,20,20,0,'right')}
+  );
+  f.recipe.hostScopes.push('left','right');
+  f.recipe.edges[0].hostIds=['left','right'];
+  f.site.arrival.edges[0].hostIds=['left','right'];
+  if(delta===0)assert.equal(qualify(f).status,'complete');
+  else reject(f,'walk-overlap');
+ }
+});
+
+
+test('C1 unrepresentable positive source area is precision failure rather than malformed geometry',()=>{
+ const host=fixture();
+ host.site.hostFaces[0].faces=[{id:'subnormal-area',p:[[0,0,0],[0,0,1e-200],[1e-200,0,0]]}];
+ reject(host,'precision');
+ const bearing=fixture();
+ const prototype=bearing.prototypes[0];
+ prototype.bearings=[{prototypeOwner:prototype.prototypeOwner,ring:[[0,0],[1e-200,0],[0,1e-200]],bottomY:0}];
+ reject(bearing,'precision');
+});

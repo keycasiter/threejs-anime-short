@@ -22,23 +22,43 @@ function object(x,name){if(!x||typeof x!=='object'||Array.isArray(x))invalid(`${
 function plain(x,name){object(x,name);if(![Object.prototype,null].includes(Object.getPrototypeOf(x)))invalid(`${name} plain object required`);return x;}
 function number(x,name,coordinate=true){if(!Number.isFinite(x)||coordinate&&Math.abs(x)>512)invalid(`${name} finite${coordinate?' within ±512':''} required`,true);return x;}
 function id(x,name='id'){if(typeof x!=='string'||!x.length||x.length>128)invalid(`${name} string length 1..128 required`);return x;}
-function array(x,name,min=0,max=Infinity){if(!Array.isArray(x)||x.length<min||x.length>max)invalid(`${name} array length ${min}..${max} required`,true);for(let i=0;i<x.length;i++)if(!Object.hasOwn(x,i))invalid(`${name} sparse array`);return x;}
+function array(x,name,min=0,max=Infinity,budget=null,owner){
+ if(!Array.isArray(x)||x.length<min||x.length>max)invalid(`${name} array length ${min}..${max} required`,true);
+ // Unbounded input must reserve its basic enumeration/allocation before even
+ // scanning density or reading an element. Nested geometry is charged separately.
+ if(budget)budget.take(x.length,owner);
+ else if(max===Infinity)throw new Error('internal unbudgeted array');
+ for(let i=0;i<x.length;i++)if(!Object.hasOwn(x,i))invalid(`${name} sparse array`);
+ return x;
+}
 function point(x,n,name){array(x,name,n,n);return x.map(v=>number(v,name));}
 function unique(xs,name){if(new Set(xs.map(x=>x.id)).size!==xs.length)invalid(`duplicate ${name} ID`);return xs.sort((a,b)=>cmp(a.id,b.id));}
 function ids(xs,name,min=0){array(xs,name,min,128);const out=xs.map(x=>id(x,name)).sort(cmp);if(new Set(out).size!==out.length)invalid(`duplicate ${name}`);return out;}
 function frozen(x){if(x&&typeof x==='object'){for(const v of Object.values(x))frozen(v);Object.freeze(x);}return x;}
 function canonical(r){const p=r.map(v=>[...v]);if(area(p)<0)p.reverse();let k=0;for(let i=1;i<p.length;i++)if(p[i][0]<p[k][0]||p[i][0]===p[k][0]&&p[i][1]<p[k][1])k=i;return p.slice(k).concat(p.slice(0,k));}
-function polygon(input,name,authored=false){
- const r=array(input,name,3,32).map(p=>point(p,2,name));
- for(let i=0;i<r.length;i++)for(let j=0;j<i;j++)if(distance(r[i],r[j])===0)invalid(`${name} duplicate vertices`,true);
- if(area(r)===0)invalid(`${name} degenerate polygon`,true);
- if(Math.abs(area(r))<=NUM*NUM)fail('precision',name,{polygon:r});
- const p=canonical(r);
- for(const [a,b]of segments(p)){
-  if(authored&&distance(a,b)<MIN)invalid(`${name} authored edge below .015m`,true);
-  for(const v of p)if(orientSign(a,b,v)<0)invalid(`${name} must be convex, simple and unclosed`);
+function polygon(input,name,authored=false,budget,owner){
+ const r=array(input,name,3,32,budget,owner).map(p=>point(p,2,name));
+ for(let i=0;i<r.length;i++)for(let j=0;j<i;j++){
+  budget.take(1,owner);
+  if(distance(r[i],r[j])===0)invalid(`${name} duplicate vertices`,true);
  }
- return p;
+ let orientation=0;
+ for(let i=0;i<r.length&&!orientation;i++){
+  budget.take(1,owner);
+  orientation=orientSign(r[i],r[(i+1)%r.length],r[(i+2)%r.length]);
+ }
+ if(!orientation)invalid(`${name} degenerate polygon`,true);
+ for(let i=0;i<r.length;i++){
+  const a=r[i],b=r[(i+1)%r.length];
+  if(authored&&distance(a,b)<MIN)invalid(`${name} authored edge below .015m`,true);
+  for(const vertex of r){
+   budget.take(1,owner);
+   if(orientSign(a,b,vertex)*orientation<0)invalid(`${name} must be convex, simple and unclosed`);
+  }
+ }
+ const signedArea=area(r);
+ if(!Number.isFinite(signedArea)||Math.abs(signedArea)<=NUM*NUM)fail('precision',owner??name,{polygon:r});
+ return canonical(r);
 }
 function box(x,name){const b=point(x,6,name);if(b.slice(0,3).some((v,i)=>v>=b[i+3]))invalid(`${name} positive box extents required`,true);return b;}
 function insideBox(p,b){return p.every((v,i)=>v>=b[i]&&v<=b[i+3]);}
@@ -73,7 +93,174 @@ class Budget{
  take(n,ownerId=this.owner){if(!Number.isSafeInteger(n)||n<0||n>this.max-this.spent)fail('budget',ownerId,{value:this.spent,limit:this.max});this.spent+=n;}
  cells(n,ownerId){if(!Number.isSafeInteger(n)||n>MAX_CELLS-this.references)fail('budget',ownerId,{value:this.references,limit:MAX_CELLS});this.take(n,ownerId);this.references+=n;}
 }
-function clip(a,b,budget,owner){budget.take(1,owner);try{return clipConvexPolygon(a,b,{epsilon:CLIP});}catch{fail('precision',owner,{polygon:a});}}
+// Exact fractions are used only for source-edge feature certificates and final
+// port sections. They do not replace the shared convex geometry constructor.
+function fraction(n,d=1n){
+ if(d===0n)throw new RangeError('zero exact denominator');
+ if(n===0n)return {n:0n,d:1n};
+ if(d<0n){n=-n;d=-d;}
+ let a=n<0n?-n:n,b=d;
+ while(b){const r=a%b;a=b;b=r;}
+ return {n:n/a,d:d/a};
+}
+function exactNumber(value){
+ const q=dyadic(value);
+ return q.e>=0?fraction(q.n<<BigInt(q.e)):fraction(q.n,1n<<BigInt(-q.e));
+}
+const qadd=(a,b)=>fraction(a.n*b.d+b.n*a.d,a.d*b.d);
+const qsub=(a,b)=>fraction(a.n*b.d-b.n*a.d,a.d*b.d);
+const qmul=(a,b)=>fraction(a.n*b.n,a.d*b.d);
+const qdiv=(a,b)=>fraction(a.n*b.d,a.d*b.n);
+const qcompare=(a,b)=>{const n=a.n*b.d-b.n*a.d;return n<0n?-1:n>0n?1:0;};
+const QZERO={n:0n,d:1n},QONE={n:1n,d:1n};
+const qcross=(a,b)=>qsub(qmul(a[0],b[1]),qmul(a[1],b[0]));
+const qdot=(a,b)=>qadd(qmul(a[0],b[0]),qmul(a[1],b[1]));
+const qpoint=p=>p.map(exactNumber);
+const qvector=(a,b)=>a.map((v,i)=>qsub(v,b[i]));
+function roundedFraction(q){
+ if(q.n===0n)return 0;
+ const negative=q.n<0n,n=negative?-q.n:q.n,d=q.d;
+ let exponent=n.toString(2).length-d.toString(2).length;
+ if(exponent>=0?n<(d<<BigInt(exponent)):(n<<BigInt(-exponent))<d)exponent--;
+ const power=exponent>=-1022?52-exponent:1074;
+ const numerator=power>=0?n<<BigInt(power):n;
+ const denominator=power>=0?d:d<<BigInt(-power);
+ let significand=numerator/denominator;
+ const remainder=numerator%denominator;
+ if(remainder*2n>denominator||remainder*2n===denominator&&(significand&1n))significand++;
+ const value=Number(significand)*2**(-power);
+ return negative?-value:value;
+}
+function exactCrossing(a,b,c,d){
+ const p=qpoint(a),r=qvector(qpoint(b),p),q=qpoint(c),v=qvector(qpoint(d),q);
+ const t=qdiv(qcross(qvector(q,p),v),qcross(r,v));
+ return p.map((x,i)=>qadd(x,qmul(r[i],t)));
+}
+function insideExact(point,ring,budget,owner){
+ for(let i=0;i<ring.length;i++){
+  budget.take(1,owner);
+  if(orientSign(ring[i],ring[(i+1)%ring.length],point)<0)return false;
+ }
+ return true;
+}
+function hasPositiveIntersection(a,b,budget,owner){
+ // Strict separating-axis theorem on original binary coordinates. No temporary
+ // edge array, predicate call, or nested candidate scan precedes its debit.
+ for(let side=0;side<2;side++){
+  const ring=side?b:a,peer=side?a:b;
+  for(let i=0;i<ring.length;i++){
+   let inward=false;
+   for(const point of peer){
+    budget.take(1,owner);
+    if(orientSign(ring[i],ring[(i+1)%ring.length],point)>0){inward=true;break;}
+   }
+   if(!inward)return false;
+  }
+ }
+ return true;
+}
+function intersectionFeatures(a,b,budget,owner){
+ const features=[],vertices=new Set();
+ for(let side=0;side<2;side++){
+  const ring=side?b:a,peer=side?a:b;
+  for(const point of ring){
+   if(!insideExact(point,peer,budget,owner))continue;
+   budget.take(1,owner);
+   const key=JSON.stringify(point);
+   if(!vertices.has(key)){vertices.add(key);features.push({vertex:point,point,exact:qpoint(point)});}
+  }
+ }
+ for(let i=0;i<a.length;i++)for(let j=0;j<b.length;j++){
+  budget.take(1,owner);
+  const p=a[i],q=a[(i+1)%a.length],r=b[j],t=b[(j+1)%b.length];
+  const ab0=orientSign(p,q,r),ab1=orientSign(p,q,t),cd0=orientSign(r,t,p),cd1=orientSign(r,t,q);
+  if(ab0*ab1>=0||cd0*cd1>=0)continue;
+  // Reserve the exact intersection and its representation before allocation.
+  budget.take(1,owner);
+  const exact=exactCrossing(p,q,r,t),point=exact.map(roundedFraction);
+  if(!point.every(Number.isFinite))fail('precision',owner);
+  features.push({point,exact});
+ }
+ return features;
+}
+function insideExactFraction(point,ring,budget,owner){
+ for(let i=0;i<ring.length;i++){
+  budget.take(1,owner);
+  const a=qpoint(ring[i]),edge=qvector(qpoint(ring[(i+1)%ring.length]),a);
+  if(qcross(edge,qvector(point,a)).n<0n)return false;
+ }
+ return true;
+}
+function positiveSourceOverlapInRequest(a,b,request,budget,owner){
+ // Every extremal point of a finite convex halfplane intersection is an
+ // original vertex or a crossing of two original boundary edges. Three exact,
+ // non-collinear feasible points prove positive area without constructing a
+ // rounded, potentially collapsed overlap polygon.
+ let origin=null,direction=null;
+ const rings=[a,b,request];
+ for(let i=0;i<rings.length;i++)for(let j=0;j<i;j++){
+  budget.take(1,owner);
+  const features=intersectionFeatures(rings[i],rings[j],budget,owner);
+  for(const feature of features){
+   let feasible=true;
+   for(const ring of rings)if(!insideExactFraction(feature.exact,ring,budget,owner)){feasible=false;break;}
+   if(!feasible)continue;
+   budget.take(1,owner);
+   if(!origin){origin=feature.exact;continue;}
+   const delta=qvector(feature.exact,origin);
+   if(!direction){if(delta.some(q=>q.n!==0n))direction=delta;continue;}
+   if(qcross(direction,delta).n!==0n)return true;
+  }
+ }
+ return false;
+}
+function samePoint(a,b){return a[0]===b[0]&&a[1]===b[1];}
+function representedCrossing(actual,expected,scale){
+ // The shared constructor can round a computed line intersection differently
+ // from exact rational division. This only matches an existing exact feature;
+ // it cannot create/delete a corner or identify two neighbouring features.
+ return actual.every((v,i)=>Math.abs(v-expected[i])<=8*Number.EPSILON*scale);
+}
+function certifyClip(result,a,b,budget,owner){
+ const features=intersectionFeatures(a,b,budget,owner);
+ const outline=withoutCollinear(result,budget,owner);
+ if(outline.length!==features.length||outline.length<3)fail('precision',owner);
+ budget.take(features.length,owner);
+ const used=new Set();
+ budget.take(a.length+b.length,owner);
+ const scale=Math.max(1,...a.flat().map(Math.abs),...b.flat().map(Math.abs));
+ for(const point of outline){
+  // An unchanged original vertex that is outside the opposite halfplanes is
+  // never rounding permission for a different, nearby intersection vertex.
+  for(const [ring,peer]of [[a,b],[b,a]])for(const vertex of ring){
+   budget.take(1,owner);
+   if(samePoint(point,vertex)&&!insideExact(vertex,peer,budget,owner))fail('precision',owner);
+  }
+  let match=-1;
+  for(let i=0;i<features.length;i++){
+   budget.take(1,owner);
+   const feature=features[i],equal=representedCrossing(point,feature.point,scale);
+   if(equal){if(match!==-1)fail('precision',owner);match=i;}
+  }
+  if(match===-1||used.has(match))fail('precision',owner);
+  used.add(match);
+ }
+ return outline;
+}
+function clip(a,b,budget,owner){
+ budget.take(1,owner);
+ const subject=withoutCollinear(a,budget,owner),boundary=withoutCollinear(b,budget,owner);
+ if(!hasPositiveIntersection(subject,boundary,budget,owner))return [];
+ try{
+  const result=clipConvexPolygon(subject,boundary,{epsilon:CLIP});
+  if(!result.length)fail('precision',owner);
+  finiteRing(result,owner);
+  return certifyClip(result,subject,boundary,budget,owner);
+ }catch(error){
+  if(error instanceof Failure)throw error;
+  fail('precision',owner);
+ }
+}
 function cells(b){const x0=Math.floor(b.x0/2),x1=Math.floor(b.x1/2),z0=Math.floor(b.z0/2),z1=Math.floor(b.z1/2);return {x0,x1,z0,z1,count:(x1-x0+1)*(z1-z0+1)};}
 function makeIndex(hosts,budget){
  const buckets=new Map();
@@ -95,7 +282,7 @@ function normalizePort(p,name,prototype,budget){
  const width=number(p.width,`${name}.width`);if(width<=0)invalid(`${name} measured width must be positive`,true);
  if(!['serve','cross'].includes(p.kind))invalid(`${name} kind`);
  if(Math.hypot(position[0]-servicePosition[0],position[2]-servicePosition[2])>2e-5)invalid(`${name} anchor/service XZ mismatch`);
- const witness=array(p.witness,`${name}.witness`,2,32).map(v=>point(v,3,name));
+ const witness=array(p.witness,`${name}.witness`,2,32,budget,budget.owner).map(v=>point(v,3,name));
  const tangent=[normal[2],-normal[0]],projection=witness.map(v=>dot([v[0]-servicePosition[0],v[2]-servicePosition[2]],tangent));
  if(Math.min(...projection)>-width/2+NUM||Math.max(...projection)<width/2-NUM)invalid(`${name} witness does not span promised aperture`);
  if(witness.some(v=>Math.abs(dot([v[0]-servicePosition[0],v[2]-servicePosition[2]],[normal[0],normal[2]]))>2e-5))invalid(`${name} witness is not on the registered face plane`);
@@ -110,6 +297,7 @@ function normalizePort(p,name,prototype,budget){
  if(!centerYs.length||servicePosition[1]<Math.min(...centerYs)-NUM||servicePosition[1]>Math.max(...centerYs)+NUM)invalid(`${name} service center outside the face witness convex hull`);
  const out={id:id(p.id),position,servicePosition,normal,width,kind:p.kind,witness};
  if(prototype){
+  if(position[1]!==0)invalid(`${name} local arrival anchor Y must be zero`);
   if(p.prototypeOwner!==prototype.prototypeOwner||'owner'in p)invalid(`${name} prototypeOwner identity mismatch / world value in local record`);
   const part=prototype.parts.find(x=>x.id===p.facePartId);if(!part)invalid(`${name} unknown facePartId`);
   if(!insideBox(position,prototype.envelope)||!insideBox(servicePosition,part.box)||witness.some(v=>!insideBox(v,part.box)))invalid(`${name} registered point outside envelope/face part`);
@@ -125,71 +313,78 @@ function normalize(input,budget){
  const level=id(site.level,'site.level');for(const k of ['groupId','edgeId','regionId'])id(site[k],`site.${k}`);if(site.lotId!==null)id(site.lotId,'site.lotId');
  if(!site.layout||typeof site.layout.footprintAllowed!=='function'||!Array.isArray(site.layout.levels)||!Array.isArray(site.layout.regions)||!site.layout.levels.some(l=>l.id===level))invalid('actual world layout / level required');
  if(!site.layout.regions.some(r=>r.id===site.regionId&&r.level===level))invalid('site region is not in world layout');
- const protos=unique(array(input.prototypes,'prototypes',1).map(raw=>{
+ const protos=unique(array(input.prototypes,'prototypes',1,Infinity,budget,input.id).map(raw=>{
   object(raw,'prototype');budget.take(1,input.id);object(raw.prototypeOwner,'prototypeOwner');if(raw.prototypeOwner===owner||'owner'in raw)invalid('prototype must have independent local identity');
   const p={id:id(raw.id),prototypeOwner:raw.prototypeOwner,envelope:box(raw.envelope,'envelope')};
-  p.parts=unique(array(raw.parts,'parts',1,96).map(v=>{
+  p.parts=unique(array(raw.parts,'parts',1,96,budget,input.id).map(v=>{
    object(v,'part');budget.take(1,input.id);if(v.prototypeOwner!==p.prototypeOwner||'owner'in v)invalid('part prototypeOwner identity mismatch');const b=box(v.box,'part.box');
    if(!insideBox(b.slice(0,3),p.envelope)||!insideBox(b.slice(3),p.envelope))invalid('part outside envelope');return {id:id(v.id),box:b};
   }),'part');
-  p.bearings=array(raw.bearings,'bearings',1,16).map(v=>{
-   object(v,'bearing');budget.take(1,input.id);if(v.prototypeOwner!==p.prototypeOwner||'owner'in v)invalid('bearing prototypeOwner identity mismatch');const ring=polygon(v.ring,'bearing.ring'),bottomY=number(v.bottomY,'bearing.bottomY');
+  p.bearings=array(raw.bearings,'bearings',1,16,budget,input.id).map(v=>{
+   object(v,'bearing');budget.take(1,input.id);if(v.prototypeOwner!==p.prototypeOwner||'owner'in v)invalid('bearing prototypeOwner identity mismatch');const ring=polygon(v.ring,'bearing.ring',false,budget,input.id),bottomY=number(v.bottomY,'bearing.bottomY');
    if(ring.some(([x,z])=>!insideBox([x,bottomY,z],p.envelope)))invalid('bearing outside envelope');return {ring,bottomY};
   }).sort((a,b)=>cmp(JSON.stringify(a),JSON.stringify(b)));
   const datumTolerance=2**-23*Math.max(1,Math.abs(p.envelope[1]),Math.abs(p.envelope[4]),p.envelope[4]-p.envelope[1]),bottoms=p.bearings.map(b=>b.bottomY);
   if(Math.max(...bottoms)-Math.min(...bottoms)>datumTolerance)invalid('bearings must share a flat datum within Float32 measurement quantization');
   if(p.parts.some(part=>part.box[1]<Math.min(...bottoms)-datumTolerance))invalid('known part extends below the declared bearing datum');
-  p.ports=unique(array(raw.ports,'ports',0,8).map(v=>{budget.take(1,input.id);return normalizePort(v,`prototype ${p.id} port`,p,budget);}),'port');return p;
+  p.ports=unique(array(raw.ports,'ports',0,8,budget,input.id).map(v=>{budget.take(1,input.id);return normalizePort(v,`prototype ${p.id} port`,p,budget);}),'port');return p;
  }),'prototype');
- let totalFaces=0;const hostInputs=array(site.hostFaces,'hostFaces',1,128);
- for(const h of hostInputs){object(h,'host');totalFaces+=array(h.faces,'host.faces',1,150000).length;if(totalFaces>300000)invalid('world face count >300000',true);}
+ let totalFaces=0;const hostInputs=array(site.hostFaces,'hostFaces',1,128,budget,input.id);
+ for(const h of hostInputs){object(h,'host');totalFaces+=array(h.faces,'host.faces',1,150000,budget,input.id).length;if(totalFaces>300000)invalid('world face count >300000',true);}
  const hosts=unique(hostInputs.map(h=>{
   if(h.owner!==owner)invalid('host owner identity mismatch');const hostId=id(h.id),faces=h.faces;
   const fs=unique(faces.map(f=>{
-   object(f,'face');const p=array(f.p,'face.p',3,3).map(v=>point(v,3,'face point')),[a,b,c]=p;
+   object(f,'face');const faceId=id(f.id);const p=array(f.p,'face.p',3,3).map(v=>point(v,3,'face point')),[a,b,c]=p;
    const ux=b[0]-a[0],uz=b[2]-a[2],vx=c[0]-a[0],vz=c[2]-a[2],ny=uz*vx-ux*vz;
-   if(ny<=0)invalid('host face must have positive Y normal and nonzero projection',true);
-   if(ny<=NUM*NUM)fail('precision',hostId,{peerId:f.id});
+   const orientation=orientSign([a[0],a[2]],[b[0],b[2]],[c[0],c[2]]);
+   if(orientation>=0)invalid('host face must have positive Y normal and nonzero projection',true);
+   if(!Number.isFinite(ny)||ny<=NUM*NUM)fail('precision',hostId,{peerId:faceId});
    const sy=((b[1]-a[1])*vz-(c[1]-a[1])*uz)/(-ny),sz=(ux*(c[1]-a[1])-vx*(b[1]-a[1]))/(-ny),ring=canonical(p.map(v=>[v[0],v[2]]));
-   const faceId=id(f.id),key=JSON.stringify([hostId,faceId]);return {id:faceId,hostId,key,ring,bounds:bounds(ring),grade:Math.hypot(sy,sz),y:([x,z])=>a[1]+sy*(x-a[0])+sz*(z-a[2])};
+   const key=JSON.stringify([hostId,faceId]);return {id:faceId,hostId,key,ring,bounds:bounds(ring),grade:Math.hypot(sy,sz),y:([x,z])=>a[1]+sy*(x-a[0])+sz*(z-a[2])};
   }),'face');return {id:hostId,faces:fs};
  }),'host');
  const hostMap=new Map(hosts.map(h=>[h.id,h])),scopes=ids(recipe.hostScopes,'hostScopes',1);for(const h of scopes)if(!hostMap.has(h))invalid('unknown scoped host');
  const authorize=(hs,name)=>{const out=ids(hs,name,1);if(out.some(h=>!hostMap.has(h)||!scopes.includes(h)))invalid(`${name} unknown or unauthorized host`);return out;};
- const members=unique(array(recipe.members,'members',1,16).map(m=>{
+ const members=unique(array(recipe.members,'members',1,16,budget,input.id).map(m=>{
   object(m,'member');id(m.prototypeId);const prototype=protos.find(p=>p.id===m.prototypeId);if(!prototype)invalid('unknown member prototype');
   const regionId=id(m.regionId);if(!site.layout.regions.some(r=>r.id===regionId&&r.level===level&&r.role!=='forbidden'))invalid('unknown member region');
   const bearingHost=id(m.bearingHost);authorize([bearingHost],'bearingHost');if(['scale','shear','matrix'].some(k=>k in m))invalid('member must be rigid');
   return {id:id(m.id),prototypeId:m.prototypeId,prototype,uv:point(m.uv,2,'member.uv'),yawRadians:number(m.yawRadians,'member.yaw',false),bearingHost,regionId};
  }),'member');
- const reserves=unique(array(recipe.reserves,'reserves').map(r=>{object(r,'reserve');return {id:id(r.id),polygon:polygon(r.polygon,'reserve.polygon',true),hostIds:authorize(r.hostIds,'reserve.hostIds')};}),'reserve');
- const blocks=unique(array(site.blocks,'blocks').map(b=>{
+ const reserves=unique(array(recipe.reserves,'reserves',0,Infinity,budget,input.id).map(r=>{object(r,'reserve');const reserveId=id(r.id);budget.take(1,input.id);return {id:reserveId,polygon:polygon(r.polygon,'reserve.polygon',true,budget,reserveId),hostIds:authorize(r.hostIds,'reserve.hostIds')};}),'reserve');
+ const blocks=unique(array(site.blocks,'blocks',0,Infinity,budget,input.id).map(b=>{
   object(b,'block');
   id(b.id);budget.take(1,input.id);if(b.owner!==owner)invalid('block owner identity mismatch');const yMin=number(b.yMin,'block.yMin'),yMax=number(b.yMax,'block.yMax');if(yMin>=yMax)invalid('block height interval',true);
-  return {id:b.id,polygon:polygon(b.polygon,'block.polygon'),yMin,yMax};
+  return {id:b.id,polygon:polygon(b.polygon,'block.polygon',false,budget,b.id),yMin,yMax};
  }),'block');
- const solids=unique(array(site.reservedSolids,'reservedSolids').map(s=>{object(s,'reservedSolid');id(s.id);budget.take(1,input.id);if(s.owner!==owner)invalid('reservedSolid owner identity mismatch');return {id:s.id,polygon:polygon(s.polygon,'reservedSolid.polygon')};}),'reservedSolid');
+ const solids=unique(array(site.reservedSolids,'reservedSolids',0,Infinity,budget,input.id).map(s=>{object(s,'reservedSolid');id(s.id);budget.take(1,input.id);if(s.owner!==owner)invalid('reservedSolid owner identity mismatch');return {id:s.id,polygon:polygon(s.polygon,'reservedSolid.polygon',false,budget,s.id)};}),'reservedSolid');
  const arrival=plain(site.arrival,'arrival');if(arrival.owner!==owner)invalid('arrival owner identity mismatch');
  for(const p of [arrival.sourcePort,arrival.gatePort])if(p?.owner!==owner)invalid('arrival port owner identity mismatch');
  const sourcePort=normalizePort(arrival.sourcePort,'sourcePort',null,budget),gatePort=normalizePort(arrival.gatePort,'gatePort',null,budget);
  const gateId=id(recipe.gateId),startId=id(arrival.startId);if(sourcePort.id!==startId||gatePort.id!==gateId||startId===gateId)invalid('arrival endpoint identity mismatch');
- const nodes=unique(array(recipe.nodes,'recipe.nodes',1,48).map(n=>{
+ const nodes=unique(array(recipe.nodes,'recipe.nodes',1,48,budget,input.id).map(n=>{
   object(n,'node');const out={id:id(n.id)};
   if('uv'in n){if('memberId'in n||'portId'in n)invalid('node must be uv or member port');out.uv=point(n.uv,2,'node.uv');}
   else{out.memberId=id(n.memberId);out.portId=id(n.portId);if(!members.some(m=>m.id===n.memberId&&m.prototype.ports.some(p=>p.id===n.portId)))invalid('unknown member port node');}
   return out;
  }),'node');if(!nodes.some(n=>n.id===gateId))invalid('recipe gate node missing');if(nodes.some(n=>n.id===startId))invalid('arrival source collides with recipe node');
- const arrivalNodes=unique(array(arrival.nodes,'arrival.nodes',0,46).map(n=>{object(n,'arrival node');return {id:id(n.id),position:point(n.position,3,'arrival node.position')};}),'arrival node');
+ const arrivalNodes=unique(array(arrival.nodes,'arrival.nodes',0,46,budget,input.id).map(n=>{object(n,'arrival node');return {id:id(n.id),position:point(n.position,3,'arrival node.position')};}),'arrival node');
  if(arrivalNodes.some(n=>n.id===startId||nodes.some(m=>m.id===n.id)))invalid('arrival middle-node ID collides with endpoint/recipe');
  if(nodes.length+arrivalNodes.length+1>48)invalid('combined node count >48',true);
- const nodeIds=new Set([...nodes,...arrivalNodes,{id:startId}].map(n=>n.id));
- const normalizeEdges=(es,name)=>array(es,name,1,64).map(e=>{
+ const recipeIds=new Set(nodes.map(node=>node.id));
+ const arrivalIds=new Set([startId,gateId,...arrivalNodes.map(node=>node.id)]);
+ const normalizeEdges=(es,name,allowed)=>array(es,name,1,64,budget,input.id).map(e=>{
   object(e,'edge');
-  const a=id(e.a),b=id(e.b);if(a===b||!nodeIds.has(a)||!nodeIds.has(b))invalid('edge has missing/equal node references');
-  const width=number(e.width,'edge.width'),headroom=number(e.headroom??2.1,'edge.headroom');if(width<MIN||headroom<1.8||headroom>3)invalid('edge width/headroom out of range',true);
+  const a=id(e.a),b=id(e.b);
+  if(a===b||!allowed.has(a)||!allowed.has(b))invalid(`${name} has missing/equal/out-of-domain node references`);
+  const width=number(e.width,'edge.width'),headroom=number(e.headroom??2.1,'edge.headroom');
+  if(width<MIN||headroom<1.8||headroom>3)invalid('edge width/headroom out of range',true);
   return {a:cmp(a,b)<0?a:b,b:cmp(a,b)<0?b:a,key:edgeKey(a,b),width,headroom,hostIds:authorize(e.hostIds,'edge.hostIds')};
  });
- const edges=[...normalizeEdges(recipe.edges,'recipe.edges'),...normalizeEdges(arrival.edges,'arrival.edges')].sort((a,b)=>cmp(a.key,b.key));
+ const recipeEdges=normalizeEdges(recipe.edges,'recipe.edges',recipeIds);
+ const arrivalEdges=normalizeEdges(arrival.edges,'arrival.edges',arrivalIds);
+ validateArrivalGraph(arrivalIds,arrivalEdges,startId,gateId,budget);
+ const edges=[...recipeEdges,...arrivalEdges].sort((a,b)=>cmp(a.key,b.key));
  if(edges.length>64||new Set(edges.map(e=>e.key)).size!==edges.length)invalid('duplicate / >64 combined edges');
  const required=ids(recipe.requiredNodeIds,'requiredNodeIds',1);if(required.some(n=>!nodes.some(x=>x.id===n)))invalid('required node missing from recipe');
  return {id:input.id,frame:{origin,yawRadians},site,protos,hosts,scopes,members,reserves,blocks,solids,nodes,arrivalNodes,sourcePort,gatePort,gateId,startId,edges,required};
@@ -208,7 +403,14 @@ function cover(poly,hostIds,owner,index,budget,mode='walk'){
  if(!pieces.length)fail(gap,owner,{polygon:poly});
  if(mode==='walk'&&maxGrade>GRADE+NUM)fail('grade',owner,{value:maxGrade,limit:GRADE,polygon:poly});
  for(let i=0;i<pieces.length;i++)for(let j=0;j<i;j++){
-  budget.take(1,owner);const a=pieces[i],b=pieces[j];if(boxesMeet(a.bounds,b.bounds)&&clip(a.ring,b.ring,budget,owner).length)fail(overlap,owner,{peerId:b.face.key,polygon:poly});
+  budget.take(1,owner);
+  const a=pieces[i],b=pieces[j];
+  if(!boxesMeet(a.face.bounds,b.face.bounds))continue;
+  // Independent clipping can round a shared source edge in opposite directions.
+  // Source-disjoint interiors remain disjoint: only a positive intersection of
+  // the actual measured faces can establish physical double coverage.
+  if(!hasPositiveIntersection(a.face.ring,b.face.ring,budget,owner))continue;
+  if(positiveSourceOverlapInRequest(a.face.ring,b.face.ring,poly,budget,owner))fail(overlap,owner,{peerId:b.face.key,polygon:poly});
  }
  budget.take(pieces.reduce((sum,p)=>sum+p.ring.length*(1+p.face.ring.length+poly.length),0),owner);
  const exterior=segments(poly).map(([a,b])=>({a,b,ranges:[]}));
@@ -229,10 +431,16 @@ function cover(poly,hostIds,owner,index,budget,mode='walk'){
   e.ts.push(x.lo,x.hi);f.ts.push(y.lo,y.hi);e.matches.push({lo:x.lo,hi:x.hi,peer:f});f.matches.push({lo:y.lo,hi:y.hi,peer:e});
  }
  for(const e of es){
+  budget.take(e.ts.length,owner);
   const cuts=[...new Set(e.ts)].sort((a,b)=>a-b);
   for(let i=1;i<cuts.length;i++){
    budget.take(1,owner);const lo=cuts[i-1],hi=cuts[i];if(hi<=lo)continue;
-   const a=lerp(e.a,e.b,lo),b=lerp(e.a,e.b,hi),middle=(lo+hi)/2,matched=e.matches.filter(m=>middle>=m.lo-NUM&&middle<=m.hi+NUM);
+   const a=lerp(e.a,e.b,lo),b=lerp(e.a,e.b,hi),middle=(lo+hi)/2,matched=[];
+   for(const match of e.matches){
+    budget.take(1,owner);
+    if(middle>=match.lo-NUM&&middle<=match.hi+NUM)matched.push(match);
+    if(matched.length>1)break;
+   }
    if(matched.length>1)fail(overlap,owner,{polygon:poly});
    if(matched.length){
     const peer=matched[0].peer;budget.take(1,owner);const step=Math.max(Math.abs(e.piece.face.y(a)-peer.piece.face.y(a)),Math.abs(e.piece.face.y(b)-peer.piece.face.y(b)));maxStep=Math.max(maxStep,step);
@@ -252,24 +460,60 @@ function cover(poly,hostIds,owner,index,budget,mode='walk'){
 }
 function rigid(origin,yaw){const c=Math.cos(yaw),s=Math.sin(yaw);return p=>[origin[0]+c*p[0]+s*p[1],origin[1]-s*p[0]+c*p[1]];}
 function worldPoint(transform,p,y){const [x,z]=transform([p[0],p[2]]);return [number(x,'world.x'),number(p[1]+y,'world.y'),number(z,'world.z')];}
-function expanded(poly,amount,exempt=null){
- const lines=segments(poly).map(([a,b])=>{
+// Preserve the closed set while removing only exact same-direction redundancy.
+// This is shared by offset construction and clipping certification.
+function withoutCollinear(ring,budget,owner){
+ budget.take(ring.length*ring.length,owner);
+ const result=ring.slice();
+ let changed=true;
+ while(changed&&result.length>3){
+  changed=false;
+  for(let i=0;i<result.length;i++){
+   const a=result[(i+result.length-1)%result.length],b=result[i],c=result[(i+1)%result.length];
+   if(orientSign(a,b,c)===0&&dot(sub(b,a),sub(c,b))>0){result.splice(i,1);changed=true;break;}
+  }
+ }
+ return result;
+}
+function finiteRing(ring,owner){
+ if(ring.length<3||ring.some(p=>p.length!==2||!p.every(Number.isFinite)))fail('precision',owner);
+ return ring;
+}
+function expanded(poly,amount,exempt,budget,owner){
+ const outline=withoutCollinear(poly,budget,owner);
+ budget.take(outline.length*2,owner);
+ const lines=segments(outline).map(([a,b])=>{
   const d=sub(b,a),len=length(d),normal=[d[1]/len,-d[0]/len];
   const skip=exempt&&dot(normal,[exempt.normal[0],exempt.normal[2]])>1-1e-6&&Math.abs(dot(normal,sub([exempt.servicePosition[0],exempt.servicePosition[2]],a)))<=2e-5;
-  const shift=skip?0:amount;return {p:[a[0]+normal[0]*shift,a[1]+normal[1]*shift],d};
+  const shift=skip?0:amount;
+  return {p:[a[0]+normal[0]*shift,a[1]+normal[1]*shift],d};
  });
- return canonical(lines.map((line,i)=>{const previous=lines[(i+lines.length-1)%lines.length],den=cross(previous.d,line.d),t=cross(sub(line.p,previous.p),line.d)/den;return [previous.p[0]+t*previous.d[0],previous.p[1]+t*previous.d[1]];}));
+ const result=lines.map((line,i)=>{
+  const previous=lines[(i+lines.length-1)%lines.length],den=cross(previous.d,line.d);
+  if(!Number.isFinite(den)||den===0)fail('precision',owner);
+  const t=cross(sub(line.p,previous.p),line.d)/den;
+  return [previous.p[0]+t*previous.d[0],previous.p[1]+t*previous.d[1]];
+ });
+ return canonical(finiteRing(result,owner));
+}
+function registeredExemption(obstacle,ports,budget,owner){
+ if(typeof obstacle.memberId!=='string'||typeof obstacle.partId!=='string')return null;
+ for(const port of ports){
+  budget.take(1,owner);
+  if(typeof port.memberId==='string'&&typeof port.facePartId==='string'&&port.memberId===obstacle.memberId&&port.facePartId===obstacle.partId)return port;
+ }
+ return null;
 }
 function obstruct(poly,proof,obstacles,hostIds,headroom,owner,budget,exemptions=[]){
  let minHeadroom=headroom;
  for(const obstacle of obstacles){
-  budget.take(1,owner);const exemption=exemptions.find(p=>p.memberId===obstacle.memberId&&p.facePartId===obstacle.partId);
-  const padded=expanded(obstacle.polygon,CLEAR,exemption);if(!boxesMeet(bounds(poly),bounds(padded)))continue;
+  budget.take(1,owner);const exemption=registeredExemption(obstacle,exemptions,budget,owner);
+  const padded=expanded(obstacle.polygon,CLEAR,exemption,budget,owner);if(!boxesMeet(bounds(poly),bounds(padded)))continue;
   for(const piece of proof.pieces){
    const r=clip(piece.ring,padded,budget,owner);if(!r.length)continue;
    const ys=r.map(piece.face.y),low=Math.min(...ys),high=Math.max(...ys);
    // Only the identified floor itself is allowed to meet feet from below.
-   if(hostIds.includes(obstacle.id)&&obstacle.yMax<=low+NUM)continue;
+   if(piece.face.hostId===obstacle.id&&Math.abs(obstacle.yMax-low)<=NUM&&Math.abs(obstacle.yMax-high)<=NUM)continue;
    // A registered cross interface can name its actual sill part. Its measured
    // top must coincide with the entire independently qualified walking piece;
    // this does not exempt any jamb, wall, column or header in the same member.
@@ -297,31 +541,108 @@ function profile(a,b,proof,owner,budget){
 }
 function compareProfiles(a,b,left,right,owner,budget){
  let maximum=0;
- for(const l of left)for(const r of right){budget.take(1,owner);const lo=Math.max(l.lo,r.lo),hi=Math.min(l.hi,r.hi);if(hi<=lo+NUM)continue;const v=Math.max(...[lo,hi].map(t=>{const p=lerp(a,b,t);return Math.abs(l.y(p)-r.y(p));}));maximum=Math.max(maximum,v);if(v>STEP+NUM)fail('seam-step',owner,{value:v,limit:STEP,polygon:[lerp(a,b,lo),lerp(a,b,hi)]});}
+ for(const l of left)for(const r of right){budget.take(1,owner);const lo=Math.max(l.lo,r.lo),hi=Math.min(l.hi,r.hi);if(hi<=lo+NUM)continue;const v=Math.max(...[lo,hi].map(t=>{const p=lerp(a,b,t);return Math.abs(profileHeight(l,t,p)-profileHeight(r,t,p));}));maximum=Math.max(maximum,v);if(v>STEP+NUM)fail('seam-step',owner,{value:v,limit:STEP,polygon:[lerp(a,b,lo),lerp(a,b,hi)]});}
  return maximum;
 }
 function atPoint(p,proof,owner,budget){
  const fs=[];for(const piece of proof.pieces){budget.take(1,owner);if(piece.face.ring.every((a,i)=>orientSign(a,piece.face.ring[(i+1)%piece.face.ring.length],p)>=0))fs.push(piece.face);}
  if(!fs.length)fail('walk-gap',owner,{polygon:[p]});fs.sort((a,b)=>cmp(a.key,b.key));const y=fs[0].y(p);if(fs.some(f=>Math.abs(f.y(p)-y)>STEP+NUM))fail('seam-step',owner,{polygon:[p]});return y;
 }
-function validatePortUse(node,incident){
+function edgeSection(edge,node,budget){
+ budget.take(1,node.id);
+ const d=sub(edge.end,edge.start),len=length(d),tangent=[-d[1]/len,d[0]/len],half=edge.width/2;
+ // This is the actual constructed edge cap, not a second cap recomputed from
+ // the approximately perpendicular port normal or its nominal width.
+ return {
+  a:[node.xz[0]-tangent[0]*half,node.xz[1]-tangent[1]*half],
+  b:[node.xz[0]+tangent[0]*half,node.xz[1]+tangent[1]*half]
+ };
+}
+function finitePortSection(port,edge,node,budget){
+ const {a,b}=edgeSection(edge,node,budget);
+ budget.take(1,node.id);
+ const origin=qpoint(a),direction=qvector(qpoint(b),origin),denominator=qdot(direction,direction),witnesses=[];
+ for(const point of port.witness){
+  budget.take(1,node.id);
+  const delta=qvector(qpoint([point[0],point[2]]),origin),parameter=qdiv(qdot(delta,direction),denominator),t=roundedFraction(parameter);
+  if(!Number.isFinite(t))fail('precision',node.id,{peerId:port.id});
+  witnesses.push({parameter,t,y:point[1]});
+ }
+ witnesses.sort((l,r)=>{budget.take(1,node.id);return qcompare(l.parameter,r.parameter)||l.y-r.y;});
+ if(qcompare(witnesses[0].parameter,QZERO)>0||qcompare(witnesses.at(-1).parameter,QONE)<0)fail('port-width',node.id,{peerId:port.id,polygon:[a,b]});
+ return {a,b,witnesses};
+}
+function crossSillProfile(section,port,node,budget){
+ const {witnesses}=section,intervals=[];
+ for(let i=1;i<witnesses.length;i++){
+  budget.take(1,node.id);
+  const l=witnesses[i-1],r=witnesses[i],order=qcompare(l.parameter,r.parameter);
+  if(order===0){
+   if(Math.abs(r.y-l.y)>STEP+NUM)fail('seam-step',node.id,{peerId:port.id});
+   continue;
+  }
+  const lower=qcompare(l.parameter,QZERO)<0?QZERO:l.parameter;
+  const upper=qcompare(r.parameter,QONE)>0?QONE:r.parameter;
+  if(qcompare(lower,upper)>=0)continue;
+  const lo=roundedFraction(lower),hi=roundedFraction(upper);
+  if(!(hi>lo)||!(r.t>l.t))fail('precision',node.id,{peerId:port.id});
+  intervals.push({lo,hi,atParameter:t=>l.y+(r.y-l.y)*(t-l.t)/(r.t-l.t)});
+ }
+ // Full coverage is a prerequisite to comparison. Intersecting two incomplete
+ // lists is never evidence that the requested physical cross-section exists.
+ let end=0;
+ for(const interval of intervals){
+  budget.take(1,node.id);
+  if(interval.lo>end)fail('port-width',node.id,{peerId:port.id});
+  end=Math.max(end,interval.hi);
+ }
+ if(end<1)fail('port-width',node.id,{peerId:port.id});
+ return intervals;
+}
+function profileHeight(profile,t,point){return profile.atParameter?profile.atParameter(t):profile.y(point);}
+function validatePortUse(node,incident,budget){
  for(const port of node.ports){
   if(port.kind==='serve'&&incident.length!==1)fail('port-face',node.id,{peerId:port.id});
   let outside=false;for(const edge of incident){
-   if(edge.width>port.width+NUM)fail('port-width',node.id,{peerId:port.id,value:edge.width,limit:port.width});
+   if(edge.width>port.width)fail('port-width',node.id,{peerId:port.id,value:edge.width,limit:port.width});
    const other=edge.a===node.id?edge.end:edge.start,d=sub(other,node.xz),unit=d.map(v=>v/length(d)),normal=[port.normal[0],port.normal[2]],alignment=dot(unit,normal);
-   if(Math.abs(cross(unit,normal))>1e-6||port.kind==='serve'&&alignment<1-1e-6)fail('port-face',node.id,{peerId:port.id});if(alignment>1-1e-6)outside=true;
+   if(Math.abs(cross(unit,normal))>1e-6||port.kind==='serve'&&alignment<1-1e-6)fail('port-face',node.id,{peerId:port.id});
+   edge.portSections.set(port,finitePortSection(port,edge,node,budget));
+   if(alignment>1-1e-6)outside=true;
   }
   if(!outside)fail('port-face',node.id,{peerId:port.id});
  }
 }
-function qualifyNormalized(n,budget){
- const {site}=n,index=makeIndex(n.hosts,budget),frameTransform=rigid(n.frame.origin,n.frame.yawRadians),obstacles=[...n.blocks],members=[];
+function validateArrivalGraph(nodeIds,edges,startId,gateId,budget){
+ budget.take(nodeIds.size+edges.length,budget.owner);
+ const adjacency=new Map([...nodeIds].map(nodeId=>[nodeId,[]]));
+ for(const edge of edges){adjacency.get(edge.a).push(edge.b);adjacency.get(edge.b).push(edge.a);}
+ const visited=new Set([startId]),queue=[startId];
+ for(let i=0;i<queue.length;i++)for(const next of adjacency.get(queue[i])){
+  budget.take(1,queue[i]);
+  if(!visited.has(next)){visited.add(next);queue.push(next);}
+ }
+ for(const nodeId of [gateId,...[...nodeIds].sort(cmp)])if(!visited.has(nodeId))fail('disconnected',nodeId);
+}
+function qualifyFootprint(site,member,footprint,budget){
+ budget.take(1,member.id);
+ const min=site.layout.metadata?.minFeature;
+ if(Number.isFinite(min)&&segments(footprint).some(([a,b])=>distance(a,b)<min))fail('precision',member.id,{polygon:footprint});
+ let allowed;
+ try{allowed=site.layout.footprintAllowed({level:site.level,regionId:member.regionId,polygon:footprint,clearance:CLEAR});}
+ catch(error){
+  if(error instanceof Error&&/^footprint:.*(short edge|zero area|self intersection)/.test(error.message))fail('precision',member.id,{polygon:footprint});
+  throw error;
+ }
+ if(!allowed)fail('region',member.id,{polygon:footprint});
+}
+function solveMembers(n,index,frameTransform,budget){
+ const {site}=n,obstacles=[...n.blocks],members=[];
  for(const m of n.members){
   const xz=frameTransform(m.uv),rotationY=n.frame.yawRadians+m.yawRadians,transform=rigid(xz,rotationY),footprint=canonical(boxRing(m.prototype.envelope).map(transform));footprint.flat().forEach(v=>number(v,'member world footprint'));
-  budget.take(1,m.id);if(!site.layout.footprintAllowed({level:site.level,regionId:m.regionId,polygon:footprint,clearance:CLEAR}))fail('region',m.id,{polygon:footprint});
+  qualifyFootprint(site,m,footprint,budget);
   for(const peer of members){budget.take(1,m.id);if(rectanglesOverlap(footprint,peer.footprint)||clip(footprint,peer.footprint,budget,m.id).length)fail('occupied',m.id,{peerId:peer.id,polygon:footprint});}
-  for(const solid of n.solids){budget.take(1,m.id);if(clip(footprint,expanded(solid.polygon,CLEAR),budget,m.id).length)fail('occupied',m.id,{peerId:solid.id,polygon:footprint});}
+  for(const solid of n.solids){budget.take(1,m.id);if(clip(footprint,expanded(solid.polygon,CLEAR,null,budget,m.id),budget,m.id).length)fail('occupied',m.id,{peerId:solid.id,polygon:footprint});}
   let supportMinY=Infinity,supportMaxY=-Infinity,offsetMinY=Infinity,offsetMaxY=-Infinity;
   for(const bearing of m.prototype.bearings){
    const ring=canonical(bearing.ring.map(transform)),proof=cover(ring,[m.bearingHost],m.id,index,budget,'bearing');supportMinY=Math.min(supportMinY,proof.minY);supportMaxY=Math.max(supportMaxY,proof.maxY);
@@ -331,12 +652,23 @@ function qualifyNormalized(n,budget){
   const y=number((offsetMinY+offsetMaxY)/2,'member world y');
   const envelope=m.prototype.envelope;
   number(y+envelope[1],'member world lower bound');number(y+envelope[4],'member world upper bound');
-  for(const block of n.blocks){budget.take(1,m.id);if(block.id===m.bearingHost&&block.yMax<=supportMinY+NUM)continue;if(block.yMax>y+envelope[1]-CLEAR&&block.yMin<y+envelope[4]+CLEAR&&clip(footprint,expanded(block.polygon,CLEAR),budget,m.id).length)fail('occupied',m.id,{peerId:block.id,polygon:footprint});}
-  const worldPorts=m.prototype.ports.map(p=>({id:p.id,kind:p.kind,anchorPosition:worldPoint(transform,p.position,y),servicePosition:worldPoint(transform,p.servicePosition,y),standingPosition:null,witness:p.witness.map(v=>worldPoint(transform,v,y)),normal:worldPoint(rigid([0,0],rotationY),p.normal,0),width:p.width,facePartId:p.facePartId,memberId:m.id}));
+  for(const block of n.blocks){budget.take(1,m.id);if(block.id===m.bearingHost&&block.yMax<=supportMinY+NUM)continue;if(block.yMax>y+envelope[1]-CLEAR&&block.yMin<y+envelope[4]+CLEAR&&clip(footprint,expanded(block.polygon,CLEAR,null,budget,m.id),budget,m.id).length)fail('occupied',m.id,{peerId:block.id,polygon:footprint});}
+  const worldPorts=m.prototype.ports.map(port=>({
+   id:port.id,kind:port.kind,
+   anchorPosition:worldPoint(transform,port.position,y),
+   servicePosition:worldPoint(transform,port.servicePosition,y),
+   standingPosition:null,
+   witness:port.witness.map(point=>worldPoint(transform,point,y)),
+   normal:worldPoint(rigid([0,0],rotationY),port.normal,0),
+   width:port.width,facePartId:port.facePartId,memberId:m.id
+  }));
   members.push({id:m.id,prototypeId:m.prototypeId,position:[xz[0],y,xz[1]],rotationY,footprint,worldPorts,bearingHost:m.bearingHost,supportMinY,supportMaxY});
   for(const part of m.prototype.parts)obstacles.push({id:JSON.stringify([m.id,part.id]),memberId:m.id,partId:part.id,polygon:canonical(boxRing(part.box).map(transform)),yMin:y+part.box[1],yMax:y+part.box[4]});
  }
  for(const s of n.solids)obstacles.push({...s,yMin:-512,yMax:512});
+ return {members,obstacles};
+}
+function makeWalkCandidate(n,members,frameTransform,budget){
  const nodes=n.nodes.map(node=>{
   if(node.uv)return {id:node.id,xz:frameTransform(node.uv),ports:[]};const m=members.find(m=>m.id===node.memberId),p=m.worldPorts.find(p=>p.id===node.portId);return {id:node.id,xz:[p.anchorPosition[0],p.anchorPosition[2]],ports:[p]};
  });
@@ -348,13 +680,21 @@ function qualifyNormalized(n,budget){
  const adjacency=new Map(nodes.map(v=>[v.id,[]])),edges=n.edges.map(e=>{
   const start=nodeMap.get(e.a).xz,end=nodeMap.get(e.b).xz,d=sub(end,start),len=length(d);if(len<MIN)invalid('authored physical edge length below .015m',true);const tangent=[-d[1]/len,d[0]/len],h=e.width/2;
   const polygon=canonical([[start[0]+tangent[0]*h,start[1]+tangent[1]*h],[start[0]-tangent[0]*h,start[1]-tangent[1]*h],[end[0]-tangent[0]*h,end[1]-tangent[1]*h],[end[0]+tangent[0]*h,end[1]+tangent[1]*h]]);polygon.flat().forEach(v=>number(v,'route world coordinate'));
-  const out={...e,start,end,polygon};adjacency.get(e.a).push(out);adjacency.get(e.b).push(out);return out;
+  budget.take(1,e.key);
+  const out={...e,start,end,polygon,portSections:new Map()};adjacency.get(e.a).push(out);adjacency.get(e.b).push(out);return out;
  });
- for(const node of nodes)validatePortUse(node,adjacency.get(node.id));
+ return {nodes,nodeMap,edges,adjacency};
+}
+function qualifyStraightDomains(walk,index,obstacles,budget){
+ const {nodes,nodeMap,edges,adjacency}=walk;
+ for(const node of nodes)validatePortUse(node,adjacency.get(node.id),budget);
  for(const edge of edges){
   const proof=cover(edge.polygon,edge.hostIds,edge.key,index,budget),ports=[...nodeMap.get(edge.a).ports,...nodeMap.get(edge.b).ports];edge.proof=proof;
   edge.minHeadroom=obstruct(edge.polygon,proof,obstacles,edge.hostIds,edge.headroom,edge.key,budget,ports);
  }
+}
+function qualifyTurnDomains(walk,index,obstacles,budget){
+ const {nodes,adjacency}=walk;
  // Turn squares are aligned with the actual incident directions, including a
  // world yaw. Their surface proof uses only the explicit incident host union.
  for(const node of nodes){
@@ -370,13 +710,16 @@ function qualifyNormalized(n,budget){
    turn=cover(poly,hostIds,node.id,index,budget);obstruct(poly,turn,obstacles,hostIds,headroom,node.id,budget);
   }
   for(const edge of incident){
-   const d=sub(edge.end,edge.start),len=length(d),t=[-d[1]/len,d[0]/len],a=[node.xz[0]-t[0]*edge.width/2,node.xz[1]-t[1]*edge.width/2],b=[node.xz[0]+t[0]*edge.width/2,node.xz[1]+t[1]*edge.width/2];
+   const {a,b}=edgeSection(edge,node,budget);
    const left=profile(a,b,edge.proof,node.id,budget),other=turn??incident.find(e=>e!==edge).proof,right=profile(a,b,other,node.id,budget);edge.proof.maxStep=Math.max(edge.proof.maxStep,compareProfiles(a,b,left,right,node.id,budget));
   }
  }
+}
+function qualifyStandingSections(walk,required,budget){
+ const {nodes,adjacency}=walk;
  // Validate actual standing levels and cross-sill height over the whole width.
  for(const node of nodes){
-  const incident=adjacency.get(node.id);if(!incident.length&&(node.ports.length||n.required.includes(node.id)))fail('disconnected',node.id);
+  const incident=adjacency.get(node.id);if(!incident.length&&(node.ports.length||required.includes(node.id)))fail('disconnected',node.id);
   let firstY=null;
   for(const edge of incident){
    const standing=atPoint(node.xz,edge.proof,node.id,budget);if(firstY===null)firstY=standing;else if(Math.abs(firstY-standing)>STEP+NUM)fail('seam-step',node.id,{value:Math.abs(firstY-standing),limit:STEP});
@@ -386,22 +729,23 @@ function qualifyNormalized(n,budget){
     if(port.kind==='serve'){
      const relative=port.servicePosition[1]-standing;if(relative< -NUM||relative>2.1+NUM)fail('port-face',node.id,{peerId:port.id,value:relative,limit:2.1});
     }else{
-     const t=[port.normal[2],-port.normal[0]],h=edge.width/2,a=[node.xz[0]-t[0]*h,node.xz[1]-t[1]*h],b=[node.xz[0]+t[0]*h,node.xz[1]+t[1]*h],actual=profile(a,b,edge.proof,node.id,budget);
-     const witnesses=port.witness.map(p=>({t:dot([p[0]-node.xz[0],p[2]-node.xz[1]],t),y:p[1]})).sort((a,b)=>a.t-b.t||a.y-b.y),sill=[];
-     for(let i=1;i<witnesses.length;i++){
-      const l=witnesses[i-1],r=witnesses[i];budget.take(1,node.id);if(r.t-l.t<=NUM){if(Math.abs(r.y-l.y)>STEP+NUM)fail('seam-step',node.id,{peerId:port.id});continue;}
-      const lo=Math.max(0,(l.t+h)/edge.width),hi=Math.min(1,(r.t+h)/edge.width);if(hi<=lo)continue;
-      sill.push({lo,hi,y:p=>{const projection=dot(sub(p,node.xz),t);return l.y+(r.y-l.y)*(projection-l.t)/(r.t-l.t);}});
-     }
+     const section=edge.portSections.get(port),{a,b}=section;
+     const actual=profile(a,b,edge.proof,node.id,budget),sill=crossSillProfile(section,port,node,budget);
      compareProfiles(a,b,actual,sill,node.id,budget);if(Math.abs(port.servicePosition[1]-standing)>STEP+NUM)fail('seam-step',node.id,{peerId:port.id,value:Math.abs(port.servicePosition[1]-standing),limit:STEP});
     }
     if(port.memberId){const y=port.standingPosition?.[1];if(y!==undefined&&Math.abs(y-standing)>STEP+NUM)fail('seam-step',node.id,{peerId:port.id});if(port.standingPosition===null)port.standingPosition=[node.xz[0],standing,node.xz[1]];}
    }
   }
  }
+}
+function qualifyReserves(n,index,frameTransform,obstacles,budget){
  const reserves=n.reserves.map(r=>{
   const polygon=canonical(r.polygon.map(frameTransform));polygon.flat().forEach(v=>number(v,'reserve world coordinate'));const proof=cover(polygon,r.hostIds,r.id,index,budget);obstruct(polygon,proof,obstacles,r.hostIds,2.1,r.id,budget);return {id:r.id,polygon,hostIds:r.hostIds};
  });
+ return reserves;
+}
+function completeSnapshot(n,members,walk,reserves,budget){
+ const {site}=n,{edges,adjacency}=walk;
  const from=new Map([[n.gateId,[]]]),queue=[n.gateId];for(let i=0;i<queue.length;i++){
   const k=queue[i];for(const edge of adjacency.get(k)){budget.take(1,k);const next=edge.a===k?edge.b:edge.a;if(!from.has(next)){from.set(next,[...from.get(k),edge.key]);queue.push(next);}}
  }
@@ -409,6 +753,17 @@ function qualifyNormalized(n,budget){
  return {id:n.id,level:site.level,regionId:site.regionId,groupId:site.groupId,lotId:site.lotId,edgeId:site.edgeId,frame:n.frame,
   members:members.map(m=>({...m,worldPorts:m.worldPorts.map(({facePartId,memberId,...p})=>p)})),
   routes:edges.map(e=>({a:e.a,b:e.b,width:e.width,polygon:e.polygon,hostIds:e.hostIds,faceIds:e.proof.faceIds,minHeadroom:e.minHeadroom,maxGrade:e.proof.maxGrade,maxStep:e.proof.maxStep})),reserves,chains:n.required.map(nodeId=>({nodeId,fromGate:from.get(nodeId)})),linkEdges:edges.map(e=>e.key)};
+}
+function qualifyNormalized(n,budget){
+ const index=makeIndex(n.hosts,budget);
+ const frameTransform=rigid(n.frame.origin,n.frame.yawRadians);
+ const {members,obstacles}=solveMembers(n,index,frameTransform,budget);
+ const walk=makeWalkCandidate(n,members,frameTransform,budget);
+ qualifyStraightDomains(walk,index,obstacles,budget);
+ qualifyTurnDomains(walk,index,obstacles,budget);
+ qualifyStandingSections(walk,n.required,budget);
+ const reserves=qualifyReserves(n,index,frameTransform,obstacles,budget);
+ return completeSnapshot(n,members,walk,reserves,budget);
 }
 
 export function qualifyActivityCourt(input){
