@@ -528,3 +528,75 @@ test('C1 unrepresentable positive source area is precision failure rather than m
  prototype.bearings=[{prototypeOwner:prototype.prototypeOwner,ring:[[0,0],[1e-200,0],[0,1e-200]],bottomY:0}];
  reject(bearing,'precision');
 });
+
+// Fix round 2: diagnostic text is not source identity, and a positive section
+// interval retains its endpoint heights regardless of its physical width.
+function collidingHostFixture(memberId){
+ const f=fixture(),owner=f.site.owner,prototypeOwner=Object.freeze({});
+ const hostId=JSON.stringify(['q','body']);
+ f.prototypes.push({
+  id:'slab',prototypeOwner,
+  envelope:[-.2,-.125,-.2,.2,0,.2],
+  parts:[{id:'body',prototypeOwner,box:[-.2,-.125,-.2,.2,0,.2]}],
+  bearings:[{prototypeOwner,bottomY:-.125,ring:rect(-.2,-.2,.2,.2)}],
+  ports:[]
+ });
+ f.recipe.members.push({id:memberId,prototypeId:'slab',uv:[0,1],yawRadians:0,bearingHost:'under',regionId:'yard'});
+ f.site.hostFaces.push(
+  {id:hostId,owner,faces:flatRect(-20,-20,20,20)},
+  {id:'under',owner,faces:flatRect(-20,-20,20,20,-.125)}
+ );
+ f.recipe.hostScopes.push(hostId,'under');
+ f.recipe.edges[0].hostIds=[hostId];
+ return f;
+}
+function sourceSillFixture(half,height){
+ const f=fixture(),x=.25;
+ f.site.arrival.sourcePort.witness.splice(1,0,
+  [x-half,0,-2],[x,height,-2],[x+half,0,-2]
+ );
+ return f;
+}
+
+test('R2 C3 member diagnostic ID collision never inherits host-floor exemption',()=>{
+ for(const memberId of ['q','other']){
+  const r=reject(collidingHostFixture(memberId),'blocked-clearance');
+  assert.equal(r.diagnostics.reasons[0].peerId,JSON.stringify([memberId,'body']));
+ }
+});
+
+test('R2 C3 actual host blocks retain self exemption with legal JSON tuple IDs',()=>{
+ const f=fixture(),hostId=JSON.stringify(['q','body']);
+ f.site.hostFaces[0].id=hostId;
+ f.recipe.hostScopes=[hostId];
+ f.recipe.members[0].bearingHost=hostId;
+ f.recipe.edges[0].hostIds=[hostId];
+ f.site.arrival.edges[0].hostIds=[hostId];
+ f.site.blocks.push({owner:f.site.owner,id:hostId,polygon:rect(-20,-20,20,20),yMin:-.125,yMax:0});
+ const r=qualify(f);
+ assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+ assert.equal(JSON.stringify(r.snapshot).includes('sourceKind'),false);
+});
+
+test('R2 N1 full-width source sill retains an off-centre 1e-12 wide 3cm peak',()=>{
+ const r=reject(sourceSillFixture(1e-12,.03),'seam-step');
+ assert.equal(r.diagnostics.reasons[0].ownerId,'source');
+ assert.ok(r.diagnostics.reasons[0].value>.029);
+});
+
+test('R2 N1 the same narrow full section permits flat and sub-step low controls',()=>{
+ for(const height of [0,.005]){
+  const r=qualify(sourceSillFixture(1e-12,height));
+  assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+ }
+});
+
+test('R2 N1 a wider off-centre 3cm source sill peak still fails the same step limit',()=>{
+ const r=reject(sourceSillFixture(1e-4,.03),'seam-step');
+ assert.equal(r.diagnostics.reasons[0].ownerId,'source');
+});
+
+test('R2 N1 actual zero-length flat witness contacts remain admissible',()=>{
+ const r=qualify(sourceSillFixture(0,0));
+ assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+});

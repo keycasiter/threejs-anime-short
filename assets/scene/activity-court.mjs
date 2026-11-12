@@ -355,7 +355,7 @@ function normalize(input,budget){
  const blocks=unique(array(site.blocks,'blocks',0,Infinity,budget,input.id).map(b=>{
   object(b,'block');
   id(b.id);budget.take(1,input.id);if(b.owner!==owner)invalid('block owner identity mismatch');const yMin=number(b.yMin,'block.yMin'),yMax=number(b.yMax,'block.yMax');if(yMin>=yMax)invalid('block height interval',true);
-  return {id:b.id,polygon:polygon(b.polygon,'block.polygon',false,budget,b.id),yMin,yMax};
+  return {id:b.id,sourceKind:'site-block',polygon:polygon(b.polygon,'block.polygon',false,budget,b.id),yMin,yMax};
  }),'block');
  const solids=unique(array(site.reservedSolids,'reservedSolids',0,Infinity,budget,input.id).map(s=>{object(s,'reservedSolid');id(s.id);budget.take(1,input.id);if(s.owner!==owner)invalid('reservedSolid owner identity mismatch');return {id:s.id,polygon:polygon(s.polygon,'reservedSolid.polygon',false,budget,s.id)};}),'reservedSolid');
  const arrival=plain(site.arrival,'arrival');if(arrival.owner!==owner)invalid('arrival owner identity mismatch');
@@ -497,7 +497,7 @@ function expanded(poly,amount,exempt,budget,owner){
  return canonical(finiteRing(result,owner));
 }
 function registeredExemption(obstacle,ports,budget,owner){
- if(typeof obstacle.memberId!=='string'||typeof obstacle.partId!=='string')return null;
+ if(obstacle.sourceKind!=='member-part'||typeof obstacle.memberId!=='string'||typeof obstacle.partId!=='string')return null;
  for(const port of ports){
   budget.take(1,owner);
   if(typeof port.memberId==='string'&&typeof port.facePartId==='string'&&port.memberId===obstacle.memberId&&port.facePartId===obstacle.partId)return port;
@@ -513,7 +513,7 @@ function obstruct(poly,proof,obstacles,hostIds,headroom,owner,budget,exemptions=
    const r=clip(piece.ring,padded,budget,owner);if(!r.length)continue;
    const ys=r.map(piece.face.y),low=Math.min(...ys),high=Math.max(...ys);
    // Only the identified floor itself is allowed to meet feet from below.
-   if(piece.face.hostId===obstacle.id&&Math.abs(obstacle.yMax-low)<=NUM&&Math.abs(obstacle.yMax-high)<=NUM)continue;
+   if(obstacle.sourceKind==='site-block'&&piece.face.hostId===obstacle.id&&Math.abs(obstacle.yMax-low)<=NUM&&Math.abs(obstacle.yMax-high)<=NUM)continue;
    // A registered cross interface can name its actual sill part. Its measured
    // top must coincide with the entire independently qualified walking piece;
    // this does not exempt any jamb, wall, column or header in the same member.
@@ -541,7 +541,20 @@ function profile(a,b,proof,owner,budget){
 }
 function compareProfiles(a,b,left,right,owner,budget){
  let maximum=0;
- for(const l of left)for(const r of right){budget.take(1,owner);const lo=Math.max(l.lo,r.lo),hi=Math.min(l.hi,r.hi);if(hi<=lo+NUM)continue;const v=Math.max(...[lo,hi].map(t=>{const p=lerp(a,b,t);return Math.abs(profileHeight(l,t,p)-profileHeight(r,t,p));}));maximum=Math.max(maximum,v);if(v>STEP+NUM)fail('seam-step',owner,{value:v,limit:STEP,polygon:[lerp(a,b,lo),lerp(a,b,hi)]});}
+ for(const l of left)for(const r of right){
+  budget.take(1,owner);
+  const lo=Math.max(l.lo,r.lo),hi=Math.min(l.hi,r.hi);
+  if(!Number.isFinite(lo)||!Number.isFinite(hi))fail('precision',owner);
+  if(hi<=lo)continue; // Only a genuine zero-length contact has no interval.
+  const start=lerp(a,b,lo),end=lerp(a,b,hi);
+  if(![...start,...end].every(Number.isFinite))fail('precision',owner);
+  const heights=[profileHeight(l,lo,start),profileHeight(r,lo,start),profileHeight(l,hi,end),profileHeight(r,hi,end)];
+  if(!heights.every(Number.isFinite))fail('precision',owner);
+  const v=Math.max(Math.abs(heights[0]-heights[1]),Math.abs(heights[2]-heights[3]));
+  if(!Number.isFinite(v))fail('precision',owner);
+  maximum=Math.max(maximum,v);
+  if(v>STEP+NUM)fail('seam-step',owner,{value:v,limit:STEP,polygon:[start,end]});
+ }
  return maximum;
 }
 function atPoint(p,proof,owner,budget){
@@ -663,9 +676,9 @@ function solveMembers(n,index,frameTransform,budget){
    width:port.width,facePartId:port.facePartId,memberId:m.id
   }));
   members.push({id:m.id,prototypeId:m.prototypeId,position:[xz[0],y,xz[1]],rotationY,footprint,worldPorts,bearingHost:m.bearingHost,supportMinY,supportMaxY});
-  for(const part of m.prototype.parts)obstacles.push({id:JSON.stringify([m.id,part.id]),memberId:m.id,partId:part.id,polygon:canonical(boxRing(part.box).map(transform)),yMin:y+part.box[1],yMax:y+part.box[4]});
+  for(const part of m.prototype.parts)obstacles.push({id:JSON.stringify([m.id,part.id]),sourceKind:'member-part',memberId:m.id,partId:part.id,polygon:canonical(boxRing(part.box).map(transform)),yMin:y+part.box[1],yMax:y+part.box[4]});
  }
- for(const s of n.solids)obstacles.push({...s,yMin:-512,yMax:512});
+ for(const s of n.solids)obstacles.push({...s,sourceKind:'reserved-solid',yMin:-512,yMax:512});
  return {members,obstacles};
 }
 function makeWalkCandidate(n,members,frameTransform,budget){
