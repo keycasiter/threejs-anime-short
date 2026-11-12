@@ -35,6 +35,8 @@
 
 ## 最短可执行入口
 
+需要任意对应截面、Bezier双层壳、隐式网格、道路面并集/层间接口或完整PBR/分段受光时，进入[核心三线](core-systems.md)。[core-lab](../assets/examples/core-lab/index.html)与[同源工厂](../assets/examples/core-world.mjs)展示三种空间结构和两种look；API和限制分别在[连续形体](continuous-surfaces.md)、[空间生成](world-layout.md)、[材光接力](look-development.md)维护。不等于通用CAD、自动城市、完整HLOD或GI。
+
 选择几何表示或搭建模块生命周期时，读[实现基础](implementation-foundations.md)，运行[foundation-lab](../assets/examples/foundation-lab/index.html)及其[源码](../assets/examples/foundation-lab/main.mjs)。它复用现回转壳/放样与真实表面/端口，分别验证结构重建、无关对象保持、共享材质与释放；不是新的完整形体算法库或成品画质模板。
 
 | 公共基础 | 已实现API | 所有权与范围 |

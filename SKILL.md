@@ -22,6 +22,8 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 选生成器、接模块或实现结构重建时，先读[实现基础](references/implementation-foundations.md)：按轮廓/孔腔/连接/动作选择可表达目标的表示，明确局部与世界数据、更新依赖和资源所有者。其[运行例](assets/examples/foundation-lab/index.html)连接真实网格/表面/附件与失败回退；已有工具和待开发能力分开选择。
 
+制作任意截面/曲壳/融合体、分层区域或统一PBR/分段受光时，读[核心三线接力](references/core-systems.md)，按视觉标尺进入对应真实生成器，并在[完整空间入口](assets/examples/core-lab/index.html)核对几何—世界—材光的消费链；原例的布局/数值只作方法演示。
+
 开始写空间、资产、分布或动态函数时，进入[Three.js代码接力](references/code-guidance.md)对应小节：先把设计关系写成实际输入，再沿可运行配方接到网格、端口、材料或更新函数。随包[完整工厂](assets/examples/guided-assembly.mjs)和[运行入口](assets/examples/guided-world/index.html)展示主形/邻件/受光的同源实现；新题材替换设计和生成规则，保留适用接口。参数或动作接好即读回实际消费者，再扩展同族对象。
 
 空间草案先按[观看与遮挡](references/visual-construction.md#1-先让关键部位能被看清)让目标部位和支撑/框架同时成立；重复铺覆、同族资产与近景曲面开工前，分别用该页的完整轮廓裁切、结构变体与采样配方。材料先在真实资产/邻件的同机位中校准再扩场；界面文字与合法近景共同设计。工具定位具体损失，目标视图中的可读性与完成度决定是否进入下一段制作。

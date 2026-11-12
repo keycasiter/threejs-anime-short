@@ -10,12 +10,12 @@
 |---|---|---|
 | 规则体块、明确分件与刚性装配 | 直接构造几何；尺寸进入顶点，端口用局部刚性架 | 现有Three构造器、[装配器](../assets/scene/asset-assembly.mjs)、[端口连接](../assets/scene/anchor-connection.mjs)；连续形态不能靠堆积规则体替代 |
 | 轴对称，内外壁由径向剖面定义 | 内/外`{r,y}`轮廓、折点、端环 | [createRevolvedShell](../assets/geometry/profile-surfaces.mjs)；内壁独立设计，不是法向等厚偏移；偏心、弯轴、侧孔转其他路线 |
-| 沿路径连续，截面可用椭圆表达 | 中心站位、全宽/全深、滚转、采样 | [createSectionLoftSource](../assets/geometry/loft-source.mjs)给网格和实际侧面查询；不含内壁、分叉、任意截面和防自交 |
+| 沿路径连续，截面可用椭圆表达 | 中心站位、全宽/全深、滚转、采样 | [createSectionLoftSource](../assets/geometry/loft-source.mjs)给网格与侧面查询；非椭圆对应截面用[profile-loft](continuous-surfaces.md)，均不证明全局无自交 |
 | 平板孔洞、凸域重复铺覆与端部 | 轮廓/孔/厚度，或完整单元与允许域求交 | [截面工具](profile-geometry.md)、[边界工具](visual-construction.md#2-重复单元先归属区域再裁完整轮廓)；任意实体布尔另实现 |
-| 非轴对称自由曲面、复杂内腔/多开口 | 控制patch/任意截面壳；必要时实体布尔或隐式体提取 | 当前需自行实现/适配，读[几何配方](geometry-recipes.md)、[条件库](library-integration.md)；先证明边界/厚度/连续性，再扩场 |
+| 非轴对称自由曲面、复杂内腔/多开口 | 控制patch/壳；必要时实体布尔或隐式体提取 | [连续形体工具](continuous-surfaces.md)已有单Bezier双层封边壳与有界场MC；多patch/通用布尔/自适应等仍需实现，读[条件库](library-integration.md) |
 | 一个XZ位置只有一个表面高度 | 高度场及梯度，同源生成地形与场查询 | [height-field](../assets/environment/height-field.mjs)；洞穴、悬挑、多层不适用，转多值网格/实体路线 |
 | 分枝融合、柔性或连续变形 | 分级骨架+真实连接；或控制曲线/网格/蒙皮 | 读[自然方法](nature-methods.md)、[运动方法](motion-and-scale.md)；完整分叉/rig需开发，多个Tube相交不等于连续连接 |
-| 世界是区域、路径、房间和用途关系 | 图/区域是布局表示；每个资产再选自己的几何表示 | [corridor-layout](../assets/scene/corridor-layout.mjs)仅矩形通路/沿边地块；复杂路口/完整世界需组合生成，不以一个Mesh替代全部布局 |
+| 世界是区域、路径、房间和用途关系 | 图/区域是布局表示；每个资产再选自己的几何表示 | [world-layout](world-layout.md)给道路并集/孔、区域足迹与层间连接；原corridor工具继续供单图/地块；房间/导航/世界美术另行组合 |
 
 几何、表面和动态是可组合的表示选择：网格负责轮廓/负形；材质场负责颜色/粗糙度/微法线；动作选择刚性层级、解析位移或需要历史的模拟。共享源能生成实际表面时直接复用；无法给出正确接点时增加真实网格查询或实现对应接口。
 
