@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
+import {resolve,dirname} from 'node:path';
 import vm from 'node:vm';
 import {createResourceScope} from '../../assets/runtime/resource-scope.mjs';
 import {createAssetSlot} from '../../assets/runtime/asset-slot.mjs';
 import {createContourRelation} from '../../assets/examples/contour-relations.mjs';
-const T=await import(pathToFileURL(process.env.THREE_MODULE).href);
-const {OrbitControls}=await import(new URL('../examples/jsm/controls/OrbitControls.js',pathToFileURL(process.env.THREE_MODULE)).href.replace('/build/examples/','/examples/'));
+const T=await import(process.env.THREE_MODULE?pathToFileURL(resolve(process.env.THREE_MODULE)).href:'three');
+const {OrbitControls}=await import(process.env.THREE_MODULE?pathToFileURL(resolve(dirname(resolve(process.env.THREE_MODULE)),'../examples/jsm/controls/OrbitControls.js')).href:'three/addons/controls/OrbitControls.js');
 const main=await readFile(new URL('../../assets/examples/contour-lab/main.mjs',import.meta.url),'utf8');
 const design=JSON.parse(await readFile(new URL('../../assets/examples/contour-relations-design.json',import.meta.url),'utf8'));
 const near=(a,b)=>a.forEach((v,i)=>assert.ok(Math.abs(v-b[i])<1e-8,`${v} != ${b[i]}`));
@@ -23,7 +24,8 @@ function harness(){
  const context=vm.createContext({T,design,materials,rigidDepth,slot,$,camera,controls,listen:(element,event,callback)=>{element.listeners??={};element.listeners[event]=callback;},createContourRelation,document:{createElement:element},console});
  vm.runInContext(`let disposed=false,error=null,replacementStatus='committed',selected={id:'opening-bearing',mode:'profile'},viewName='front';const parameters={spanX:1,spanY:1,sectionWidth:1,sectionHeight:1};const initialRoughness=.46;\n${['status','isFrozen','sync','viewOptions','rebuild','setView'].map(functionSource).join('\n')}\nglobalThis.api={rebuild,read(){return {selected,parameters,viewName,error,replacementStatus,revision:slot.revision,asset:slot.current.readState(),camera:{position:camera.position.toArray(),target:controls.target.toArray()}}}};`,context);
  vm.runInContext(main.split('\n').find(line=>line.includes("listen($('relation'),'change'")),context);
- return {api:context.api,slot,nodes,$,rigidDepth,close(){controls.dispose();slot.dispose();Object.values(materials).forEach(m=>m.dispose());rigidDepth.dispose();}};
+ vm.runInContext(`Object.assign(api,{${main.split('\n').find(line=>line.trimStart().startsWith('setRoughness(value)'))}});`,context);
+ return {api:context.api,slot,nodes,$,rigidDepth,materials,close(){controls.dispose();slot.dispose();Object.values(materials).forEach(m=>m.dispose());rigidDepth.dispose();}};
 }
 test('actual Orbit configuration admits every registered camera position and target',()=>{
  const doc=element(),canvas={...element(),getRootNode:()=>doc};const camera=new T.PerspectiveCamera(40,16/9,.05,40),owner={own:x=>x};let controls;
@@ -70,4 +72,13 @@ test('actual slot builder lends one scene depth material across every rigid cast
 });
 test('custom view entry is disabled display-only while API can mark it selected',()=>{
  const h=harness();h.api.rebuild({id:'support-recess'});const option=h.$('view').children.find(x=>x.value==='custom');assert.equal(option.disabled,true);assert.equal(h.$('view').value,'custom');assert.equal(h.api.read().viewName,'custom');h.close();
+});
+
+test('actual roughness API and sync preserve endpoints and continuous values in UI state',()=>{
+ const h=harness();
+ try{for(const value of [0,1,.456]){
+  h.api.setRoughness(value);assert.equal(h.materials.frame.roughness,value);
+  assert.equal(Number(h.$('roughness').value),value);
+  assert.equal(Number(h.$('roughness-value').value),value,'roughness output must not silently round another value');
+ }}finally{h.close();}
 });

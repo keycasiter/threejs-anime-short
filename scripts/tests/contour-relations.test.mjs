@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
 import {createAssetSlot} from '../../assets/runtime/asset-slot.mjs';
-const T=await import(pathToFileURL(process.env.THREE_MODULE).href);
+const T=await import(process.env.THREE_MODULE?pathToFileURL(resolve(process.env.THREE_MODULE)).href:'three');
 const design=JSON.parse(await readFile(new URL('../../assets/examples/contour-relations-design.json',import.meta.url),'utf8'));
 const {createContourRelation}=await import('../../assets/examples/contour-relations.mjs');
 const materials=()=>Object.fromEntries(['frame','panelDeck','attachment'].map(k=>[k,new T.MeshStandardMaterial()]));
@@ -94,4 +95,42 @@ test('accepted finite fixture footprints contact actual frame at all corners acr
 });
 test('parameter own-key validation rejects constructor and nonenumerable/symbol unknowns',()=>{
  for(const parameters of [{constructor:1},Object.defineProperty({},'unregistered',{value:1}),{[Symbol('unregistered')]:1}])assert.throws(()=>build('opening-bearing','profile',parameters),/Unknown structural parameter/);
+});
+
+// Named-cell coordinates must not silently become an adjacent face when their
+// normalized arc conversion rounds up. Expected faces come from emitted indices,
+// not from another normalized query or an ideal profile formula.
+const upper=1-Number.EPSILON;
+const fixtures=[
+ ...design.examples.flatMap(example=>['plain','profile'].map(mode=>({label:`${example.id}/${mode}`,design,id:example.id,mode}))),
+ ...['plain','profile'].flatMap(mode=>[[true,false],[false,true],[true,true]].map(([reverseContour,reverseProfile])=>{
+  const input=structuredClone(design),example=input.examples[1];
+  if(reverseContour)example.contour.reverse();
+  if(reverseProfile)example[mode==='plain'?'plainControlProfile':'profile'].reverse();
+  return {label:`support-recess/${mode}/reverse-${reverseContour}-${reverseProfile}`,design:input,id:example.id,mode};
+ }))
+];
+for(const fixture of fixtures)test(`named cell upper limits retain actual indexed face: ${fixture.label}`,()=>{
+ const m=materials(),h=createContourRelation(T,{...fixture,materials:m}),g=h.parts.frame.geometry,meta=h.readState().metadata,N=meta.contour.length;
+ try{
+  assert.ok(new Set(meta.contourArcLengths.slice(1).map((x,i)=>x-meta.contourArcLengths[i])).size>1,'nonuniform contour arcs');
+  assert.ok(new Set(meta.profileArcLengths.slice(1).map((x,i)=>x-meta.profileArcLengths[i])).size>1,'nonuniform section arcs');
+  for(let band=0;band<meta.profile.length;band++)for(let segment=0;segment<N;segment++)for(const [t,s]of [[.5,upper],[upper,.5],[upper,upper],[0,0],[0,.5],[.5,0]]){
+   const context=`${fixture.label} segment=${segment} band=${band} t=${t} s=${s}`;
+   const q=h.ports.query({contourSegment:segment,t,profileBand:band,s},'source'),first=(band*N+segment)*2;
+   assert.equal(q.contourSegment,segment,context);assert.equal(q.profileBand,band,context);
+   // The upper/upper diagonal can select either cell triangle after arc
+   // quantization; the separated half/upper cases have a unique actual face.
+   if(t!==s)assert.equal(q.triangleIndex,first+(s<t?0:1),context);
+   else assert.ok(q.triangleIndex===first||q.triangleIndex===first+1,context);
+   const vertices=[0,1,2].map(k=>new T.Vector3().fromBufferAttribute(g.attributes.position,g.index.getX(q.triangleIndex*3+k)));
+   const triangle=new T.Triangle(...vertices),normal=triangle.getNormal(new T.Vector3());
+   assert.ok(q.normal.distanceTo(normal)<2e-6,context+' actual face normal');
+   assert.ok(Math.abs(triangle.getPlane(new T.Plane()).distanceToPoint(q.point))<2e-6,context+' actual face plane');
+   const bary=triangle.getBarycoord(q.point,new T.Vector3());assert.ok(bary&&Math.min(bary.x,bary.y,bary.z)>-2e-6,context+' actual triangle support');
+   const base=(band*N+segment)*4,corners=[0,1,2,3].map(k=>new T.Vector3().fromBufferAttribute(g.attributes.position,base+k));
+   const expected=corners[0].clone().multiplyScalar((1-t)*(1-s)).addScaledVector(corners[1],t*(1-s)).addScaledVector(corners[2],t*s).addScaledVector(corners[3],(1-t)*s);
+   assert.ok(q.point.distanceTo(expected)<2e-6,context+' requested local position');
+  }
+ }finally{h.dispose();Object.values(m).forEach(material=>material.dispose());}
 });

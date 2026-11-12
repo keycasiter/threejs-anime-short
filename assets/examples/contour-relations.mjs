@@ -27,7 +27,18 @@ export function createContourRelation(T,{design,id='opening-bearing',mode='profi
   const [lo,hi]=zInterval;if(!(Number.isFinite(lo)&&Number.isFinite(hi)&&hi>lo))throw new RangeError('Invalid neighbor interval');
   const geometry=scope.own(new T.ExtrudeGeometry(shape,{depth:hi-lo,steps:1,bevelEnabled:false,curveSegments:1}));geometry.translate(0,0,lo);geometry.computeBoundingBox();geometry.computeBoundingSphere();return geometry;
  }
- function arcParameter(arcs,index,t){if(!Number.isInteger(index)||index<0||index>=arcs.length-1||!Number.isFinite(t)||t<0||t>=1)throw new RangeError('Invalid band/segment coordinates; t and s must be in [0,1)');return (arcs[index]+(arcs[index+1]-arcs[index])*t)/arcs.at(-1);}
+ // The kernel selects the outgoing cell at an exact normalized boundary.
+ // Preserve the caller's named cell if conversion rounds an interior value up,
+ // including the final cell whose upper boundary wraps 1 back to 0.
+ function arcParameter(arcs,index,t){
+  if(!Number.isInteger(index)||index<0||index>=arcs.length-1||!Number.isFinite(t)||t<0||t>=1)throw new RangeError('Invalid band/segment coordinates; t and s must be in [0,1)');
+  const total=arcs.at(-1),start=arcs[index]/total,end=arcs[index+1]/total;
+  const value=(arcs[index]+(arcs[index+1]-arcs[index])*t)/total;
+  if(value<end)return Math.max(start,value);
+  const bits=new DataView(new ArrayBuffer(8));bits.setFloat64(0,end);
+  bits.setBigUint64(0,bits.getBigUint64(0)-1n);
+  return Math.max(start,bits.getFloat64(0));
+ }
  function query(spec,space='root'){
   alive();if(!['source','root','world'].includes(space))throw new RangeError('query space must be source, root or world');
   const {contourSegment,t,profileBand,s}=spec??{},meta=source.metadata;

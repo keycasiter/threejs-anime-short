@@ -51,7 +51,7 @@ try{
   for(const [key,value]of Object.entries(parameters)){
    const input=$(key);input.step='any';if(value<Number(input.min))input.min=String(value);if(value>Number(input.max))input.max=String(value);input.value=value;$(`${key}-value`).value=value.toFixed(2);
   }
-  $('roughness').value=materials.frame.roughness;$('roughness-value').value=materials.frame.roughness.toFixed(2);
+  $('roughness').value=materials.frame.roughness;$('roughness-value').value=String(materials.frame.roughness);
  }
  function rebuild(change={}){
   if(disposed)throw Error('Contour lab is disposed');
