@@ -204,3 +204,21 @@ test('invariant schemas and inputs must describe ordinary, finite, per-vertex Fl
   g.setAttribute('aHint',new THREE.Float32BufferAttribute([2,3,4],1));g.setAttribute('aUnknown',g.attributes.aHint);assert.throws(()=>a.add(g,m),/aUnknown/);
   g.deleteAttribute('aUnknown');a.add(g,m);const r=a.finish();assert.equal(r.stats.staticInputs,1);a.dispose();g.dispose();m.dispose();
 });
+
+test('optional source IDs resolve actual merged vertex ranges across tracked/untracked material/render buckets',()=>{
+ const a=assembly(),g=triangle(),m=material(),other=m.clone(),dynamic=new THREE.Mesh(triangle(),m);g.setIndex([2,0,1]);
+ assert.equal(a.add(g,m),a);a.add(g,m,{sourceId:'frame'}).add(g,m,{sourceId:'other'}).add(g,m,{sourceId:'frame'});
+ a.add(g,other,{sourceId:'frame'});a.add(g,m,{castShadow:false});a.add(g,m,{sourceId:'frame',castShadow:false});a.add(g,m,{sourceId:'layer',layers:4});a.dynamic(dynamic);
+ const r=a.finish();assert.equal(a.finish(),r);assert.equal(r.stats.staticMeshes,4);assert.equal(r.sourceRanges.length,6);
+ const same=r.sourceRanges.filter(x=>x.object.material===m&&x.object.castShadow&&x.object.layers.mask===1);
+ assert.deepEqual(same.map(x=>[x.sourceId,x.vertexStart,x.vertexCount]),[['frame',3,3],['other',6,3],['frame',9,3]]);
+ for(const range of r.sourceRanges){assert.ok(r.root.children.includes(range.object));assert.equal(range.geometry,range.object.geometry);assert.notEqual(range.object,dynamic);assert.equal(range.geometry.index,null);assert.equal(range.vertexStart%3,0);assert.equal(range.vertexCount%3,0);assert.ok(range.vertexStart+range.vertexCount<=range.geometry.attributes.position.count);
+  const p=range.geometry.attributes.position;for(let i=0;i<range.vertexCount;i++)for(let c=0;c<3;c++)assert.equal(p.getComponent(range.vertexStart+i,c),g.attributes.position.getComponent(g.index.getX(i),c));}
+ assert.equal(r.sourceRanges.find(x=>x.object.material===other).vertexStart,0);assert.equal(r.sourceRanges.find(x=>!x.object.castShadow).vertexStart,3);
+ let source=0,borrowed=0,output=0;g.addEventListener('dispose',()=>source++);m.addEventListener('dispose',()=>borrowed++);other.addEventListener('dispose',()=>borrowed++);for(const mesh of r.root.children.filter(o=>o!==dynamic))mesh.geometry.addEventListener('dispose',()=>output++);
+ r.dispose();a.dispose();a.dispose();assert.equal(source,0);assert.equal(borrowed,0);assert.equal(output,4);g.dispose();dynamic.geometry.dispose();m.dispose();other.dispose();
+});
+test('source ID is optional metadata and validates without changing default fluent assembly behavior',()=>{
+ const a=assembly(),g=triangle(),m=material();for(const sourceId of ['', '  ',null,3,{},false])assert.throws(()=>a.add(g,m,{sourceId}),/sourceId/i);
+ assert.equal(a.add(g,m,{sourceId:undefined}),a);const r=a.finish();assert.deepEqual(r.sourceRanges,[]);assert.equal(r.stats.staticInputs,1);assert.equal(r.root.children.length,1);r.dispose();g.dispose();m.dispose();
+});

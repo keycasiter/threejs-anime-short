@@ -17,7 +17,7 @@ document.body.prepend(renderer.domElement);owner.defer(()=>renderer.domElement.r
 const scene=new T.Scene(),camera=new T.PerspectiveCamera(41,innerWidth/innerHeight,.1,420);
 camera.position.set(27,23,31);
 const controls=owner.own(new OrbitControls(camera,renderer.domElement));controls.target.set(0,1,0);controls.enableDamping=true;
-controls.minDistance=3;controls.maxDistance=95;controls.minPolarAngle=.15;controls.maxPolarAngle=1.48;controls.update();
+controls.minDistance=3;controls.maxDistance=95;controls.minPolarAngle=0;controls.maxPolarAngle=Math.PI;controls.update();
 const state={configuration:'grid',roofLift:0,look:'pbr',formationEnabled:true,environmentMode:'world',view:'overview',time:2,playing:true,error:null,ready:false};
 const keyDirection=[-.65,.85,.5],sky=owner.own(createSkyEnvironment(T,{renderer,resolution:128,radius:190,
   zenith:'#9fbebf',horizon:'#e7e7cf',ground:'#6b7569',sunDirection:keyDirection}));
@@ -49,7 +49,21 @@ function setEnvironmentMode(mode){slot.current.setEnvironmentMode(mode);state.en
 function clearInertia(){const damping=controls.enableDamping;controls.enableDamping=false;controls.update();controls.enableDamping=damping;}
 function setView(id){
   const task=slot.current.world.viewTasks.find(v=>v.id===id);if(!task)throw Error('Unknown view task');
-  clearInertia();camera.position.fromArray(task.position);controls.target.fromArray(task.target);controls.update();controls.saveState();state.view=id;
+  const poseVector=p=>{
+    if(!Array.isArray(p)||p.length!==3)throw Error('View pose must contain finite position and target');
+    const values=[p[0],p[1],p[2]];
+    if(!values.every(Number.isFinite))throw Error('View pose must contain finite position and target');
+    return new T.Vector3(...values);
+  };
+  const position=poseVector(task.position),target=poseVector(task.target),distance=position.distanceTo(target);
+  if(distance<controls.minDistance||distance>controls.maxDistance)throw Error('View pose distance is outside controls limits');
+  clearInertia();const previousPosition=camera.position.clone(),previousTarget=controls.target.clone();
+  camera.position.copy(position);controls.target.copy(target);controls.update();
+  if(camera.position.distanceTo(position)>1e-8||controls.target.distanceTo(target)>1e-8){
+    camera.position.copy(previousPosition);controls.target.copy(previousTarget);controls.update();
+    throw Error('View pose was not accepted by controls');
+  }
+  controls.saveState();state.view=id;
 }
 const getWorld=()=>slot.current.world;
 function readState(){
@@ -65,6 +79,8 @@ function readState(){
     context:{sites:world.context.sites.map(({route,...site})=>({...site,route:route?{start:[...route.start],end:[...route.end],width:route.width,geometryId:route.mesh.geometry.uuid}:null})),
       stats:world.context.stats,topology:world.context.design.topology,graphComponents:world.context.layout.connectionGraph.components,
       neighborhood:world.context.neighborhood.diagnostics,roads:world.context.roads.stats,gateways:world.context.gateways},
+    boundarySources:world.boundarySources.map(({source,part,assetId})=>({assetId,partName:part.name,geometryId:part.geometry.uuid,metadata:source.metadata,worldMatrix:part.matrixWorld.toArray(),slots:world.materialBindings.find(b=>b.object===part)?.slots})),
+    bakedBoundarySources:world.bakedBoundarySources.map(record=>({...record,sourceRanges:record.sourceRanges.map(({sourceId,objectId,geometryId,vertexStart,vertexCount})=>({sourceId,objectId,geometryId,vertexStart,vertexCount}))})),
     regionalAssets:world.regionalAssets.map(({id,program,regionId})=>({id,program,regionId})),
     observationSets:world.observationSets,
     viewTasks:world.viewTasks.map(({id,program,regionId,direction,inspection,sampleIds,position,target})=>({id,program,regionId,direction,label:coreViewLabel({id,program,direction}),inspection,sampleIds,position:[...position],target:[...target]})),

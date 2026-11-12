@@ -11,6 +11,7 @@ import {createResourceScope} from '../runtime/resource-scope.mjs';
 import {inspectFeatureVisibility} from '../scene/view-readability.mjs';
 import {selectObservationView} from '../scene/observation-view.mjs';
 import {buildArchitecturalBay} from './procedural-bay.mjs';
+import {frameBoundaryProfile} from './boundary-profile-design.mjs';
 import {buildRegionalArchitecture} from './region-programs.mjs';
 import {buildLandscapeContext} from './landscape-context.mjs';
 
@@ -75,7 +76,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     if(!Number.isFinite(tolerance)||tolerance<0||tolerance>1)throw new RangeError('Regional placement tolerance must be finite and in 0..1 metres');
     placementTolerances.set(hall,tolerance);
   }
-  const scope=createResourceScope(),root=new T.Group(),materialBindings=[],parts={},anchors=new Map(),detailGroups=[],placements=[],entrances=[],regionalAssets=[],materialRegionStats=[],supportHosts=[],standingPlacements=[];
+  const scope=createResourceScope(),root=new T.Group(),materialBindings=[],parts={},anchors=new Map(),detailGroups=[],placements=[],entrances=[],regionalAssets=[],materialRegionStats=[],supportHosts=[],standingPlacements=[],boundarySources=[],bakedBoundarySources=[];
   root.name='core-capability-world';scope.defer(()=>root.removeFromParent());
   const materialOptions=(role,options)=>{
     const result={...ROLE[role],...options};
@@ -170,7 +171,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
         if(layout.footprintAllowed({level:level.id,polygon:candidate,regionId:zone.id,clearance})){polygon=candidate;break;}}
       if(!polygon)throw Error(`Full footprint does not fit authored purpose zone: ${id}`);
       arrival.point.copy(roadArrival({...hall,x:asset.root.position.x,z:asset.root.position.z},level).point);
-      place(id,level.id,polygon,zone.id);materialBindings.push(...asset.materialBindings);regionalAssets.push({id,program,regionId:zone.id,asset});
+      place(id,level.id,polygon,zone.id);materialBindings.push(...asset.materialBindings);boundarySources.push(...asset.boundarySources.map(b=>({...b,assetId:id})));regionalAssets.push({id,program,regionId:zone.id,asset});
       for(const port of asset.entrances){const threshold=asset.root.localToWorld(new T.Vector3(...port.position)),point=threshold.clone().add(new T.Vector3(0,.25,0)),normal=new T.Vector3(...port.normal).transformDirection(asset.root.matrixWorld);
         entrances.push({id:id+'/entrance',point:point.toArray(),normal:normal.toArray(),width:port.width,height:port.height});
         const deck=asset.parts.floors.find(o=>o.name.endsWith('entry.deck'));
@@ -311,7 +312,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     }
     // The same perforated construction family remains complete in reverse views.
     // Bake material groups explicitly; preserve UV/normal seams rather than welding.
-    function bakeObject(object,semantics){
+    function bakeObject(object,semantics,sourceIds=new Map()){
       object.updateWorldMatrix(true,true);object.traverse(node=>{
         if(!node.isMesh)return;const g=node.geometry,ms=Array.isArray(node.material)?node.material:[node.material];
         if(!g.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,g);
@@ -320,7 +321,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
           const source=ms[group.materialIndex]??ms[0],slots=semantics.get(node),binding=slots?.[group.materialIndex]??slots?.[0];
           if(!binding)throw Error('Static material group has no semantic owner');
           const copy=copyFormationGroup(T,g,group);
-          try{staticAdd(copy,source,binding,{matrix:node.matrixWorld,castShadow:node.castShadow,receiveShadow:node.receiveShadow,layers:node.layers.mask});}finally{copy.dispose();}
+          try{staticAdd(copy,source,binding,{matrix:node.matrixWorld,castShadow:node.castShadow,receiveShadow:node.receiveShadow,layers:node.layers.mask,sourceId:sourceIds.get(node)});}finally{copy.dispose();}
         }
       });
     }
@@ -328,14 +329,22 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
       const x=-15+i*3.8,z=configuration==='ring'?-20.8:-13.8,h=2.05+(i%3)*.3,w=2.4,d=1.5,base=.04;
       place(`perimeter/${i}`,'ground',rect(x,z,w+.4,d+.4));
       box([w+.4,.08,d+.4],[x,0,z],'stone');
-      const wallSlot=slot('coating',{color:0xaec0b5,maps:false}),trimSlot=slot('wood');
-      const wall=mat(wallSlot.role,wallSlot.options),trim=mat(trimSlot.role,trimSlot.options);
+      const wallSlot=slot('coating',{color:0xaec0b5,maps:false}),trimSlot=slot('wood'),frameSlot=slot('wood',{maps:false});
+      const wall=mat(wallSlot.role,wallSlot.options),trim=mat(trimSlot.role,trimSlot.options),frame=mat(frameSlot.role,frameSlot.options);
       for(let side=0;side<4;side++){
         const horizontal=side%2===0,span=horizontal?w:d;
         const bay=buildArchitecturalBay(T,{width:span,height:h,depth:.14,openingWidth:horizontal?1.05:.65,openingHeight:1,sillHeight:.5,
-          variant:i%2?'arch':'rect',frameWidth:.055,frameDepth:.035,materials:{wall,trim}});
+          variant:i%2?'arch':'rect',frameWidth:.055,frameDepth:.035,frameProfile:frameBoundaryProfile(.055,.035),materials:{wall,trim,frame}});
         bay.root.position.set(x+(horizontal?0:side===1?w/2:-w/2),base,z+(horizontal?side===0?d/2:-d/2:0));bay.root.rotation.y=[0,Math.PI/2,Math.PI,-Math.PI/2][side];
-        try{bakeObject(bay.root,new Map(Object.values(bay.parts).map(node=>[node,(Array.isArray(node.material)?node.material:[node.material]).map(()=>node===bay.parts.wall?wallSlot:trimSlot)])));}finally{bay.dispose();}
+        try{
+          bay.root.updateWorldMatrix(true,true);
+          const sourceIds=new Map();
+          for(const {source,part} of bay.profileSources){
+            const id=`perimeter/${i}/${side}/frame`,g=source.geometry;sourceIds.set(part,id);
+            bakedBoundarySources.push({id,metadata:structuredClone(source.metadata),sourceGeometryId:g.uuid,sourceSpace:'world-root-local',sourceMatrix:part.matrixWorld.toArray(),semantic:structuredClone(frameSlot),triangleCount:g.index.count/3,disposed:true,sourceRanges:[]});
+          }
+          bakeObject(bay.root,new Map(Object.values(bay.parts).map(node=>[node,(Array.isArray(node.material)?node.material:[node.material]).map(()=>node===bay.parts.wall?wallSlot:node===bay.parts.frame?frameSlot:trimSlot)])),sourceIds);
+        }finally{bay.dispose();}
       }
       const roof=new T.Shape([[-w/2-.15,0],[0,.38],[w/2+.15,0],[w/2+.15,-.1],[0,.28],[-w/2-.15,-.1]].map(p=>new T.Vector2(...p)));
       const roofGeometry=new T.ExtrudeGeometry(roof,{depth:d+.3,steps:1,bevelEnabled:false});
@@ -348,7 +357,11 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
       }finally{roofGeometry.dispose();}
       box([1,.07,.5],[x,base+.72,z],'wood');
     }
+    const boundaryById=new Map(bakedBoundarySources.map(record=>[record.id,record]));
     for(const {assembly,binding} of buckets.values()){const assembled=assembly.finish();root.add(assembled.root);
+      for(const {sourceId,object,geometry,vertexStart,vertexCount} of assembled.sourceRanges){
+        const record=boundaryById.get(sourceId);if(record)record.sourceRanges.push({sourceId,objectId:object.uuid,geometryId:geometry.uuid,vertexStart,vertexCount});
+      }
       assembled.root.traverse(o=>{if(o.isMesh){tangents(o);bind(o,[binding]);}});
     }
     root.updateWorldMatrix(true,true);const shadowBounds=new T.Box3().setFromObject(root);
@@ -405,7 +418,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     let disposed=false;
     const update=t=>{if(disposed)throw new Error('Core world disposed');if(!Number.isFinite(t))throw new TypeError('time must be finite');pivot.rotation.y=-.45+.3*Math.sin(t*.6);root.updateWorldMatrix(true,true);};
     update(0);
-    return {root,layout,parts,anchors,materialBindings,detailGroups,placements,entrances,approaches,regionalAssets,materialRegionStats,supportHosts,standingPlacements,context,shadowBounds,viewTasks,observationSets,spec:Object.freeze({configuration,roofLift}),
+    return {root,layout,parts,anchors,materialBindings,detailGroups,placements,entrances,approaches,regionalAssets,boundarySources,bakedBoundarySources,materialRegionStats,supportHosts,standingPlacements,context,shadowBounds,viewTasks,observationSets,spec:Object.freeze({configuration,roofLift}),
       stats:{regionCount:layout.regions.length,buildingCount:design.halls.length+10+context.sites.length,pathSurfaceCount:layout.levels.reduce((n,l)=>n+l.surfaces.length,0)},update,
       dispose(){if(disposed)return;disposed=true;scope.dispose();}};
   }catch(error){try{scope.dispose();}catch(cleanupError){throw new AggregateError([error,cleanupError],'World build/cleanup failed');}throw error;}

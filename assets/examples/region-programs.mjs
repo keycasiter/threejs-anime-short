@@ -1,4 +1,8 @@
 import {buildArchitecturalBay} from './procedural-bay.mjs';
+import {createContourProfileSource} from '../geometry/contour-profile.mjs';
+import {writeFormationCoordinates} from '../geometry/formation-coordinates.mjs';
+import {createResourceScope} from '../runtime/resource-scope.mjs';
+import {frameBoundaryProfile,solidBoundaryProfile,containerBoundaryProfile} from './boundary-profile-design.mjs';
 
 /** Borrowed scalar materials; owned geometry. Metres, +Y up, +Z entry, floor y=0.
  * Program selects real roof/floor/interior topology, never a prescribed placement.
@@ -17,16 +21,17 @@ export function buildRegionalArchitecture(T,{
   if(typeof materialFor!=='function')throw new TypeError('Regional materialFor is required');
   const root=new T.Group();root.name=`regional-${program}`;
   const parts=Object.fromEntries(['walls','windows','doors','floors','roofs','structure','furniture','planting'].map(k=>[k,[]]));
-  const owned=new Set(),bays=[],materialBindings=[],windows=[];
+  const owned=new Set(),bays=[],materialBindings=[],windows=[],boundarySources=[],scope=createResourceScope();
+  scope.defer(()=>{const errors=[];for(const g of owned)try{g.dispose();}catch(e){errors.push(e);}if(errors.length)throw new AggregateError(errors,'Regional geometry cleanup failed');});
   let disposed=false;
-  function dispose(){if(disposed)return;disposed=true;for(const bay of bays)bay.dispose();for(const g of owned)g.dispose();owned.clear();root.removeFromParent();root.clear();}
+  function dispose(){if(disposed)return;disposed=true;try{scope.dispose();}finally{owned.clear();root.removeFromParent();root.clear();}}
   const colors={stone:0xc3beb0,coating:0xd9dfd2,wood:0xa68152,metal:0x596d68};
   const slot=(role,color=colors[role])=>({role,options:{maps:false,baseColor:color,color:0xffffff}});
   const stone=slot('stone'),wall=slot('coating'),wood=slot('wood'),metal=slot('metal');
   const roofSlot=slot('coating',0x66817a),darkWood=slot('wood',0x6b5741);
   function borrow(s){const m=materialFor(s.role,s.options);if(!m?.isMaterial)throw new TypeError('Regional materialFor must return borrowed THREE.Material');return m;}
-  function mesh(category,name,geometry,slots,position=[0,0,0],rotation=[0,0,0]){
-    owned.add(geometry);const object=new T.Mesh(geometry,slots.length===1?borrow(slots[0]):slots.map(borrow));
+  function mesh(category,name,geometry,slots,position=[0,0,0],rotation=[0,0,0],ownGeometry=true){
+    if(ownGeometry)owned.add(geometry);const object=new T.Mesh(geometry,slots.length===1?borrow(slots[0]):slots.map(borrow));
     object.name=`${program}.${name}`;object.position.set(...position);object.rotation.set(...rotation);
     object.castShadow=object.receiveShadow=true;root.add(object);parts[category].push(object);materialBindings.push({object,slots});return object;
   }
@@ -36,8 +41,42 @@ export function buildRegionalArchitecture(T,{
     const object=mesh(category,name,new T.CylinderGeometry(r,r,start.distanceTo(end),10),[s],mid.toArray());
     object.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),end.sub(start).normalize());return object;
   }
+  const contour=(w,d)=>[[-w/2,-d/2],[w/2,-d/2],[w/2,d/2],[-w/2,d/2]];
+  function boundary(source,part){
+    const binding={source,part,surfaceAt(u,v,space='root'){
+      const sample=source.surfaceAt(u,v);if(space==='source'||space==='part')return sample;
+      if(!['root','world'].includes(space))throw new RangeError('Unknown regional surface space');
+      part.updateWorldMatrix(true,false);root.updateWorldMatrix(true,false);
+      const matrix=space==='world'?part.matrixWorld:new T.Matrix4().multiplyMatrices(root.matrixWorld.clone().invert(),part.matrixWorld);
+      return {...sample,point:sample.point.clone().applyMatrix4(matrix),normal:sample.normal.clone().applyNormalMatrix(new T.Matrix3().getNormalMatrix(matrix)),tangent:sample.tangent.clone().transformDirection(matrix),frame:new T.Matrix4().multiplyMatrices(matrix,sample.frame)};
+    }};boundarySources.push(binding);return binding;
+  }
+  function profilePart(category,name,contour,profile,position,s){
+    const source=scope.own(createContourProfileSource(T,{contour,profile}));writeFormationCoordinates(T,source.geometry);
+    const part=mesh(category,name,source.geometry,[s],position,[-Math.PI/2,0,0],false);boundary(source,part);return part;
+  }
+  function solidEdge(category,name,w,d,h,y,s,holeW=0,holeD=0){
+    const W=.08,clear=holeW?Math.min((w-holeW)/2,(d-holeD)/2):Math.min(w,d)/2;
+    if(clear<=2*W)throw new RangeError('Horizontal boundary has insufficient clear width');
+    const top=y+h/2,profile=solidBoundaryProfile(W,h);
+    profilePart(category,`${name}.outer-edge`,contour(w,d),profile,[0,top,0],s);
+    if(holeW)profilePart(category,`${name}.inner-edge`,contour(holeW,holeD),profile.map(([o,z])=>[-o,z]),[0,top,0],s);
+    // The full-depth core ends exactly at both profile's -W joining boundaries;
+    // no old full-width box is retained under the articulated perimeter.
+    const shape=new T.Shape(contour(w-2*W,d-2*W).map(p=>new T.Vector2(...p)));
+    if(holeW)shape.holes.push(new T.Path(contour(holeW+2*W,holeD+2*W).map(p=>new T.Vector2(...p))));
+    const geometry=new T.ExtrudeGeometry(shape,{depth:h*.86,bevelEnabled:false,steps:1});geometry.translate(0,0,-h);
+    return mesh(category,name,geometry,[s,s],[0,top,0],[-Math.PI/2,0,0]);
+  }
+  function openContainer(category,name,x,z,w,d,base,H,W,s,bottomName,bottomBase=base,bottomH=.02){
+    if(Math.min(w,d)<=2*W)throw new RangeError('Container boundary has insufficient clear width');
+    profilePart(category,name,contour(w,d),containerBoundaryProfile(W,H),[x,base,z],s);
+    box(category,bottomName,[w-2*W,bottomH,d-2*W],[x,bottomBase+bottomH/2,z],s);
+  }
+
   // Four non-overlapping structural strips; the center remains an actual hole.
   function ring(category,name,w,d,h,y,holeW,holeD,s){
+    if(category==='roofs')return solidEdge(category,name,w,d,h,y,s,holeW,holeD);
     box(category,`${name}.front`,[w,h,(d-holeD)/2],[0,y,(d+holeD)/4],s);
     box(category,`${name}.back`,[w,h,(d-holeD)/2],[0,y,-(d+holeD)/4],s);
     box(category,`${name}.left`,[(w-holeW)/2,h,holeD],[-(w+holeW)/4,y,0],s);
@@ -75,8 +114,8 @@ export function buildRegionalArchitecture(T,{
         const bay=buildArchitecturalBay(T,{width:bayWidth,height,depth:wallThickness,
           openingWidth:windowWidth,openingHeight:windowHeight,sillHeight:sill,
           variant:program==='courtyard'?'arch':'rect',frameWidth:.07,frameDepth:.045,
-          materials:{wall:wallMaterial,trim:trimMaterial,interior:wallMaterial}});
-        bays.push(bay);bay.root.name=`${program}.window-bay.${side}.${i}`;
+          frameProfile:frameBoundaryProfile(.07,.045),materials:{wall:wallMaterial,trim:trimMaterial,interior:wallMaterial}});
+        bays.push(scope.own(bay));for(const {source,part} of bay.profileSources)boundary(source,part);bay.root.name=`${program}.window-bay.${side}.${i}`;
         // The rear side reverses its tangent so all local outward normals agree.
         const x=side%2?(side===1?width/2:-width/2):(side===2?-offset:offset);
         const z=side%2?(side===1?-offset:offset):(side===0?depth/2:-depth/2);
@@ -100,14 +139,15 @@ export function buildRegionalArchitecture(T,{
   function entryDeck(){
     const deckWidth=Math.max(entranceWidth+.45,width*.34),reach=.85;
     box('floors','entry.deck',[deckWidth,.13,reach],[0,-.065,depth/2+reach/2],stone);
-    box('roofs','entry.canopy',[deckWidth,.1,.8],[0,entranceHeight+.26,depth/2+.35],metal);
+    solidEdge('roofs','entry.canopy',deckWidth,.8,.1,entranceHeight+.26,metal);
+    for(const object of parts.roofs.filter(o=>o.name.startsWith(`${program}.entry.canopy`)))object.position.z=depth/2+.35;
     for(const x of [-deckWidth*.42,deckWidth*.42])beam('entry.canopy-brace',[x,entranceHeight-.25,depth/2+.1],[x,entranceHeight+.21,depth/2+.65],.027);
   }
   function table(x,z,w,d,y=.83){
     box('furniture','worktable.top',[w,.09,d],[x,y,z],wood);
     for(const sx of [-1,1])for(const sz of [-1,1])box('furniture','worktable.leg',[.075,y-.045,.075],[x+sx*(w/2-.12),(y-.045)/2,z+sz*(d/2-.12)],metal);
     box('furniture','worktable.shelf',[w-.2,.05,d-.15],[x,.22,z],darkWood);
-    box('furniture','worktable.tool-tray',[w*.32,.08,d*.28],[x+w*.2,y+.085,z],metal);
+    openContainer('furniture','worktable.tool-tray',x+w*.2,z,w*.32,d*.28,y+.045,.08,.025,metal,'worktable.tool-tray.bottom');
   }
   function gallery(){
     const lanternW=width*.34,lanternD=depth*.55,lanternY=height+.55;
@@ -120,7 +160,7 @@ export function buildRegionalArchitecture(T,{
       const count=Math.max(2,Math.round(lanternD/.65));
       for(let j=1;j<count;j++)box('structure','clerestory.mullion',[.045,.62,.045],[sign*lanternW/2,lanternY,-lanternD/2+j*lanternD/count],metal);
     }
-    box('roofs','lantern.cap',[lanternW+.3,.16,lanternD+.3],[0,height+.99,0],roofSlot);
+    solidEdge('roofs','lantern.cap',lanternW+.3,lanternD+.3,.16,height+.99,roofSlot);
     for(const x of [-width*.33,width*.33]){
       box('furniture','display.partition',[.11,height*.53,depth*.43],[x,height*.265,-depth*.08],wall);
       for(const z of [-depth*.16,depth*.04]){
@@ -200,19 +240,12 @@ export function buildRegionalArchitecture(T,{
     for(const sign of [-1,1]){
       const x=sign*cw*.3,z=-cd*.28,w=cw*.27,d=cd*.27;
       // Planter is an open container with bottom, soil and independent rims.
-      box('planting','planter.bottom',[w,.08,d],[x,groundY+.04,z],stone);
-      ringPlanter(x,z,w,d);
-      box('planting','planter.soil',[w-.1,.06,d-.1],[x,groundY+.24,z],slot('stone',0x665e43));
+      openContainer('planting','planter.rim',x,z,w,d,groundY+.04,.3,.055,stone,'planter.bottom',groundY,.08);
+      box('planting','planter.soil',[w-.11,.06,d-.11],[x,groundY+.24,z],slot('stone',0x665e43));
       for(let i=0;i<3;i++){
         const px=x+(i-1)*w*.21;
         beam('planting.stem',[px,groundY+.26,z],[px,groundY+.55+i*.09,z],.012,wood,'planting');
         mesh('planting','planting.leaf-cluster',new T.IcosahedronGeometry(Math.min(w,d)*.19,0),[slot('coating',0x6d8060)],[px,groundY+.52+i*.09,z]);
-      }
-    }
-    function ringPlanter(x,z,w,d){
-      for(const s of [-1,1]){
-        box('planting','planter.rim',[w,.3,.055],[x,groundY+.19,z+s*(d/2-.0275)],stone);
-        box('planting','planter.rim',[.055,.3,d-.11],[x+s*(w/2-.0275),groundY+.19,z],stone);
       }
     }
     for(const sign of [-1,1]){
@@ -229,6 +262,6 @@ export function buildRegionalArchitecture(T,{
     const footprint=Object.freeze({minX:bounds.min.x,maxX:bounds.max.x,minZ:bounds.min.z,maxZ:bounds.max.z,width:bounds.max.x-bounds.min.x,depth:bounds.max.z-bounds.min.z});
     const spec=Object.freeze({program,width,depth,height,wallThickness,roofOverhang,courtyardRatio,
       materialMapping:'scalar-only; maps:false',windows:Object.freeze(windows.map(w=>Object.freeze(w)))});
-    return {root,spec,parts,footprint,entrances:[entrance],materialBindings,dispose};
-  }catch(error){dispose();throw error;}
+    return {root,spec,parts,footprint,entrances:[entrance],materialBindings,boundarySources,dispose};
+  }catch(error){try{dispose();}catch(cleanupError){throw new AggregateError([error,cleanupError],'Regional construction/cleanup failed');}throw error;}
 }

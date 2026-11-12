@@ -87,6 +87,11 @@ export function buildCorePresentation(T,options={}){
   }
   const provider=palettes[look].formed;
   world=scope.own(buildCoreWorld(T,{mergeGeometries,MarchingCubes,configuration,roofLift,materialFor:(role,opts)=>provider.get(role,opts)}));
+  // Current casters are rigid opaque meshes: share a scope-owned depth material
+  // before the first probe render, and retain it across both look tables.
+  // Cutout/displaced/skinned/morphed consumers require their own representation.
+  const rigidDepth=scope.own(new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking}));
+  world.root.traverse(object=>{if(object.isMesh&&object.castShadow)object.customDepthMaterial=rigidDepth;});
   world.update(time);world.root.updateWorldMatrix(true,true);
   rig=scope.own(createLightingRig(T,{bounds:world.shadowBounds,keyDirection:[-.65,.85,.5],keyIntensity:3.6,fillIntensity:.65,ambientIntensity:.12,hemisphereIntensity:.85,skyColor:0xd8ece7,groundColor:0x8f9274,shadowMapSize}));
   root.add(world.root,rig.root);scope.defer(()=>root.removeFromParent());
@@ -145,6 +150,7 @@ export function buildCorePresentation(T,options={}){
     materialCounts:Object.fromEntries(looks.map(mode=>[mode,{base:unique(tables[mode].base).length,formed:unique(tables[mode].formed).length}])),qualification,
     palettes:Object.fromEntries(looks.map(mode=>[mode,{base:palettes[mode].base.inspect(),formed:palettes[mode].formed.inspect()}])),
     environments:Object.fromEntries(looks.map(mode=>[mode,[...new Set([...unique(tables[mode].base),...unique(tables[mode].formed)])].filter(m=>'envMap' in m).map(m=>({materialUuid:m.uuid,textureUuid:m.envMap?.uuid??null,intensity:m.envMapIntensity}))])),
+    shadowDepth:{uuid:rigidDepth.uuid,depthPacking:rigidDepth.depthPacking,policy:'rigid opaque meshes'},
     capture:{...captureInfo,textures:Object.fromEntries(looks.map(mode=>[mode,captures[mode].texture.uuid]))},scope:scope.inspect()});},
    dispose(){if(disposed)return;disposed=true;scope.dispose();}
   };

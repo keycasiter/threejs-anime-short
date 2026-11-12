@@ -11,6 +11,7 @@
 | 规则体块、明确分件与刚性装配 | 直接构造几何；尺寸进入顶点，端口用局部刚性架 | 现有Three构造器、[装配器](../assets/scene/asset-assembly.mjs)、[端口连接](../assets/scene/anchor-connection.mjs)；连续形态不能靠堆积规则体替代 |
 | 轴对称，内外壁由径向剖面定义 | 内/外`{r,y}`轮廓、折点、端环 | [createRevolvedShell](../assets/geometry/profile-surfaces.mjs)；内壁独立设计，不是法向等厚偏移；偏心、弯轴、侧孔转其他路线 |
 | 沿路径连续，截面可用椭圆表达 | 中心站位、全宽/全深、滚转、采样 | [createSectionLoftSource](../assets/geometry/loft-source.mjs)给网格与侧面查询；非椭圆对应截面用[profile-loft](continuous-surfaces.md)，均不证明全局无自交 |
+| 平面闭合凸边界周围的多段台肩/回折/口沿 | 参考轮廓、outset/Z截面、两轴折边、材料带 | [轮廓截面](contour-profile.md)给真实网格/三角查询；凹域偏移、任意3D闭环和实体布尔另选表示 |
 | 平板孔洞、凸域重复铺覆与端部 | 轮廓/孔/厚度，或完整单元与允许域求交 | [截面工具](profile-geometry.md)、[边界工具](visual-construction.md#2-重复单元先归属区域再裁完整轮廓)；任意实体布尔另实现 |
 | 非轴对称自由曲面、复杂内腔/多开口 | 控制patch/壳；必要时实体布尔或隐式体提取 | [连续形体工具](continuous-surfaces.md)已有单Bezier双层封边壳与有界场MC；多patch/通用布尔/自适应等仍需实现，读[条件库](library-integration.md) |
 | 一个XZ位置只有一个表面高度 | 高度场及梯度，同源生成地形与场查询 | [height-field](../assets/environment/height-field.mjs)；贴地通路再用[真实网格道路](terrain-roads.md)，冻结网格后生成；洞穴、悬挑、多层转多值网格/实体路线 |
@@ -37,6 +38,8 @@
 普通静态资产可只有`root/spec/anchors/dispose`；有表面查询才返回它，有动作才返回update。纯算法不必伪造root。多个参与者需要同一事实时共享源数据或由它派生，不各写一份近似公式。
 
 运行handle与检查快照分开：handle可借用Mesh、表面查询和Material，保留真实消费者；导出JSON时只返回分离的数据、稳定ID/资源UUID和必要数值。不要将Mesh的parent/children图或dispose函数直接放入快照。用`JSON.stringify(readState())`检查序列化，再在同一运行环境修改返回值的嵌套字段/数组，并重新读回，确认真实消费者与下一份快照未变。快照说明当前状态，不接管运行资源。
+
+静态合批后需要追溯或选择源部件时，读[装配来源接力](assembly-provenance.md)：可选sourceId随实际合并产生成品顶点范围；材质身份不替代逻辑来源。实际成品位置/形成字段由对应范围核对，运行handle与JSON仍分别管理。
 
 ### 坐标与接口
 

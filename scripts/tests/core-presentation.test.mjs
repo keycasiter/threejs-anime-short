@@ -10,7 +10,7 @@ const {mergeGeometries}=await import(addon('utils/BufferGeometryUtils.js'));
 const {MarchingCubes}=await import(addon('objects/MarchingCubes.js'));
 const api=await import('../../assets/examples/core-presentation.mjs').catch(e=>{if(e.code!=='ERR_MODULE_NOT_FOUND')throw e;return {};});
 // Only GPU work is replaced. Geometry, source fields, palettes, scopes and slots are real.
-function setup({shaderFailure=false,captureFailure=false,pmremFailure=null,priorCallbackThrows=false}={}){
+function setup({shaderFailure=false,captureFailure=false,pmremFailure=null,priorCallbackThrows=false,requireRigidDepth=false}={}){
  const captures=[],targets=[],events=[],watched=new Set(),debug={checkShaderErrors:false,onShaderError(){events.push('prior-shader-callback');if(priorCallbackThrows)throw Error('prior shader callback threw');}};
  const renderer={isWebGLRenderer:true,xr:{enabled:true},shadowMap:{autoUpdate:false,needsUpdate:false},debug,autoClear:false,autoClearColor:false,autoClearDepth:false,autoClearStencil:false,
   toneMapping:T.ACESFilmicToneMapping,toneMappingExposure:1.27,outputColorSpace:T.SRGBColorSpace,
@@ -24,6 +24,7 @@ function setup({shaderFailure=false,captureFailure=false,pmremFailure=null,prior
  class CubeCamera extends T.Group{update(r,scene){
   assert.equal(scene.children.length,1);assert.equal(scene.background,sky);assert.equal(scene.environment,sky);assert.equal(scene.environmentIntensity,.8);
   assert.deepEqual([r.autoClear,r.autoClearColor,r.autoClearDepth,r.autoClearStencil],[true,true,true,true]);assert.equal(r.debug.checkShaderErrors,true);assert.equal(r.shadowMap.autoUpdate,true);
+  if(requireRigidDepth){let count=0,depth=null;scene.traverse(o=>{if(!o.isMesh||!o.castShadow)return;count++;assert.ok(o.customDepthMaterial?.isMeshDepthMaterial,'shadow depth must be supplied before first CubeCamera render');depth??=o.customDepthMaterial;assert.equal(o.customDepthMaterial,depth);assert.equal(depth.depthPacking,T.RGBADepthPacking);assert.ok(!o.isSkinnedMesh);assert.equal(Object.keys(o.geometry.morphAttributes).length,0);for(const m of Array.isArray(o.material)?o.material:[o.material]){assert.equal(m.transparent,false);assert.equal(m.alphaTest,0);assert.ok(!m.alphaMap&&!m.displacementMap);}});assert.ok(count>100);watch(depth,'depth');}
   const materials=[];scene.traverse(o=>{if(o.isMesh){watch(o.geometry,'geometry');for(const m of Array.isArray(o.material)?o.material:[o.material]){watch(m,'material');for(const key of ['map','normalMap','roughnessMap','metalnessMap','gradientMap'])if(m[key])watch(m[key],'texture');materials.push(m);}}});
   captures.push({scene,root:scene.children[0],materials,position:this.position.toArray(),key:scene.getObjectByName('lighting-key').intensity});
   r.shadowMap.needsUpdate=false;r.setRenderTarget(null,5,1);r.setViewport(new T.Vector4(0,0,10,10));r.autoClear=false;r.toneMapping=T.NoToneMapping;r.toneMappingExposure=9;
@@ -136,4 +137,13 @@ test('candidate retires every base sibling, mapped texture, ramp and private tar
  bases.find(m=>m.uuid===first).addEventListener('dispose',()=>{throw Error('early base listener');});
  assert.throws(()=>p.dispose(),AggregateError);p.dispose();assert.equal(p.readState().palettes.toon.base.entries.length,0);
  for(const item of items)assert.equal(counts.get(item),1,item.name||item.uuid);assert.equal(h.skyDisposed,0);
+});
+
+test('rigid shadow owner exists before both captures and retires once after replacement or failure',()=>{
+ const h=setup({requireRigidDepth:true}),slot=createAssetSlot(new T.Scene());
+ slot.replace(s=>s.own(h.build()));const depth=slot.current.world.materialBindings.find(b=>b.object.castShadow).object.customDepthMaterial;
+ for(const look of ['pbr','toon']){slot.current.setLook(look);slot.current.world.root.traverse(o=>{if(o.isMesh&&o.castShadow)assert.equal(o.customDepthMaterial,depth);});}
+ slot.replace(s=>s.own(h.build()));assert.equal(h.events.filter(e=>e==='depth:'+depth.uuid).length,1);
+ for(const failAfterCapture of [1,2]){const n=h.events.filter(e=>e.startsWith('depth:')).length;assert.throws(()=>h.build({diagnostics:{failAfterCapture}}),/diagnostic/);assert.equal(h.events.filter(e=>e.startsWith('depth:')).length,n+1);}
+ slot.dispose();slot.dispose();const ids=h.events.filter(e=>e.startsWith('depth:'));assert.equal(ids.length,4);assert.equal(new Set(ids).size,ids.length);
 });

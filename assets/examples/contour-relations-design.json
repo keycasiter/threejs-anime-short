@@ -1,0 +1,346 @@
+{
+  "status": "DESIGN_INPUT_NOT_IMPLEMENTED",
+  "version": "S02-DESIGN-1",
+  "unit": "metre",
+  "localAxes": "XY contour; Z extrusion",
+  "scope": "technical design/relationship reference, not rendered artwork or visual pass",
+  "examples": [
+    {
+      "id": "opening-bearing",
+      "contour": [
+        [
+          -1,
+          -0.5
+        ],
+        [
+          1,
+          -0.5
+        ],
+        [
+          1,
+          0.5
+        ],
+        [
+          -1,
+          0.5
+        ]
+      ],
+      "profile": [
+        [
+          0,
+          -0.1
+        ],
+        [
+          0.16,
+          -0.1
+        ],
+        [
+          0.16,
+          0.02
+        ],
+        [
+          0.13,
+          0.02
+        ],
+        [
+          0.13,
+          0.08
+        ],
+        [
+          0.09,
+          0.08
+        ],
+        [
+          0.075,
+          0.065
+        ],
+        [
+          0.025,
+          0.065
+        ],
+        [
+          0.015,
+          0.045
+        ],
+        [
+          0,
+          0.045
+        ]
+      ],
+      "panel": {
+        "outer": [
+          [
+            -1.5,
+            -0.975
+          ],
+          [
+            1.5,
+            -0.975
+          ],
+          [
+            1.5,
+            0.975
+          ],
+          [
+            -1.5,
+            0.975
+          ]
+        ],
+        "hole": "exact reference contour",
+        "zInterval": [
+          -0.22,
+          -0.1
+        ]
+      },
+      "attachment": {
+        "contourSegment": 0,
+        "t": 0.3,
+        "profileBand": 6,
+        "s": 0.5,
+        "baseWidth": 0.025,
+        "baseDepth": 0.018,
+        "expectNormal": [
+          0,
+          0,
+          1
+        ]
+      },
+      "plainControlProfile": [
+        [
+          0,
+          -0.1
+        ],
+        [
+          0.16,
+          -0.1
+        ],
+        [
+          0.16,
+          0.08
+        ],
+        [
+          0,
+          0.08
+        ]
+      ],
+      "camera": {
+        "front": {
+          "position": [
+            0,
+            0,
+            4.8
+          ],
+          "target": [
+            0,
+            0,
+            0
+          ]
+        },
+        "grazing": {
+          "position": [
+            3.3,
+            1.5,
+            2.8
+          ],
+          "target": [
+            0,
+            0,
+            0
+          ]
+        },
+        "back": {
+          "position": [
+            -2,
+            1,
+            -3.6
+          ],
+          "target": [
+            0,
+            0,
+            -0.1
+          ]
+        }
+      },
+      "controlAttachment": {
+        "contourSegment": 0,
+        "t": 0.3,
+        "profileBand": 2,
+        "s": 0.6875,
+        "baseWidth": 0.025,
+        "baseDepth": 0.018,
+        "expectNormal": [
+          0,
+          0,
+          1
+        ],
+        "identity": "same stable attachment ID, base follows actual changed surface; world position is not invariant"
+      }
+    },
+    {
+      "id": "support-recess",
+      "contour": [
+        [
+          -0.75,
+          -0.55
+        ],
+        [
+          0.75,
+          -0.55
+        ],
+        [
+          0.9,
+          -0.4
+        ],
+        [
+          0.9,
+          0.4
+        ],
+        [
+          0.75,
+          0.55
+        ],
+        [
+          -0.75,
+          0.55
+        ],
+        [
+          -0.9,
+          0.4
+        ],
+        [
+          -0.9,
+          -0.4
+        ]
+      ],
+      "profile": [
+        [
+          0,
+          -0.09
+        ],
+        [
+          0.12,
+          -0.09
+        ],
+        [
+          0.12,
+          -0.005
+        ],
+        [
+          0.1,
+          0.015
+        ],
+        [
+          0.075,
+          0.025
+        ],
+        [
+          0.025,
+          0.025
+        ],
+        [
+          0,
+          0.005
+        ]
+      ],
+      "deck": {
+        "outline": "exact reference contour",
+        "zInterval": [
+          -0.085,
+          -0.035
+        ]
+      },
+      "localToWorld": "rotateX(-PI/2): local +Z becomes world +Y",
+      "plainControlProfile": [
+        [
+          0,
+          -0.09
+        ],
+        [
+          0.12,
+          -0.09
+        ],
+        [
+          0.12,
+          0.025
+        ],
+        [
+          0,
+          0.025
+        ]
+      ],
+      "camera": {
+        "grazing": {
+          "position": [
+            2.4,
+            1.8,
+            2.4
+          ],
+          "target": [
+            0,
+            0,
+            0
+          ]
+        },
+        "top": {
+          "position": [
+            0,
+            4,
+            0.001
+          ],
+          "target": [
+            0,
+            0,
+            0
+          ]
+        },
+        "underside": {
+          "position": [
+            -2.4,
+            -1.8,
+            2.4
+          ],
+          "target": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ],
+  "renderContract": {
+    "viewport": [
+      1280,
+      720
+    ],
+    "DPR": 1,
+    "camera": "PerspectiveCamera FOV40 near.05 far40; fixed listed poses",
+    "materials": {
+      "frame": "coating #b6c2c0 roughness.46 metalness.12",
+      "panelDeck": "coating #344a50 roughness.7 metalness0",
+      "attachment": "metal #b6aa89 roughness.28 metalness.75"
+    },
+    "lighting": {
+      "keyDirection": [
+        -0.45,
+        0.82,
+        0.35
+      ],
+      "keyColor": "#fff1df",
+      "keyIntensity": 3.0,
+      "fillColor": "#a6c5e3",
+      "fillIntensity": 0.4,
+      "ambientIntensity": 0.25,
+      "shadowMapSize": 1024,
+      "environment": "Diagnostic pair uses same native sky+PMREM source and owner; generation parameters source-bound with runtime, no source variant between plain/profile.",
+      "exposure": 1,
+      "output": "native ACESFilmicToneMapping + SRGBColorSpace once",
+      "detail": "no normal/displacement/detail maps or bloom on diagnostic pair"
+    },
+    "budget": {
+      "trianglesPerRelationship": 12000,
+      "drawsPerRelationship": 24
+    },
+    "controls": "orbit/zoom/reset with same initial state; plain/profile toggle must preserve envelope/panel/light/camera/attachment record identity where interface permits"
+  }
+}

@@ -24,9 +24,11 @@
 
 | 任务 | 实际模块/API | 返回与使用边界 |
 |---|---|---|
+| 闭合凸边界的台肩、回折、口沿与连续截面 | [轮廓截面](contour-profile.md)：`createContourProfileSource` | 严格凸XY轮廓×简单闭合outset/Z截面、真实Float32三角查询/材料带/折边；有限miter与内缩/净距拒绝，不是任意CAD或布尔 |
 | 厚壁回转、内腔、环口、真实带孔板 | [profile-surfaces](../assets/geometry/profile-surfaces.mjs)，接口见[截面方法](profile-geometry.md) | 实际BufferGeometry/UV与组；复杂自由曲面需项目生成器 |
 | 真实窗洞、厚度、框与端口 | [buildArchitecturalBay](../assets/examples/procedural-bay.mjs)，用法见[构造方法](procedural-construction.md) | root/parts/spec/anchors/dispose；只支持所列居中矩形/半圆拱，非整楼/门洞生成器 |
 | 静件分桶、动件层级与端口连接 | [asset-assembly](../assets/scene/asset-assembly.mjs)、[placeAtAnchor](../assets/scene/anchor-connection.mjs) | 前者合并适用静件；后者对齐真实局部端口，要求单位刚性变换与世界矩阵自动更新；均不自动检查支撑/美观 |
+| 合批后追溯、选择与核对源部件 | [装配来源](assembly-provenance.md)：可选`sourceId` / `sourceRanges` | 实际成品Mesh及非索引顶点范围；不改材质/阴影/layer分桶与原fluent接口，范围不新增资源所有者 |
 | 宿主命中、局部朝向与有限足迹 | [surface-anchors](../assets/scene/surface-anchors.mjs)：`createSurfaceSampler`/`surfaceFrame`/`createSurfacePatchSampler` | 前者求实际点/法线和实例框架，后者资格检查离散足迹并返回ACCEPT/REJECT；不自动生成基部或求碰撞/IK |
 | 两侧宿主间的竖直承托 | 同模块`createVerticalBearingSampler(T,lower,upper)` | 给x/z、minY/maxY、上下XZ足迹偏移，有限射线输出bottomY/topY/clearance等；漏点/交叠失败，不是任意斜向接头生成器 |
 | 宽深/偏心/滚转独立的连续主形 | [section-loft](../assets/geometry/section-loft.mjs)：`createSectionLoftGeometry(T,{stations,...})`，用法见[放样配方](algorithm-recipes.md#随包工具宽深独立的沿程放样) | 椭圆环/传输架、实际端盖、米制UV/接缝法线；不含分枝、内壁、任意截面或防自交 |

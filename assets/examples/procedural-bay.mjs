@@ -1,4 +1,7 @@
 import { createPerforatedPlate } from '../geometry/profile-surfaces.mjs';
+import {createContourProfileSource} from '../geometry/contour-profile.mjs';
+import {writeFormationCoordinates} from '../geometry/formation-coordinates.mjs';
+import {createResourceScope} from '../runtime/resource-scope.mjs';
 
 /** Original, renderer-independent architectural midstructure. Inject THREE r180.
  * Metres; local +Y is up, floor y=0, x=0 is the centerline; facade faces +Z.
@@ -24,15 +27,21 @@ import { createPerforatedPlate } from '../geometry/profile-surfaces.mjs';
  * opening.left/right are halfway up the straight jamb (below an arch spring).
  * World interface = root.matrixWorld * anchors.get(name), after matrix update.
  * Nonuniform root scale stretches physical UV density: keep unit scale for metres.
- * Front/back UVs share XY coordinates; each planar side facet uses an orthonormal
- * physical projection (UV seams between arch facets are intentional). Tangents
- * are computed and checked; no UV-size normalization or negative-scale mirroring.
+ * On the legacy hole-plate / finish path only, front/back UVs share XY coordinates;
+ * each planar side facet has an orthonormal physical projection and checked tangent
+ * attribute (intentional arch-facet UV seams, no UV normalization or mirroring).
+ * Explicit frameProfile instead retains its contour source: ring/profile arc UVs
+ * may shear at miters and imply neither a metric chart nor a tangent attribute.
+ * Current profile consumers borrow scalar maps:false materials with source-space
+ * formation response. surfaceAt's geometric tangent is not a render tangent attribute.
+ * profileSources and their geometry are borrowed until bay.dispose(); subsequent
+ * source queries reject. The bay owns profile geometry; materials remain borrowed.
  */
 export function buildArchitecturalBay(THREE, {
   width = 3, height = 3.3, depth = .24,
   openingWidth = 1.4, openingHeight = 1.9, sillHeight = .7,
   variant = 'rect', frameWidth = .1, frameDepth = .06, archSegments = 24,
-  materials
+  materials, frameProfile
 } = {}) {
   const range = (name, n, lo, hi) => {
     if (!Number.isFinite(n) || n < lo || n > hi) throw new Error(`Bay ${name} must be finite in ${lo}..${hi} metres`);
@@ -52,7 +61,7 @@ export function buildArchitecturalBay(THREE, {
       sillHeight < frameWidth + .26 || (variant === 'arch' && openingHeight - radius < .2)) {
     throw new Error('Bay opening/frame clearance is insufficient for masonry, sill, header or arch jambs');
   }
-  for (const key of ['wall', 'trim', 'interior', 'glass']) {
+  for (const key of ['wall', 'trim', 'interior', 'glass', 'frame']) {
     const m = materials?.[key];
     if ((key === 'wall' || key === 'trim' || m !== undefined) && !m?.isMaterial) {
       throw new Error(`Bay materials.${key} must be a borrowed THREE.Material`);
@@ -74,13 +83,13 @@ export function buildArchitecturalBay(THREE, {
   const bore = contour(), frameOutline = contour(frameWidth);
   const outline = [[-width/2,0],[width/2,0],[width/2,height],[-width/2,height]];
   const root = new THREE.Group(); root.name = 'architectural-bay';
-  const parts = {}, anchors = new Map(), owned = new Set();
+  const parts = {}, anchors = new Map(), owned = new Set(), profileSources=[],scope=createResourceScope();
+  scope.defer(()=>{const errors=[];for(const g of owned)try{g.dispose();}catch(e){errors.push(e);}if(errors.length)throw new AggregateError(errors,'Bay geometry cleanup failed');});
   let disposed = false;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
-    for (const g of owned) g.dispose();
-    owned.clear(); root.removeFromParent(); root.clear();
+    try{scope.dispose();}finally{owned.clear();root.removeFromParent();root.clear();}
   };
 
   // Faceted hard normals deliberately remain flat. Independent triangles let
@@ -142,7 +151,26 @@ export function buildArchitecturalBay(THREE, {
   try {
     add('wall', plate(outline,[bore],depth), [materials.wall,materials.interior ?? materials.wall], -depth/2);
     // Five-millimetre overlap hides tolerance cracks at the masonry/frame joint.
-    add('frame', plate(frameOutline,[bore],frameDepth+.005), [materials.trim,materials.trim], depth/2-.005);
+    if(frameProfile===undefined){
+      add('frame', plate(frameOutline,[bore],frameDepth+.005), [materials.trim,materials.trim], depth/2-.005);
+    }else{
+      // Physical dimensions and sill bearing remain those of this bay, while the
+      // section may articulate its interior. Do not silently clip an oversized design.
+      if(!Array.isArray(frameProfile)||Array.from(frameProfile).some(p=>!Array.isArray(p)||p.length!==2||!Array.from(p).every(Number.isFinite)||p[0]<0||p[0]>frameWidth||p[1]<0||p[1]>frameDepth))throw new RangeError('Bay frameProfile exceeds frame width/depth');
+      const hasBand=predicate=>frameProfile.some((p,i)=>predicate(p,frameProfile[(i+1)%frameProfile.length]));
+      const rearBearing=hasBand((a,b)=>a[1]===0&&b[1]===0&&Math.abs(a[0]-b[0])>1e-9);
+      const sillBearing=hasBand((a,b)=>a[0]===frameWidth&&b[0]===frameWidth&&Math.abs(a[1]-b[1])>1e-9);
+      if(!rearBearing||!sillBearing)throw new RangeError('Bay frameProfile requires finite wall and sill contact bearing bands');
+      const source=scope.own(createContourProfileSource(THREE,{contour:bore,profile:frameProfile}));
+      writeFormationCoordinates(THREE,source.geometry);
+      const part=new THREE.Mesh(source.geometry,materials.frame??materials.trim);part.name='bay.frame';part.position.z=depth/2;part.castShadow=part.receiveShadow=true;parts.frame=part;root.add(part);
+      profileSources.push({source,part,surfaceAt(u,v,space='root'){
+        const sample=source.surfaceAt(u,v);if(space==='source'||space==='part')return sample;
+        if(!['root','world'].includes(space))throw new RangeError('Unknown bay surface space');
+        part.updateWorldMatrix(true,false);const matrix=space==='world'?part.matrixWorld:part.matrix;
+        return {...sample,point:sample.point.clone().applyMatrix4(matrix),normal:sample.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(matrix)),tangent:sample.tangent.clone().transformDirection(matrix),frame:new THREE.Matrix4().multiplyMatrices(matrix,sample.frame)};
+      }});
+    }
     box('sill', openingWidth+2*frameWidth+.12, .06, depth+frameDepth+.12,
       sillHeight-frameWidth-.03, (frameDepth+.12)/2);
     box('header', width, .12, .05, height-.06, depth/2+.025);
@@ -163,6 +191,6 @@ export function buildArchitecturalBay(THREE, {
     const spec = Object.freeze({width,height,depth,openingWidth,openingHeight,sillHeight,variant,
       frameWidth,frameDepth,archSegments,
       opening:Object.freeze({bottom:sillHeight,top,springY,contour:Object.freeze(bore.map(p=>Object.freeze([...p])))})});
-    return {root,anchors,parts,spec,dispose};
-  } catch (error) {dispose();throw error;}
+    return {root,anchors,parts,spec,...(frameProfile===undefined?{}:{profileSources}),dispose};
+  } catch (error) {try{dispose();}catch(cleanupError){throw new AggregateError([error,cleanupError],'Bay construction/cleanup failed');}throw error;}
 }

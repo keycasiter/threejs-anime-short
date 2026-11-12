@@ -4,6 +4,13 @@ import {assertInvariantName,invariantArray} from '../geometry/formation-coordina
  * Assemble asset-local static geometry without taking ownership of caller resources.
  * Inject THREE and its matching BufferGeometryUtils.mergeGeometries to avoid mixing runtimes.
  * `layers` is a Layers.mask bitmask; anchors are a Map of asset-local Matrix4 snapshots.
+ * Optional add(...,{sourceId}) records a nonempty logical source string without
+ * changing render buckets. finish().sourceRanges refers to actual emitted Mesh /
+ * geometry handles and nonindexed vertexStart/vertexCount ranges (multiples of 3).
+ * Matching native merge concatenates the nonindexed snapshots in insertion order;
+ * prefixes include untracked inputs. Repeated IDs may span several ranges/buckets.
+ * These runtime handles are borrowed, not JSON; serialize IDs/numbers explicitly.
+ * Only range metadata survives snapshot retirement; source buffers are not retained.
  */
 export function createAssetAssembly(THREE, {mergeGeometries,invariantAttributes={}} = {}) {
   if (!THREE?.BufferGeometry || !THREE?.Matrix4 || !THREE?.Group || typeof mergeGeometries !== 'function') {
@@ -115,15 +122,19 @@ export function createAssetAssembly(THREE, {mergeGeometries,invariantAttributes=
     }
   }
 
-  function add(geometry, material, {matrix, castShadow=true, receiveShadow=true, layers=1} = {}) {
+  function add(geometry, material, {matrix, castShadow=true, receiveShadow=true, layers=1, sourceId} = {}) {
     requireOpen();
     if (!material?.isMaterial || typeof material.uuid !== 'string') throw new TypeError('A single Three.js material is required');
     if (typeof castShadow !== 'boolean' || typeof receiveShadow !== 'boolean') throw new TypeError('Shadow flags must be boolean');
     if (!Number.isInteger(layers) || layers < 0 || layers > 0xffffffff) throw new RangeError('layers must be an unsigned 32-bit mask');
+    if (sourceId!==undefined && (typeof sourceId!=='string' || !sourceId.trim())) throw new TypeError('sourceId must be a nonempty string');
     const snapshot = geometrySnapshot(geometry, matrixSnapshot(matrix));
     const key = JSON.stringify([material.uuid, castShadow, receiveShadow, layers]);
-    if (!buckets.has(key)) buckets.set(key,{material,castShadow,receiveShadow,layers,geometries:[]});
-    buckets.get(key).geometries.push(snapshot);
+    if (!buckets.has(key)) buckets.set(key,{material,castShadow,receiveShadow,layers,geometries:[],vertexCount:0,sources:[]});
+    const bucket=buckets.get(key),vertexCount=snapshot.getAttribute('position').count;
+    bucket.geometries.push(snapshot);
+    if(sourceId!==undefined)bucket.sources.push({sourceId,vertexStart:bucket.vertexCount,vertexCount});
+    bucket.vertexCount+=vertexCount;
     staticInputs++;staticTriangles += snapshot.getAttribute('position').count / 3;
     return api;
   }
@@ -151,7 +162,7 @@ export function createAssetAssembly(THREE, {mergeGeometries,invariantAttributes=
   function finish() {
     if (state === 'finished') return result;
     requireOpen();state = 'finishing';
-    const root = new THREE.Group(), generated = new Set();
+    const root = new THREE.Group(), generated = new Set(), sourceRanges=[];
     try {
       for (const object of dynamicRoots) if (object.parent) throw new Error('Dynamic root acquired a parent before finish');
       for (const bucket of buckets.values()) {
@@ -164,6 +175,7 @@ export function createAssetAssembly(THREE, {mergeGeometries,invariantAttributes=
         const mesh = new THREE.Mesh(geometry,bucket.material);
         mesh.castShadow=bucket.castShadow;mesh.receiveShadow=bucket.receiveShadow;mesh.layers.mask=bucket.layers;
         root.add(mesh);
+        for(const range of bucket.sources)sourceRanges.push({...range,object:mesh,geometry});
       }
       // Attach only after every merge succeeds so a failed static build cannot steal dynamic roots.
       for (const object of dynamicRoots) {
@@ -171,7 +183,7 @@ export function createAssetAssembly(THREE, {mergeGeometries,invariantAttributes=
       }
       let disposed = false;
       result = {
-        root,
+        root,sourceRanges,
         anchors:new Map([...anchors].map(([name,matrix])=>[name,matrix.clone()])),
         stats:Object.freeze({staticInputs,staticMeshes:generated.size,staticTriangles,dynamicRoots:dynamicRoots.length}),
         dispose() {

@@ -9,9 +9,16 @@ const body=source.slice(source.indexOf('function readState(){'),source.indexOf('
 assert.ok(body.startsWith('function readState(){'));
 function fixture(){
  const vector=values=>({toArray:()=>[...values]}),mesh={geometry:{uuid:'arrival-geometry'}};mesh.parent=mesh;
+ const identity=[1,0,0,0,0,1,0,0,0,0,1,0,2,0,-3,1];
+ const profilePart={name:'bay.frame',uuid:'live-frame-object',geometry:{uuid:'live-frame-geometry'},material:{type:'MeshStandardMaterial'},matrixWorld:vector(identity)};profilePart.parent=profilePart;
+ const profileSource={geometry:profilePart.geometry,metadata:{kind:'contour-profile',contour:[[-.5,.5],[.5,.5],[.5,1.5],[-.5,1.5]],profile:[[0,0],[.07,0],[.07,.045],[0,.045]],bands:[{profileBand:0,materialIndex:0,triangleCount:8}]},surfaceAt(){throw Error('live query must never enter DTO');},dispose(){}};
+ const frameSlot={role:'wood',options:{maps:false,baseColor:0xa68152}};
+ const retiredId='perimeter/0/0/frame';
  const world={root:{updateMatrixWorld(){}},spec:{configuration:'grid'},stats:{buildingCount:23},materialRegionStats:[{slots:[{area:2}]}],
   parts:{curvedRoof:{geometry:{boundingBox:{max:vector([1,2,3])}}},panel:{matrixWorld:vector([1,0,0,1])}},anchors:new Map([['roof-service',vector([1,2,3])]]),
-  materialBindings:[{object:{geometry:{uuid:'g'},material:{type:'MeshStandardMaterial'}}}],
+  materialBindings:[{object:{geometry:{uuid:'g'},material:{type:'MeshStandardMaterial'}}},{object:profilePart,slots:[frameSlot]}],
+  boundarySources:[{assetId:'hall',source:profileSource,part:profilePart}],
+  bakedBoundarySources:[{id:retiredId,metadata:structuredClone(profileSource.metadata),sourceGeometryId:'retired-source-geometry',sourceSpace:'world-root-local',sourceMatrix:[...identity],semantic:structuredClone(frameSlot),triangleCount:2,disposed:true,sourceRanges:[{sourceId:retiredId,objectId:'assembled-frame-object',geometryId:'assembled-frame-geometry',vertexStart:9,vertexCount:6}]}],
   context:{sites:[{id:'site',position:[1,2,3],spec:{width:6},route:{start:[1,2,3],end:[4,2,3],width:2,mesh}}],stats:{staticMeshes:9},design:{topology:'branches'},layout:{connectionGraph:{components:[['a','b']]}},neighborhood:{diagnostics:{rejections:{neighbor:1}}},roads:{stats:{topTriangles:3}},gateways:[{center:[18,0,0]}]},
   regionalAssets:[{id:'hall',program:'gallery',regionId:'zone'}],observationSets:[{samples:[{point:[1,2,3]}]}],
   viewTasks:[{id:'region',position:[1,2,3],target:[0,0,0],sampleIds:['face'],inspection:{features:[{satisfied:true}]}}],
@@ -23,7 +30,14 @@ function fixture(){
 }
 test('public readState detaches the whole DTO in the same realm, including diagnostics and collections',()=>{
  const {world,readState}=fixture(),first=readState(),expected=structuredClone(first);
- assert.doesNotThrow(()=>JSON.stringify(first));assert.equal(first.context.sites[0].route.geometryId,'arrival-geometry');assert.equal('mesh' in first.context.sites[0].route,false);
+ const json=JSON.parse(JSON.stringify(first));assert.deepEqual(json.boundarySources,first.boundarySources);assert.deepEqual(json.bakedBoundarySources,first.bakedBoundarySources);
+ assert.equal(first.boundarySources[0].geometryId,'live-frame-geometry');assert.equal(first.boundarySources[0].metadata.kind,'contour-profile');assert.equal('source' in first.boundarySources[0],false);assert.equal('part' in first.boundarySources[0],false);
+ const range=first.bakedBoundarySources[0].sourceRanges[0];assert.deepEqual(range,{sourceId:'perimeter/0/0/frame',objectId:'assembled-frame-object',geometryId:'assembled-frame-geometry',vertexStart:9,vertexCount:6});assert.equal('object' in range,false);assert.equal('geometry' in range,false);
+ json.boundarySources[0].metadata.profile[0][0]=777;json.bakedBoundarySources[0].sourceRanges[0].vertexCount=0;assert.deepEqual(first,expected,'JSON mutations are separate from the snapshot');
+ first.boundarySources[0].metadata.contour[0][0]=999;first.boundarySources[0].metadata.profile[0][1]=999;first.boundarySources[0].worldMatrix[12]=999;first.boundarySources[0].slots[0].options.maps=true;
+ first.bakedBoundarySources[0].metadata.profile[0][0]=999;first.bakedBoundarySources[0].sourceMatrix[12]=999;first.bakedBoundarySources[0].semantic.options.maps=true;range.vertexStart=-1;range.geometryId='wrong';
+ assert.equal(world.boundarySources[0].source.metadata.contour[0][0],-.5);assert.equal(world.bakedBoundarySources[0].sourceRanges[0].vertexStart,9);
+ assert.equal(first.context.sites[0].route.geometryId,'arrival-geometry');assert.equal('mesh' in first.context.sites[0].route,false);
  first.placements.length=0;
  assert.equal(world.placements.length,1,'mutating a snapshot collection must never mutate the live world');
  first.viewTasks[0].inspection.features[0].satisfied=false;

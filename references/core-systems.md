@@ -16,6 +16,7 @@
 
 | 任务 | 实现 | 输出与边界 |
 |---|---|---|
+| 闭合凸边界的设计截面与真实接面 | [contour-profile](contour-profile.md) | 环向连续台肩/回折/孔边、独立折边/材料带与真实三角查询；不替代任意凹域偏移或实体布尔 |
 | 任意对应截面沿程变化 | [profile-loft](../assets/geometry/profile-loft.mjs)；[连续形体](continuous-surfaces.md) | 网格、凹轮廓cap与真实三角查询；输入环明确对应，不证明全局无自交 |
 | 非轴对称单patch双层壳 | [bezier-shell](../assets/geometry/bezier-shell.mjs)；同上 | 控制网→内外壁/四封边/材料组/实际查询；不是任意多patch布尔或制造等厚证明 |
 | 融合体/负形的网格 | [implicit-surface](../assets/geometry/implicit-surface.mjs)；同上 | 同版MC、负内正外场、采样/容量/退化检查；场可非SDF，有限采样不保证所有薄特征 |
@@ -27,6 +28,8 @@
 | 近远与观察任务 | [projected-detail](../assets/runtime/projected-detail.mjs)、[observation-view](../assets/scene/observation-view.mjs) | 投影尺度/迟滞、真实样点的候选机位排序；不是完整HLOD或自动构图评分 |
 | 用途进入真实结构程序 | [区域程序](region-programs.md)；[工厂](../assets/examples/region-programs.mjs) | 展陈/作业/围合的不同开口、屋盖、内部和配套；是建筑构造方法，不是所有题材的默认三分法 |
 | 地表与保留场地连续接力 | [constrained-height-field](../assets/environment/constrained-height-field.mjs) | 矩形保留面、平滑过渡及解析导数；网格/法线/落点共用，悬挑/洞穴另选表示 |
+
+实际开口边、平台/屋面边和开放容器由同一[轮廓截面](contour-profile.md)接到局部结构、邻件和实测包络；临时来源随真实group进入[装配范围](assembly-provenance.md)，形成坐标在摆放前保存。截面配方属于当前设计数据，复杂边缘不会自动改善区域用途、主次或材料可读性。
 
 详细参数/限制只在对应方法页和源码维护。轴对称仍用原回转工具，简单椭圆路径仍可用原loft；目标不需要的复杂能力不用加载。
 
