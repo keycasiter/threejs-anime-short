@@ -11,13 +11,13 @@
 |---|---|---|
 | 沿方向移动 | `normalize()`会修改接收者，保留输入用`clone()`；零方向拒绝。`position.add(delta)`的delta属于父空间；`translateOnAxis(unitAxis,d)`先用对象自身quaternion转轴，再加到position | 后者沿自身局部轴；有缩放父级时，d不能直接当实际世界距离。世界位移先经父级逆线性变换，再加position |
 | 前/后与扇区 | 双方位置和前向必须同属世界空间；从实际`matrixWorld`变换作者约定的局部前轴（示例−Z）。非均匀/剪切父级下，不把自身quaternion或分解出的旋转当完整世界方向 | dot正/负只分前后半空间；边界与同点单列。XZ扇区忽略高度，半径与角度同时满足；不证明遮挡、视锥内或屏幕可见 |
-| 面积 | 静态Float32基础position，完整索引或连续三顶点；每个顶点应用实际世界仿射矩阵再叉积 | 平方世界单位；非均匀缩放、剪切、反射均按实际顶点算。全三角流面积不等于drawRange、材质裁剪或可见像素面积，也不证明封闭实体 |
-| 点到路径 | `t=AP·AB/|AB|²`；无限直线保留t，有限段clamp到[0,1] | 直线零AB拒绝；零长线段退化为点A。输入必须同空间同单位 |
+| 面积 | 静态Float32基础position，完整Uint8/16/32索引或连续三顶点；两条局部边应用实际世界矩阵的线性3×3（保留缩放/剪切，不归一化）后叉积 | 平方世界单位；非均匀缩放、剪切、反射均按实际边算；不先加世界平移，避免大坐标抵消边长。全三角流面积不等于drawRange、材质裁剪或可见像素面积，也不证明封闭实体 |
+| 点到路径 | `t=(AP·AB)/(AB·AB)`；无限直线保留t，有限段clamp到[0,1]；距离取残差`AP−t·AB`的长度 | 直线零AB拒绝；零长线段退化为点A。输入必须同空间同单位 |
 | 旋转组合 | `q.multiply(r)`写入`q*r`，`q.premultiply(r)`写入`r*q`；均修改接收者 | 对向量右侧先作用；自身姿态右乘是局部追加，左乘是父空间追加。只有父架与世界一致时，左乘才可称世界轴旋转 |
 
 纯旋转父链可写`qWorld = qParent.clone().multiply(qLocal)`：向量先受qLocal、再受qParent作用。世界轴增量应左乘qWorld，再用父旋转的逆变回qLocal；存在非均匀缩放或剪切时，这套四元数关系不能代替实际matrixWorld轴与仿射变换。
 
-已有[材料分区](../assets/materials/material-regions.mjs)在真实分区消费者中返回局部基础面积，应继续复用。它要求非空regions，成功后会`clearGroups/addGroup`替换geometry.groups，不能借一次虚构分区调用把它当纯测量；本页面积例仅只读测量。蒙皮、morph、实例、多重实例、位移贴图、Shader/NodeMaterial与自定义顶点改形需要另取对应姿态的实际顶点，本例直接拒绝可识别的这些输入。未声明的运行时改形也不属于静态CPU测量域。
+已有[材料分区](../assets/materials/material-regions.mjs)在真实分区消费者中返回局部基础面积，应继续复用。它要求非空regions，成功后会`clearGroups/addGroup`替换geometry.groups，不能借一次虚构分区调用把它当纯测量；本页面积例仅只读测量。蒙皮、morph、实例、多重实例、位移贴图、Shader/NodeMaterial与自定义顶点改形需要另取对应姿态的实际顶点，本例直接拒绝可识别的这些输入，包括BatchedMesh、InstancedBufferGeometry及按实例推进的position；普通Float32交错position可用。未声明的运行时改形也不属于静态CPU测量域。
 
 ## 可运行ESM
 
@@ -113,29 +113,29 @@ function pointDistance(p, a, b, finiteSegment) {
   let t = ap.dot(ab)/length2;
   if (!Number.isFinite(t)) throw Error('projection exceeds numeric range');
   if (finiteSegment) t = T.MathUtils.clamp(t, 0, 1);
-  const distance = vector(a.clone().addScaledVector(ab, t).sub(p)).length();
+  const distance = vector(ap.addScaledVector(ab, -t)).length();
   if (!Number.isFinite(distance)) throw Error('distance exceeds numeric range');
   return distance;
 }
 function staticWorldArea(mesh) {
-  if (!mesh?.isMesh || mesh.type !== 'Mesh' || mesh.isSkinnedMesh || mesh.isInstancedMesh)
+  if (!mesh?.isMesh || mesh.type !== 'Mesh' || mesh.isSkinnedMesh || mesh.isInstancedMesh || mesh.isBatchedMesh)
     throw Error('ordinary static Mesh required');
   const g = mesh.geometry, p = g?.getAttribute('position'), index = g?.getIndex();
   const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-  if (!g?.isBufferGeometry || Object.values(g.morphAttributes).some(a => a.length) ||
+  if (!g?.isBufferGeometry || g.isInstancedBufferGeometry || Object.values(g.morphAttributes).some(a => a.length) ||
       materials.length === 0 || materials.some(m => !m?.isMaterial || m.isShaderMaterial || m.isNodeMaterial ||
         m.displacementMap || m.onBeforeCompile !== T.Material.prototype.onBeforeCompile))
     throw Error('static base geometry and unmodified built-in materials required');
-  if (!p || p.itemSize !== 3 || p.normalized || !((p.array || p.data?.array) instanceof Float32Array) ||
+  if (!p || p.isInstancedBufferAttribute || p.data?.isInstancedInterleavedBuffer || p.itemSize !== 3 || p.normalized || !((p.array || p.data?.array) instanceof Float32Array) ||
       !Number.isSafeInteger(p.count) || p.count === 0) throw Error('nonempty Float32 xyz positions required');
   const count = index ? index.count : p.count;
   if (!Number.isSafeInteger(count) || count === 0 || count%3 ||
       (index && (index.itemSize !== 1 || index.normalized ||
-        !(index.array instanceof Uint16Array || index.array instanceof Uint32Array))))
+        !(index.array instanceof Uint8Array || index.array instanceof Uint16Array || index.array instanceof Uint32Array))))
     throw Error('complete indexed/nonindexed triangle stream required');
   if (g.drawRange.start !== 0 || !(g.drawRange.count === Infinity || g.drawRange.count === count))
     throw Error('full drawRange required; this is not rendered-area measurement');
-  const m = worldMatrix(mesh);
+  const linear = new T.Matrix3().setFromMatrix4(worldMatrix(mesh));
   for (let i = 0; i < p.count; i++) vector(new T.Vector3().fromBufferAttribute(p, i));
   if (index) for (let i = 0; i < count; i++) {
     const n = index.getX(i);
@@ -144,8 +144,9 @@ function staticWorldArea(mesh) {
   let total = 0;
   for (let i = 0; i < count; i += 3) {
     const [a, b, c] = [0, 1, 2].map(k => vector(new T.Vector3()
-      .fromBufferAttribute(p, index ? index.getX(i+k) : i+k).applyMatrix4(m)));
-    const cross = vector(b.sub(a).cross(c.sub(a)));
+      .fromBufferAttribute(p, index ? index.getX(i+k) : i+k)));
+    const ab = vector(b.sub(a).applyMatrix3(linear)), ac = vector(c.sub(a).applyMatrix3(linear));
+    const cross = vector(ab.cross(ac));
     total += .5 * Math.hypot(cross.x, cross.y, cross.z);
     if (!Number.isFinite(total)) throw Error('area exceeds numeric range');
   }
