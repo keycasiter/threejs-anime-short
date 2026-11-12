@@ -600,3 +600,37 @@ test('R2 N1 actual zero-length flat witness contacts remain admissible',()=>{
  const r=qualify(sourceSillFixture(0,0));
  assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
 });
+
+// Fix round 3: the whole source -> section producer -> comparison boundary.
+// Five exactly joined triangles cover the same 1.2 x 2 rectangle. Only the
+// middle source face's cap width changes; the physical sill never changes.
+function sourceFanFixture(middleWidth,height){
+ const f=sourceSillFixture(1e-12,height),x=.25,tip=[x,0,0];
+ const perimeter=[[-.6,0,0],[-.6,0,-2],[x-middleWidth/2,0,-2],
+  [x+middleWidth/2,0,-2],[.6,0,-2],[.6,0,0]];
+ const faces=perimeter.slice(1).map((b,i)=>({id:`fan${i}`,p:[tip,b,perimeter[i]]}));
+ f.site.hostFaces.push({id:'fan',owner:f.site.owner,faces});
+ f.recipe.hostScopes.push('fan');
+ f.site.arrival.edges[0].hostIds=['fan'];
+ return f;
+}
+for(const [name,middleWidth,height]of [
+ ['narrow source fan with flat sill',1.1e-11,0],
+ ['wide source fan with flat sill',1e-3,0],
+ ['narrow source fan with off-centre 3cm peak',1.1e-11,.03],
+ ['wide source fan with off-centre 3cm peak',1e-3,.03]
+])test(`R3 N1 ${name}`,()=>{
+ const f=sourceFanFixture(middleWidth,height),before=JSON.stringify(f);
+ const faces=f.site.hostFaces.at(-1).faces;
+ approx(faces.reduce((sum,face)=>sum+area(face.p.map(p=>[p[0],p[2]])),0),2.4,1e-14);
+ assert.ok(faces[2].p[1][0]>faces[2].p[2][0],'the middle cap interval is actually positive');
+ if(height===0){
+  const r=qualify(f);
+  assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+ }else{
+  const r=reject(f,'seam-step');
+  assert.equal(r.diagnostics.reasons[0].ownerId,'source');
+  assert.ok(r.diagnostics.reasons[0].value>.029);
+ }
+ assert.equal(JSON.stringify(f),before);
+});

@@ -93,8 +93,8 @@ class Budget{
  take(n,ownerId=this.owner){if(!Number.isSafeInteger(n)||n<0||n>this.max-this.spent)fail('budget',ownerId,{value:this.spent,limit:this.max});this.spent+=n;}
  cells(n,ownerId){if(!Number.isSafeInteger(n)||n>MAX_CELLS-this.references)fail('budget',ownerId,{value:this.references,limit:MAX_CELLS});this.take(n,ownerId);this.references+=n;}
 }
-// Exact fractions are used only for source-edge feature certificates and final
-// port sections. They do not replace the shared convex geometry constructor.
+// Exact fractions certify source-edge features and complete ground/sill
+// sections. They do not replace the shared convex geometry constructor.
 function fraction(n,d=1n){
  if(d===0n)throw new RangeError('zero exact denominator');
  if(n===0n)return {n:0n,d:1n};
@@ -340,7 +340,7 @@ function normalize(input,budget){
    if(orientation>=0)invalid('host face must have positive Y normal and nonzero projection',true);
    if(!Number.isFinite(ny)||ny<=NUM*NUM)fail('precision',hostId,{peerId:faceId});
    const sy=((b[1]-a[1])*vz-(c[1]-a[1])*uz)/(-ny),sz=(ux*(c[1]-a[1])-vx*(b[1]-a[1]))/(-ny),ring=canonical(p.map(v=>[v[0],v[2]]));
-   const key=JSON.stringify([hostId,faceId]);return {id:faceId,hostId,key,ring,bounds:bounds(ring),grade:Math.hypot(sy,sz),y:([x,z])=>a[1]+sy*(x-a[0])+sz*(z-a[2])};
+   const key=JSON.stringify([hostId,faceId]);return {id:faceId,hostId,key,ring,vertices:p,bounds:bounds(ring),grade:Math.hypot(sy,sz),y:([x,z])=>a[1]+sy*(x-a[0])+sz*(z-a[2])};
   }),'face');return {id:hostId,faces:fs};
  }),'host');
  const hostMap=new Map(hosts.map(h=>[h.id,h])),scopes=ids(recipe.hostScopes,'hostScopes',1);for(const h of scopes)if(!hostMap.has(h))invalid('unknown scoped host');
@@ -525,30 +525,75 @@ function obstruct(poly,proof,obstacles,hostIds,headroom,owner,budget,exemptions=
  }
  return minHeadroom;
 }
-// The exact interval in a convex piece occupied by a full cross-section segment.
-function segmentRange(a,b,ring){
- let lo=0,hi=1;const d=sub(b,a);
- for(const [p,q]of segments(ring)){
-  const e=sub(q,p),base=cross(e,sub(a,p)),slope=cross(e,d);
-  if(Math.abs(slope)<=NUM*length(e)){if(base< -NUM*length(e))return null;continue;}
-  const t=-base/slope;if(slope>0)lo=Math.max(lo,t);else hi=Math.min(hi,t);if(lo>hi+NUM)return null;
+// Clip the requested segment against ORIGINAL source halfplanes. The rounded
+// 2D clip used for area proof is not the source of a new section-width tolerance.
+function sourceSegmentRange(section,ring,budget,owner){
+ let loExact=QZERO,hiExact=QONE;
+ for(let i=0;i<ring.length;i++){
+  budget.take(1,owner);
+  const a=qpoint(ring[i]),edge=qvector(qpoint(ring[(i+1)%ring.length]),a);
+  const base=qcross(edge,qvector(section.origin,a)),slope=qcross(edge,section.direction);
+  if(slope.n===0n){if(base.n<0n)return null;continue;}
+  const at=qdiv(qsub(QZERO,base),slope);
+  if(slope.n>0n){if(qcompare(at,loExact)>0)loExact=at;}
+  else if(qcompare(at,hiExact)<0)hiExact=at;
+  if(qcompare(loExact,hiExact)>0)return null;
  }
- return hi>=lo?{lo:Math.max(0,lo),hi:Math.min(1,hi)}:null;
+ return {loExact,hiExact};
+}
+function sourceSectionHeight(face,section,budget,owner){
+ budget.take(1,owner);
+ const [a,b,c]=face.vertices.map(qpoint);
+ const origin=[a[0],a[2]],u=qvector([b[0],b[2]],origin),v=qvector([c[0],c[2]],origin);
+ const denominator=qcross(u,v),dyU=qsub(b[1],a[1]),dyV=qsub(c[1],a[1]);
+ if(denominator.n===0n)fail('precision',owner,{peerId:face.key});
+ const heightAt=point=>{
+  const w=qvector(point,origin);
+  return qadd(a[1],qadd(qmul(qdiv(qcross(w,v),denominator),dyU),qmul(qdiv(qcross(u,w),denominator),dyV)));
+ };
+ // One affine function from this actual source triangle, never a fitted or
+ // averaged surface. Exact evaluation also avoids cancellation on tiny spans.
+ const from=heightAt(section.origin),to=heightAt(section.origin.map((q,i)=>qadd(q,section.direction[i]))),rise=qsub(to,from);
+ return parameter=>roundedFraction(qadd(from,qmul(rise,parameter)));
+}
+function requireFullProfile(intervals,a,b,owner,budget,code,peerId){
+ let end=QZERO;
+ for(const interval of intervals){
+  budget.take(1,owner);
+  if(qcompare(interval.loExact,end)>0)fail(code,owner,{...(peerId?{peerId}:{}),polygon:[a,b]});
+  if(qcompare(interval.hiExact,end)>0)end=interval.hiExact;
+ }
+ if(qcompare(end,QONE)<0)fail(code,owner,{...(peerId?{peerId}:{}),polygon:[a,b]});
 }
 function profile(a,b,proof,owner,budget){
- const out=[];for(const piece of proof.pieces){budget.take(1,owner);const range=segmentRange(a,b,piece.ring);if(range&&range.hi-range.lo>NUM)out.push({...range,y:piece.face.y,key:piece.face.key});}
- out.sort((a,b)=>a.lo-b.lo||a.hi-b.hi||cmp(a.key,b.key));let end=0;for(const r of out){if(r.lo>end+NUM)fail('walk-gap',owner,{polygon:[a,b]});end=Math.max(end,r.hi);}if(end<1-NUM)fail('walk-gap',owner,{polygon:[a,b]});return out;
+ budget.take(1,owner);
+ const origin=qpoint(a),section={origin,direction:qvector(qpoint(b),origin)},out=[];
+ for(const piece of proof.pieces){
+  budget.take(1,owner);
+  const range=sourceSegmentRange(section,piece.face.ring,budget,owner);
+  if(!range||qcompare(range.hiExact,range.loExact)===0)continue;
+  const lo=roundedFraction(range.loExact),hi=roundedFraction(range.hiExact);
+  if(!Number.isFinite(lo)||!Number.isFinite(hi)||!(hi>lo))fail('precision',owner,{peerId:piece.face.key});
+  const heightAtExact=sourceSectionHeight(piece.face,section,budget,owner);
+  budget.take(1,owner);
+  out.push({...range,lo,hi,heightAtExact,key:piece.face.key});
+ }
+ out.sort((l,r)=>{budget.take(1,owner);return qcompare(l.loExact,r.loExact)||qcompare(l.hiExact,r.hiExact)||cmp(l.key,r.key);});
+ requireFullProfile(out,a,b,owner,budget,'walk-gap');
+ return out;
 }
 function compareProfiles(a,b,left,right,owner,budget){
  let maximum=0;
  for(const l of left)for(const r of right){
   budget.take(1,owner);
-  const lo=Math.max(l.lo,r.lo),hi=Math.min(l.hi,r.hi);
-  if(!Number.isFinite(lo)||!Number.isFinite(hi))fail('precision',owner);
-  if(hi<=lo)continue; // Only a genuine zero-length contact has no interval.
+  const loExact=qcompare(l.loExact,r.loExact)>0?l.loExact:r.loExact;
+  const hiExact=qcompare(l.hiExact,r.hiExact)<0?l.hiExact:r.hiExact;
+  if(qcompare(hiExact,loExact)<=0)continue;
+  const lo=roundedFraction(loExact),hi=roundedFraction(hiExact);
+  if(!Number.isFinite(lo)||!Number.isFinite(hi)||!(hi>lo))fail('precision',owner);
   const start=lerp(a,b,lo),end=lerp(a,b,hi);
   if(![...start,...end].every(Number.isFinite))fail('precision',owner);
-  const heights=[profileHeight(l,lo,start),profileHeight(r,lo,start),profileHeight(l,hi,end),profileHeight(r,hi,end)];
+  const heights=[profileHeight(l,loExact,budget,owner),profileHeight(r,loExact,budget,owner),profileHeight(l,hiExact,budget,owner),profileHeight(r,hiExact,budget,owner)];
   if(!heights.every(Number.isFinite))fail('precision',owner);
   const v=Math.max(Math.abs(heights[0]-heights[1]),Math.abs(heights[2]-heights[3]));
   if(!Number.isFinite(v))fail('precision',owner);
@@ -599,20 +644,20 @@ function crossSillProfile(section,port,node,budget){
   if(qcompare(lower,upper)>=0)continue;
   const lo=roundedFraction(lower),hi=roundedFraction(upper);
   if(!(hi>lo)||!(r.t>l.t))fail('precision',node.id,{peerId:port.id});
-  intervals.push({lo,hi,atParameter:t=>l.y+(r.y-l.y)*(t-l.t)/(r.t-l.t)});
+  budget.take(1,node.id);
+  const from=exactNumber(l.y),rise=qsub(exactNumber(r.y),from),span=qsub(r.parameter,l.parameter);
+  const heightAtExact=parameter=>roundedFraction(qadd(from,qmul(rise,qdiv(qsub(parameter,l.parameter),span))));
+  intervals.push({lo,hi,loExact:lower,hiExact:upper,heightAtExact});
  }
  // Full coverage is a prerequisite to comparison. Intersecting two incomplete
  // lists is never evidence that the requested physical cross-section exists.
- let end=0;
- for(const interval of intervals){
-  budget.take(1,node.id);
-  if(interval.lo>end)fail('port-width',node.id,{peerId:port.id});
-  end=Math.max(end,interval.hi);
- }
- if(end<1)fail('port-width',node.id,{peerId:port.id});
+ requireFullProfile(intervals,section.a,section.b,node.id,budget,'port-width',port.id);
  return intervals;
 }
-function profileHeight(profile,t,point){return profile.atParameter?profile.atParameter(t):profile.y(point);}
+function profileHeight(profile,parameter,budget,owner){
+ budget.take(1,owner);
+ return profile.heightAtExact(parameter);
+}
 function validatePortUse(node,incident,budget){
  for(const port of node.ports){
   if(port.kind==='serve'&&incident.length!==1)fail('port-face',node.id,{peerId:port.id});
