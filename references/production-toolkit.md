@@ -32,6 +32,15 @@
 
 ## 最短可执行入口
 
+将设计写成生产代码时，先按[代码接力](code-guidance.md)选择当前小节。[完整构造工厂](../assets/examples/guided-assembly.mjs)与[全场接线入口](../assets/examples/guided-world/index.html)把真实面附着、动件、材料、独立实例变化、波面和消费者检查连接起来。示例的弯曲主体与水槽是教学设计，不能作为新作品默认造型。
+
+| 当前关系 | 已实现入口 | 范围 |
+|---|---|---|
+| 沿程主形与实际侧面接点 | [createSectionLoftSource](../assets/geometry/loft-source.mjs) | 原loft同源网格/侧面三角形重心/frame；不含端盖、融合或自交修复 |
+| 按身份/用途分离随机流 | [createRandomStreams](../assets/runtime/random-streams.mjs) | uint32根seed与稳定字符串ID；每次stream返回新游标，非加密 |
+| 多波网格/法线与参数附着 | [createWaveSurface](../assets/environment/wave-surface.mjs) | CPU解析波、当前位置/法线/bounds；局部rest参数，不是固定worldXZ或流体 |
+| 项目消费者的参数/刚体/相机读回 | [scene-probes](../assets/runtime/scene-probes.mjs) | 有限数字数组、普通Mesh世界矩阵、真实controls边界；不评美学或像素遮挡 |
+
 [组合诊断场景](../assets/examples/production-lab/index.html)和[完整接线源码](../assets/examples/production-lab/main.mjs)同时调用上述模块、现有设备箱工厂和同一材质目录，包含完整关系/结构样件/材质样片视图。
 
 1. 将需要的`assets`源码按原相对结构复制到项目。可从组合例删除不适用的模块，也可把import路径改到项目模块目录。

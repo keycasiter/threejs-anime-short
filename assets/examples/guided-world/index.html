@@ -1,0 +1,10 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Three.js · 构建代码接力</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#e6e7dd;color:#263b38;font:13px system-ui,sans-serif}canvas{display:block;touch-action:none}aside{position:fixed;left:22px;top:22px;width:264px;padding:20px;background:#f7f8efed;border:1px solid #bfcbbd;border-radius:4px}h1{font-size:23px;font-weight:500;margin:8px 0 12px}small{font-size:10px;letter-spacing:2px}p{font-size:12px;line-height:1.7}label{display:block;margin-top:12px}input,select{width:100%;margin:7px 0}button{padding:9px 12px;margin:4px 3px 0 0;background:#345b4c;color:#fff;border:0;border-radius:3px;cursor:pointer}pre{font:10px/1.5 monospace;white-space:pre-wrap;max-height:28vh;overflow:auto}#error{position:fixed;bottom:15px;left:20px;background:white;color:#a40016;max-width:80vw}footer{position:fixed;bottom:18px;right:22px;font-size:11px;pointer-events:none}@media(max-width:700px){aside{left:10px;top:10px;width:215px;padding:14px}p{font-size:11px}}</style>
+<!-- Supply the locked Three.js build/ and examples/jsm/ at ./vendor/. -->
+<script type="importmap">{"imports":{"three":"./vendor/build/three.module.js","three/addons/":"./vendor/examples/jsm/"}}</script></head><body>
+<aside><small>THREE.JS / BUILDING RELATIONS</small><h1>从设计到可见关系</h1><p>一套数据连接曲面、支撑、附属框、材料与波面。拖动环绕；参数改变实际生成结果。</p>
+<label for="span">主体展开尺寸 / m</label><input id="span" type="range" min="3" max="9" step=".5" value="6">
+<label for="amplitude">波幅 / m</label><input id="amplitude" type="range" min="0" max=".18" step=".01" value=".08">
+<label for="view">查看</label><select id="view"><option value="全场">全场关系</option><option value="接点">真实接点</option><option value="灰模">中层灰模</option></select>
+<button id="play" aria-label="暂停动画">暂停</button><button id="reset">复位</button><button id="probe">检查实际消费者</button><pre id="result">代码接线示例；不是成品画质评分。</pre></aside>
+<pre id="error" hidden></pre><footer>360°环绕 · 滚轮缩放 · 纯代码生成</footer><script type="module" src="./main.mjs"></script></body></html>
