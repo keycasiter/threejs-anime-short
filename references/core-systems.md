@@ -86,6 +86,8 @@ function applyLook(palette, bindings) {
 
 静态合并同时保留语义身份和渲染状态：`role + 规范化options`标明原材料区，材质实例、投影标志等决定绘制兼容。多个区在灰模阶段可以借用同一Material；`material.uuid`相同不代表它们以后都是木材或涂层。合并时按语义分桶或保留真实组区间，切换look读取原槽；用共享灰模→差异材质与直接差异材质构建对照，检查实际三角分布和几何身份。
 
+当前core/context还在源部件自有几何上写入`aFormationPosition`，经真实材质组提取和静态装配交给所有materialBindings；写入时排除lot的刚性摆放。读取方式、共同资产frame和借用边界见[形成坐标](formation-coordinates.md)。字段传到网格并不意味着当前look已用它生成材料；[材质扩展桥](material-shader-bridge.md)提供真实可编译接点，材料形成场与环境校准仍须另行实现和审图。
+
 灯架可选`hemisphereIntensity/skyColor/groundColor`提供真实天空/地面半球补光。把主光照亮的面、朝天暗面和朝地暗面分开检查；这不是GI，也不替代接触阴影。近场阴影bounds覆盖必要投影者/受影者，远景地形不与近景共享无限扩大的拟合区。远层投影策略显式决定，避免增加场景后阴影精度随之消失。
 
 ## 5 规模、观看与上下文

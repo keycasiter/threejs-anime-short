@@ -1,3 +1,5 @@
+import {FORMATION_ATTRIBUTE,writeFormationCoordinates} from '../geometry/formation-coordinates.mjs';
+import {copyFormationGroup} from '../scene/formation-group.mjs';
 import {assignMaterialRegions} from '../materials/material-regions.mjs';
 import {createProfileLoftSource} from '../geometry/profile-loft.mjs';
 import {createBezierPatchShell} from '../geometry/bezier-shell.mjs';
@@ -94,6 +96,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     }
   }
   function mesh(geometry,slots,parent=root){
+    if(!geometry.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,geometry);
     const object=new T.Mesh(geometry,slots.length===1?mat(slots[0].role,slots[0].options):slots.map(s=>mat(s.role,s.options)));
     tangents(object);object.castShadow=object.receiveShadow=true;parent.add(object);bind(object,slots);return object;
   }
@@ -102,13 +105,13 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
   const buckets=new Map(),canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
   function staticAdd(g,material,binding,settings){
     const key=JSON.stringify(canonical(binding));
-    if(!buckets.has(key))buckets.set(key,{binding,assembly:scope.own(createAssetAssembly(T,{mergeGeometries}))});
+    if(!buckets.has(key))buckets.set(key,{binding,assembly:scope.own(createAssetAssembly(T,{mergeGeometries,invariantAttributes:{[FORMATION_ATTRIBUTE]:3}}))});
     buckets.get(key).assembly.add(g,material,settings);
   }
   function addStatic(g,role,position,rotation=[0,0,0],options={}){
     try{
       const m=mat(role,options);const pose=new T.Object3D();pose.position.set(...position);pose.rotation.set(...rotation);pose.updateMatrix();
-      staticAdd(g,m,slot(role,options),{matrix:pose.matrix});
+      writeFormationCoordinates(T,g);staticAdd(g,m,slot(role,options),{matrix:pose.matrix});
     }finally{g.dispose();}
   }
   function box(size,position,role='stone',options={}){
@@ -120,7 +123,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     const a=new T.Vector3(...start),b=new T.Vector3(...end),pose=new T.Object3D();pose.position.copy(a).add(b).multiplyScalar(.5);
     pose.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),b.clone().sub(a).normalize());pose.updateMatrix();
     const g=new T.CylinderGeometry(r,r,a.distanceTo(b),10);
-    try{const material=mat(role);staticAdd(g,material,slot(role),{matrix:pose.matrix});}finally{g.dispose();}
+    try{const material=mat(role);writeFormationCoordinates(T,g);staticAdd(g,material,slot(role),{matrix:pose.matrix});}finally{g.dispose();}
   }
   function plate(surface,top,depth,role,options={}){
     const shape=new T.Shape(surface.outer.map(p=>new T.Vector2(...p)));
@@ -153,6 +156,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
       if(!zone||!['gallery','workshop','courtyard'].includes(zone.role))throw Error(`Regional purpose required: ${id}`);
       const program=zone.role,level=layout.levels.find(l=>l.id===zone.level),arrival=roadArrival(hall,level),normal=arrival.point.clone().sub(new T.Vector3(x,arrival.point.y,z)).normalize();
       const asset=scope.own(buildRegionalArchitecture(T,{program,width,depth,height:program==='workshop'?3.8:3.2,materialFor:mat}));
+      for(const {object} of asset.materialBindings)if(!object.geometry.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,object.geometry);
       asset.root.position.set(x,level.y+FLOOR,z);asset.root.rotation.y=Math.atan2(normal.x,normal.z);root.add(asset.root);
       const f=asset.footprint,localPolygon=[[f.minX,f.minZ],[f.maxX,f.minZ],[f.maxX,f.maxZ],[f.minX,f.maxZ]],clearance=.1;
       const worldPolygon=()=>{asset.root.updateWorldMatrix(true,true);return localPolygon.map(([a,b])=>{const p=asset.root.localToWorld(new T.Vector3(a,0,b));return [p.x,p.z];});};
@@ -310,15 +314,12 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     function bakeObject(object,semantics){
       object.updateWorldMatrix(true,true);object.traverse(node=>{
         if(!node.isMesh)return;const g=node.geometry,ms=Array.isArray(node.material)?node.material:[node.material];
+        if(!g.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,g);
         const groups=g.groups.length?g.groups:[{start:0,count:g.index?.count??g.attributes.position.count,materialIndex:0}];
         for(const group of groups){
-          const source=ms[group.materialIndex]??ms[0],slots=semantics.get(node),binding=slots?.[group.materialIndex]??slots?.[0],copy=new T.BufferGeometry();
+          const source=ms[group.materialIndex]??ms[0],slots=semantics.get(node),binding=slots?.[group.materialIndex]??slots?.[0];
           if(!binding)throw Error('Static material group has no semantic owner');
-          for(const key of ['position','normal','uv']){
-            const attribute=g.attributes[key];if(!attribute)continue;const values=new Float32Array(group.count*attribute.itemSize);
-            for(let i=0;i<group.count;i++){const v=g.index?g.index.getX(group.start+i):group.start+i;for(let c=0;c<attribute.itemSize;c++)values[i*attribute.itemSize+c]=attribute.getComponent(v,c);}
-            copy.setAttribute(key,new T.BufferAttribute(values,attribute.itemSize));
-          }
+          const copy=copyFormationGroup(T,g,group);
           try{staticAdd(copy,source,binding,{matrix:node.matrixWorld,castShadow:node.castShadow,receiveShadow:node.receiveShadow,layers:node.layers.mask});}finally{copy.dispose();}
         }
       });

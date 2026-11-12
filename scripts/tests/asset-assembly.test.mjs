@@ -175,3 +175,32 @@ test('assembly ownership may span construction and finish and releases generated
  assert.equal(typeof a.dispose,'function');a.dispose();a.dispose();result.dispose();assert.equal(generated,1);assert.equal(source,0);
  input.dispose();m.dispose();
 });
+
+test('explicit invariants survive indexed poses, schema mutation and source mutation; snapshots retain ownership',()=>{
+  const schema={aMetres:3,aPhase:1,aPair:2,aWeights:4},m=material(),g=triangle(),idx=[2,0,1],expected={},disposed=[];
+  const a=createAssetAssembly(THREE,{invariantAttributes:schema,mergeGeometries(gs,groups){for(const x of gs)x.addEventListener('dispose',()=>disposed.push(x));return mergeGeometries(gs,groups);}});
+  for(const [k,size] of Object.entries(schema)){
+    const data=Float32Array.from({length:3*size},(_,i)=>i+.25);g.setAttribute(k,new THREE.BufferAttribute(data,size));
+    expected[k]=idx.flatMap(v=>[...data.slice(v*size,(v+1)*size)]);
+  }
+  schema.aPhase=4;g.setIndex(idx);a.add(g,m,{matrix:new THREE.Matrix4().makeRotationY(.7)});
+  a.add(g,m,{matrix:new THREE.Matrix4().makeTranslation(5,0,0)});g.attributes.aMetres.array.fill(-10);g.index.array.fill(0);
+  const r=a.finish(),out=r.root.children[0].geometry;assert.equal(disposed.length,2);
+  for(const [k,values] of Object.entries(expected))assert.deepEqual([...out.attributes[k].array],[...values,...values]);
+  assert.notDeepEqual(out.attributes.position.array.slice(0,9),out.attributes.position.array.slice(9));
+  a.dispose();r.dispose();g.dispose();m.dispose();
+});
+
+test('invariant schemas and inputs must describe ordinary, finite, per-vertex Float32 metadata',()=>{
+  const create=invariantAttributes=>createAssetAssembly(THREE,{mergeGeometries,invariantAttributes});
+  for(const schema of [null,[],new Date(),{normal:3},{uv3:2},{skinIndex:4},{instanceMatrix:4},{tangent:4},{bad:0},{bad:5},{bad:2.5},{bad:'3'},{['__proto__']:1},{'x-y':2}])assert.throws(()=>create(schema));
+  const a=create({aHint:1}),g=triangle(),m=material();assert.throws(()=>a.add(g,m),/aHint/);
+  for(const value of [new THREE.Uint8BufferAttribute([0,1,2],1),new THREE.Float32BufferAttribute([0,1,2],1,true),
+    new THREE.InstancedBufferAttribute(new Float32Array(3),1),new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(new Float32Array(3),1),1,0),
+    new THREE.Float32BufferAttribute([0,1,Infinity],1),new THREE.Float32BufferAttribute([0,1],1),
+    Object.assign(new THREE.Float32BufferAttribute([0,1,2],1),{gpuType:THREE.IntType})]){
+    g.setAttribute('aHint',value);assert.throws(()=>a.add(g,m),/aHint/);
+  }
+  g.setAttribute('aHint',new THREE.Float32BufferAttribute([2,3,4],1));g.setAttribute('aUnknown',g.attributes.aHint);assert.throws(()=>a.add(g,m),/aUnknown/);
+  g.deleteAttribute('aUnknown');a.add(g,m);const r=a.finish();assert.equal(r.stats.staticInputs,1);a.dispose();g.dispose();m.dispose();
+});

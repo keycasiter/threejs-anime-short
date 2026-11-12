@@ -1,11 +1,26 @@
+import {assertInvariantName,invariantArray} from '../geometry/formation-coordinates.mjs';
+
 /**
  * Assemble asset-local static geometry without taking ownership of caller resources.
  * Inject THREE and its matching BufferGeometryUtils.mergeGeometries to avoid mixing runtimes.
  * `layers` is a Layers.mask bitmask; anchors are a Map of asset-local Matrix4 snapshots.
  */
-export function createAssetAssembly(THREE, {mergeGeometries} = {}) {
+export function createAssetAssembly(THREE, {mergeGeometries,invariantAttributes={}} = {}) {
   if (!THREE?.BufferGeometry || !THREE?.Matrix4 || !THREE?.Group || typeof mergeGeometries !== 'function') {
     throw new TypeError('THREE and matching mergeGeometries are required');
+  }
+  if (invariantAttributes===null || typeof invariantAttributes!=='object' ||
+      ![Object.prototype,null].includes(Object.getPrototypeOf(invariantAttributes))) {
+    throw new TypeError('invariantAttributes must be a plain record');
+  }
+  const invariants=new Map();
+  for (const name of Reflect.ownKeys(invariantAttributes)) {
+    assertInvariantName(name);
+    const size=invariantAttributes[name];
+    if (invariants.size>=16 || !Number.isInteger(size) || size<1 || size>4) {
+      throw new RangeError('Expected at most 16 invariant attributes, each with 1–4 components');
+    }
+    invariants.set(name,size);
   }
   const buckets = new Map(), dynamicRoots = [], anchors = new Map();
   let state = 'open', result, staticInputs = 0, staticTriangles = 0;
@@ -37,8 +52,15 @@ export function createAssetAssembly(THREE, {mergeGeometries} = {}) {
     const sizes = {position:[3], normal:[3], uv:[2], color:[3,4]};
     const position = source.getAttribute('position');
     if (!position || position.count < 3) throw new TypeError('Geometry needs triangle positions');
+    const invariantData=new Map();
+    for (const [name,size] of invariants) {
+      const array=invariantArray(THREE,source.getAttribute(name),name,size,position.count);
+      if (!array.every(Number.isFinite)) throw new TypeError('Nonfinite invariant attribute: '+name);
+      invariantData.set(name,array);
+    }
     for (const [name, attribute] of Object.entries(source.attributes)) {
-      if (!sizes[name]) throw new TypeError(`Unsupported static attribute: ${name}`);
+      if (invariants.has(name)) continue;
+      if (!Object.hasOwn(sizes,name)) throw new TypeError(`Unsupported static attribute: ${name}`);
       if (attribute.isInstancedBufferAttribute || attribute.data?.isInstancedInterleavedBuffer || attribute.isGLBufferAttribute ||
           !sizes[name].includes(attribute.itemSize) || attribute.count !== position.count) {
         throw new TypeError(`Unsupported attribute layout: ${name}`);
@@ -69,6 +91,14 @@ export function createAssetAssembly(THREE, {mergeGeometries} = {}) {
           const vertex = index ? index.getX(i) : i;
           for (let c=0; c<size; c++) values[i*size+c] = attribute && c<attribute.itemSize
             ? attribute.getComponent(vertex,c) : name === 'color' ? 1 : 0;
+        }
+        clone.setAttribute(name,new THREE.BufferAttribute(values,size));
+      }
+      for (const [name,size] of invariants) {
+        const data=invariantData.get(name),values=new Float32Array(count*size);
+        for (let i=0;i<count;i++) {
+          const v=index?index.getX(i):i;
+          for (let c=0;c<size;c++) values[i*size+c]=data[v*size+c];
         }
         clone.setAttribute(name,new THREE.BufferAttribute(values,size));
       }

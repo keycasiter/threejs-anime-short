@@ -119,14 +119,60 @@ test('gateway eligibility rejects malformed, off-level and physically unplaceabl
   assert.throws(()=>api.createLandscapeContextDesign({gateways:[{...p,...bad},q]}),/gateway/i);
  }
 });
-test('one complete terrain position scan serves the street and every actual entrance',async()=>{
- const url=new URL('../../assets/examples/landscape-context.mjs',import.meta.url),key='r72-terrain-reads-'+Math.random(),counts=[];
+test('one complete terrain position scan serves the street and every actual entrance',async t=>{
+ const url=new URL('../../assets/examples/landscape-context.mjs',import.meta.url),key='terrain-reads-'+Math.random();
  const {createHeightFieldGeometry}=await import('../../assets/environment/height-field.mjs');
- globalThis[key]=(...args)=>{const g=createHeightFieldGeometry(...args),p=g.attributes.position,record={count:p.count,reads:0},get=p.getX.bind(p);counts.push(record);p.getX=i=>{record.reads++;return get(i);};return g;};
- let source=(await readFile(url,'utf8')).replace('createFractalHeightField,createHeightFieldGeometry','createFractalHeightField').replace(/from '([^']+)'/g,(m,path)=>path.startsWith('.')?"from '"+new URL(path,url).href+"'":m);
- source+='\nconst createHeightFieldGeometry=globalThis['+JSON.stringify(key)+'];';const material=new T.MeshStandardMaterial();let ctx;
- try{const module=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));ctx=module.buildLandscapeContext(T,{mergeGeometries,materialFor:()=>material});assert.ok(ctx.sites.length>1);assert.equal(counts.length,1);assert.equal(counts[0].reads,counts[0].count);}
- finally{ctx?.dispose();delete globalThis[key];material.dispose();}
+ const {writeFormationCoordinates}=await import('../../assets/geometry/formation-coordinates.mjs');
+ const {prepareTerrainRoadSupport,createTerrainRoadSource}=await import('../../assets/environment/terrain-roads.mjs');
+ const scans={formation:[],support:[]},borrowers=new Map();
+ let terrain,support,active,ctx;
+ function traceScan(kind,run){
+  const previous=active;active=new Set();scans[kind].push(active);
+  try{return run();}finally{active=previous;}
+ }
+ // Only the actual terrain position getter is observed. Each producer must visit
+ // every vertex once; road construction or other unclassified reads cannot hide in either count.
+ const hooks={
+  createHeightFieldGeometry(...args){
+   assert.equal(terrain,undefined);terrain=createHeightFieldGeometry(...args);
+   const p=terrain.attributes.position,get=p.getX.bind(p);
+   p.getX=i=>{assert.ok(active,'unexpected terrain scan outside formation/support');
+    assert.ok(Number.isInteger(i)&&i>=0&&i<p.count&&!active.has(i),'each terrain vertex must be read once per scan');
+    active.add(i);return get(i);};
+   return terrain;
+  },
+  writeFormationCoordinates(runtime,g,...rest){
+   const run=()=>writeFormationCoordinates(runtime,g,...rest);
+   return g===terrain?traceScan('formation',run):run();
+  },
+  prepareTerrainRoadSupport(options){
+   assert.equal(options.terrainGeometry,terrain);
+   return support=traceScan('support',()=>prepareTerrainRoadSupport(options));
+  },
+  createTerrainRoadSource(runtime,options){
+   assert.ok(support);assert.equal(options.terrainSupport,support);assert.equal(options.terrainGeometry,undefined);
+   const road=createTerrainRoadSource(runtime,options);borrowers.set(road.geometry,road);return road;
+  }
+ };
+ globalThis[key]=hooks;
+ const source=(await readFile(url,'utf8')).replace(/import \{([^}]+)\} from '([^']+)';/g,(_,list,path)=>{
+  const names=list.split(',').map(s=>s.trim()),wrapped=names.filter(n=>Object.hasOwn(hooks,n)),other=names.filter(n=>!wrapped.includes(n));
+  return (other.length?'import {'+other.join(',')+'} from '+JSON.stringify(new URL(path,url).href)+';':'')+
+    (wrapped.length?'const {'+wrapped.join(',')+'}=globalThis['+JSON.stringify(key)+'];':'');
+ });
+ const material=new T.MeshStandardMaterial();
+ try{
+  const module=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+  ctx=module.buildLandscapeContext(T,{mergeGeometries,materialFor:()=>material});
+  assert.equal(ctx.terrain.geometry,terrain);const count=terrain.attributes.position.count;
+  for(const kind of ['formation','support'])assert.deepEqual(scans[kind].map(s=>s.size),[count],kind+' must scan the entire terrain once');
+  assert.deepEqual(terrain.attributes.aFormationPosition.array,terrain.attributes.position.array);
+  assert.ok(ctx.sites.length>1);assert.equal(borrowers.get(ctx.roads.geometry),ctx.roads);
+  assert.equal(borrowers.size,1+ctx.sites.length);
+  for(const site of ctx.sites)assert.ok(borrowers.has(site.route.mesh.geometry),site.id);
+  t.diagnostic('distinct terrain vertices: formation='+scans.formation[0].size+', support='+scans.support[0].size+
+   '; shared support: 1 street + '+ctx.sites.length+' entrances');
+ }finally{ctx?.dispose();delete globalThis[key];material.dispose();}
 });
 
 test('late context failure releases all road borrowers before the one terrain owner even when handles are retained',async()=>{
@@ -145,4 +191,29 @@ test('context design accepts north/south and unequal oblique horizontal componen
  for(const [dx,dz]of [[0,1],[.8,.6]]){const gateways=[-1,1].map(sign=>({center:[0,0,sign*12],normal:[sign*dx,0,sign*dz],width:2.6}));
   const design=api.createLandscapeContextDesign({gateways}),layout=compileWorldLayout(design);for(const g of gateways){const p=layout.ports.find(p=>p.center[2]===g.center[2]);assert.ok(p);assert.ok(Math.abs(new T.Vector3(...p.normal).dot(new T.Vector3(...g.normal))+1)<1e-10);}
  }
+});
+
+test('formation data tracks one measured source part through two real context lot poses and one shared clay',()=>{
+ const c=setup(),ctx=c.context,table=Map.groupBy(ctx.sites,s=>s.prototypeId);
+ let asset;
+ try{
+  for(const {object} of ctx.materialBindings){const g=object.geometry,a=g.attributes.aFormationPosition;
+   assert.equal(a?.count,g.attributes.position.count,object.name||'merged settlement group');assert.equal(a.itemSize,3);}
+  const pair=[...table.values()].find(sites=>sites.some(s=>s.rotation!==sites[0].rotation))??[...table.values()].find(sites=>sites.length>1);assert.ok(pair);
+  const proto=ctx.prototypes.find(p=>p.id===pair[0].prototypeId);
+  asset=buildRegionalArchitecture(T,{...proto.spec,materialFor:()=>c.material});
+  const deck=asset.parts.floors.find(o=>o.name.endsWith('entry.deck')),g=deck.geometry;
+  const local=new T.Vector3().fromBufferAttribute(g.attributes.position,g.index.getX(g.groups[1].start+2));
+  const slot=asset.materialBindings.find(b=>b.object===deck).slots[0];
+  const outputs=ctx.materialBindings.filter(b=>b.slots.length===1&&b.slots[0].role===slot.role&&b.slots[0].options.baseColor===slot.options.baseColor);
+  const peer=pair.find(s=>s.rotation!==pair[0].rotation)??pair[1];assert.notDeepEqual(pair[0].position,peer.position);
+  for(const site of [pair[0],peer]){
+   asset.root.position.fromArray(site.position);asset.root.rotation.y=site.rotation;asset.root.updateMatrixWorld(true);const world=deck.localToWorld(local.clone());
+   const v=new T.Vector3();assert.ok(outputs.some(({object})=>{
+    const {position,aFormationPosition}=object.geometry.attributes;
+    for(let i=0;i<position.count;i++)if(v.fromBufferAttribute(position,i).distanceTo(world)<1e-5&&v.fromBufferAttribute(aFormationPosition,i).distanceTo(local)<1e-6)return true;
+    return false;
+   }),'same source vertex and semantic bucket must survive independently at each lot');
+  }
+ }finally{asset?.dispose();c.dispose();}
 });

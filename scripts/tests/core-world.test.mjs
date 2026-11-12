@@ -338,3 +338,21 @@ test('ring approaches join the real inner road boundaries across their full widt
   for(const t of [.01,.25,.5,.75,.99])for(const f of [-.49,0,.49]){const p=start.clone().lerp(end,t).addScaledVector(side,approach.width*f);p.y+=.02;ray.set(p,new T.Vector3(0,-1,0));ray.far=.05;const hits=ray.intersectObject(a.root,true).filter(h=>Math.abs(h.point.y-start.y)<1e-5);assert.equal(new Set(hits.map(h=>h.object)).size,1,'inner boundary approach must have exactly one supporting top surface');}
  }}finally{c.dispose();}
 });
+
+test('formation reaches direct, grouped, unmerged and moving core meshes without changing material semantics',()=>{
+ const clay=new T.MeshStandardMaterial(),c=setup({materialFor:()=>clay,configuration:'terraced'}),world=c.a;
+ try{
+  for(const {object,slots} of world.materialBindings){const g=object.geometry,a=g.attributes.aFormationPosition;
+   assert.equal(a?.count,g.attributes.position.count,object.name||slots[0].role);assert.equal(a.itemSize,3);
+   assert.ok((Array.isArray(object.material)?object.material:[object.material]).every(m=>m===clay));}
+  for(const object of [world.parts.curvedRoof,world.parts.profileBeam,world.parts.implicitJoint,world.parts.panel,world.regionalAssets[0].asset.parts.floors[0]]){
+   assert.deepEqual(object.geometry.attributes.aFormationPosition.array,object.geometry.attributes.position.array);}
+  const panel=world.parts.panel,before=panel.geometry.attributes.aFormationPosition.array.slice(),pose=panel.matrixWorld.clone();
+  world.update(1);assert.ok(!panel.matrixWorld.equals(pose));assert.deepEqual(panel.geometry.attributes.aFormationPosition.array,before);
+  // The gable cap slot only occurs in bakeObject(); and the kerb/bench boxes go straight to staticAdd().
+  for(const [role,color] of [['coating',0x778b80],['wood',undefined]]){
+   const candidates=world.materialBindings.filter(({object,slots})=>object.parent?.parent===world.root&&slots.length===1&&slots[0].role===role&&(color===undefined?slots[0].options.maps!==false:slots[0].options.baseColor===color));
+   assert.ok(candidates.some(({object})=>{const {position,aFormationPosition:a}=object.geometry.attributes;return a.array.some((v,i)=>Math.abs(position.array[i]-v)>3);}),role);
+  }
+ }finally{c.dispose();clay.dispose();}
+});

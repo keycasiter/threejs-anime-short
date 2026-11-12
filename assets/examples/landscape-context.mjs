@@ -1,3 +1,5 @@
+import {FORMATION_ATTRIBUTE,writeFormationCoordinates} from '../geometry/formation-coordinates.mjs';
+import {copyFormationGroup} from '../scene/formation-group.mjs';
 import {buildRegionalArchitecture} from './region-programs.mjs';
 import {createFractalHeightField,createHeightFieldGeometry} from '../environment/height-field.mjs';
 import {createPlateauHeightField} from '../environment/constrained-height-field.mjs';
@@ -79,12 +81,12 @@ export function buildLandscapeContext(T,{mergeGeometries,materialFor,siteBounds=
   const scope=createResourceScope(),sourceScope=createResourceScope(),assets=new Map(),root=new T.Group(),sites=[],materialBindings=[],prototypes=[];
   root.name='landscape-context';scope.defer(()=>root.removeFromParent());
   const buckets=new Map(),canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):v;
-  function staticAdd(g,material,binding,settings){const key=JSON.stringify(canonical(binding));if(!buckets.has(key))buckets.set(key,{binding,assembly:scope.own(createAssetAssembly(T,{mergeGeometries}))});buckets.get(key).assembly.add(g,material,settings);}
+  function staticAdd(g,material,binding,settings){const key=JSON.stringify(canonical(binding));if(!buckets.has(key))buckets.set(key,{binding,assembly:scope.own(createAssetAssembly(T,{mergeGeometries,invariantAttributes:{[FORMATION_ATTRIBUTE]:3}}))});buckets.get(key).assembly.add(g,material,settings);}
   function bake(asset){
     const semantics=new Map(asset.materialBindings.map(b=>[b.object,b.slots]));asset.root.updateWorldMatrix(true,true);
     asset.root.traverse(object=>{if(!object.isMesh)return;const slots=semantics.get(object),materials=Array.isArray(object.material)?object.material:[object.material],g=object.geometry;
       for(const group of g.groups.length?g.groups:[{start:0,count:g.index?.count??g.attributes.position.count,materialIndex:0}]){
-        const copy=new T.BufferGeometry();try{for(const key of ['position','normal','uv']){const a=g.attributes[key];if(!a)continue;const values=new Float32Array(group.count*a.itemSize);for(let i=0;i<group.count;i++){const v=g.index?g.index.getX(group.start+i):group.start+i;for(let c=0;c<a.itemSize;c++)values[i*a.itemSize+c]=a.getComponent(v,c);}copy.setAttribute(key,new T.BufferAttribute(values,a.itemSize));}staticAdd(copy,materials[group.materialIndex]??materials[0],slots[group.materialIndex]??slots[0],{matrix:object.matrixWorld,castShadow:false,receiveShadow:false,layers:object.layers.mask});}finally{copy.dispose();}
+        const copy=copyFormationGroup(T,g,group);try{staticAdd(copy,materials[group.materialIndex]??materials[0],slots[group.materialIndex]??slots[0],{matrix:object.matrixWorld,castShadow:false,receiveShadow:false,layers:object.layers.mask});}finally{copy.dispose();}
       }
     });
   }
@@ -93,6 +95,8 @@ export function buildLandscapeContext(T,{mergeGeometries,materialFor,siteBounds=
     const design=createLandscapeContextDesign({configuration,gateways}),layout=compileWorldLayout(design),familiesByRole={};
     for(const tier of TIERS)for(const program of ['gallery','workshop','courtyard'])for(const variant of ['compact','long']){
       const role=`${tier.id}/${program}`,id=`${role}/${variant}`,asset=sourceScope.own(buildRegionalArchitecture(T,{program,width:tier.width*(variant==='long'?1.12:1),depth:tier.depth,height:tier.height,courtyardRatio:variant==='long'?.5:.44,materialFor}));
+      // Capture each owned prototype once, before any lot translation or rotation.
+      for(const {object} of asset.materialBindings)if(!object.geometry.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,object.geometry);
       const bounds=new T.Box3().setFromObject(asset.root),deck=asset.parts.floors.find(p=>p.name.endsWith('entry.deck')),deckBounds=new T.Box3().setFromObject(deck);
       const prototype={id,footprint:asset.footprint,entrance:asset.entrances[0],spec:asset.spec,measuredBounds:{minY:bounds.min.y,maxY:bounds.max.y},deckFront:deckBounds.max.z};
       prototypes.push(prototype);assets.set(id,asset);(familiesByRole[role]??=[]).push(id);
@@ -110,9 +114,11 @@ export function buildLandscapeContext(T,{mergeGeometries,materialFor,siteBounds=
     if(!(thickness>0)||prototypes.some(p=>Math.abs(p.measuredBounds.minY+thickness)>1e-6))throw Error('Context prototypes require one measured floor-to-host datum');
     for(const g of design.gateways)field=gatewayPlateau(field,g,thickness);
     const terrainGeometry=scope.own(createHeightFieldGeometry(T,field,{sizeX:TERRAIN_SIZE,sizeZ:TERRAIN_SIZE,segmentsX:TERRAIN_SEGMENTS,segmentsZ:TERRAIN_SEGMENTS}));
+    writeFormationCoordinates(T,terrainGeometry);
     const terrainSlot={role:'stone',options:{maps:false,baseColor:0x88957b,color:0xffffff}},terrain=new T.Mesh(terrainGeometry,materialFor(terrainSlot.role,terrainSlot.options));terrain.name='continuous-terrain';terrain.receiveShadow=true;root.add(terrain);materialBindings.push({object:terrain,slots:[terrainSlot]});
     const terrainSupport=scope.own(prepareTerrainRoadSupport({terrainGeometry}));
     const roads=scope.own(createTerrainRoadSource(T,{surfaces:layout.levels[0].surfaces,terrainSupport,thickness,maxCandidatePairs:4000000,maxValidationPairs:8000000}));
+    writeFormationCoordinates(T,roads.geometry);
     const roadSlot={role:'stone',options:{maps:false,baseColor:0xbcb49d,color:0xffffff}},road=new T.Mesh(roads.geometry,materialFor(roadSlot.role,roadSlot.options));road.name='context-street-network';road.receiveShadow=true;root.add(road);materialBindings.push({object:road,slots:[roadSlot,roadSlot,roadSlot]});
     for(const lot of neighborhood.lots){
       const prototype=prototypes.find(p=>p.id===lot.prototypeId),asset=assets.get(lot.prototypeId),groundY=hosts.get(lot.regionId),baseY=groundY-prototype.measuredBounds.minY;
@@ -123,7 +129,9 @@ export function buildLandscapeContext(T,{mergeGeometries,materialFor,siteBounds=
       // cannot be certified by the nominal edge width alone.
       function boundary(origin){const d=end.clone().sub(start);let best=null;for(const s of layout.levels[0].surfaces)for(const ring of [s.outer,...s.holes])for(let i=0;i<ring.length;i++){const a=ring[i],b=ring[(i+1)%ring.length],ex=b[0]-a[0],ez=b[1]-a[1],den=d.x*ez-d.z*ex;if(Math.abs(den)<1e-9)continue;const ax=a[0]-origin.x,az=a[1]-origin.z,t=(ax*ez-az*ex)/den,u=(ax*d.z-az*d.x)/den;if(t>=0&&t<=1+1e-7&&u>=0&&u<=1&&(!best||t<best.t))best={t,point:origin.clone().addScaledVector(d,t)};}if(!best)throw Error('Context entry lacks actual road boundary');return best.point;}
       const left=start.clone().addScaledVector(side,-width/2),right=start.clone().addScaledVector(side,width/2),leftEnd=boundary(left),rightEnd=boundary(right),surface={outer:[left,right,rightEnd,leftEnd].map(p=>[p.x,p.z])};
-      const connector=scope.own(createTerrainRoadSource(T,{surfaces:[surface],terrainSupport,thickness})),connectorMesh=new T.Mesh(connector.geometry,materialFor(roadSlot.role,roadSlot.options));connectorMesh.name=`${lot.id}/arrival`;connectorMesh.receiveShadow=true;root.add(connectorMesh);materialBindings.push({object:connectorMesh,slots:[roadSlot,roadSlot,roadSlot]});
+      const connector=scope.own(createTerrainRoadSource(T,{surfaces:[surface],terrainSupport,thickness}));
+      writeFormationCoordinates(T,connector.geometry);
+      const connectorMesh=new T.Mesh(connector.geometry,materialFor(roadSlot.role,roadSlot.options));connectorMesh.name=`${lot.id}/arrival`;connectorMesh.receiveShadow=true;root.add(connectorMesh);materialBindings.push({object:connectorMesh,slots:[roadSlot,roadSlot,roadSlot]});
       bake(asset);
       sites.push({id:lot.id,prototypeId:lot.prototypeId,regionId:lot.regionId,edgeId:lot.edgeId,groupId:lot.groupId,tier:lot.regionId.split('/')[0],program:asset.spec.program,footprint:lot.footprint,groundY,baseY,position:asset.root.position.toArray(),rotation:lot.pose.rotationY,spec:asset.spec,measuredBounds:prototype.measuredBounds,entrance:{position:asset.root.localToWorld(new T.Vector3(...prototype.entrance.position)).toArray(),normal:normal.toArray(),width:prototype.entrance.width},partCounts:Object.fromEntries(Object.entries(asset.parts).map(([k,v])=>[k,v.length])),route:{surface,roadCenter,start:start.toArray(),end:leftEnd.clone().add(rightEnd).multiplyScalar(.5).toArray(),width,mesh:connectorMesh}});
     }
