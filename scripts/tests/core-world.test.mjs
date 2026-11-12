@@ -42,9 +42,44 @@ test('near, regional and distant context consumes one terrain field without floa
  assert.ok(c.a.shadowBounds.getSize(new T.Vector3()).length()<100,'distant terrain must not dilute the near shadow map');c.dispose();
 });
 test('terraced connection consumes two exposed full-width ports',()=>{
- const c=setup({configuration:'terraced'}),a=c.a;assert.equal(a.layout.ports.length,2);
+ const c=setup({configuration:'terraced'}),a=c.a;assert.equal(a.layout.ports.filter(p=>p.nodeId.startsWith('stair-')).length,2);
  for(const link of a.layout.links)for(const end of [link.start,link.end])assert.ok(a.layout.ports.some(p=>new T.Vector3(...p.center).distanceTo(new T.Vector3(...end))<1e-7));
  assert.equal(a.parts.levelConnections.userData.portPairs.length,1);c.dispose();
+});
+test('all standing furniture takes its datum from the actual platform or road host',()=>{
+ const first=setup({configuration:'terraced'}),design=api.createCoreWorldDesign('terraced');design.levels.find(l=>l.id==='upper').y+=.4;
+ const lifted=setup({configuration:'terraced',design});try{
+  for(const a of [first.a,lifted.a]){
+   assert.equal(a.standingPlacements.filter(p=>p.role==='lamp').length,6);
+   assert.equal(a.standingPlacements.filter(p=>p.role==='bench').length,6);
+   a.root.updateMatrixWorld(true);
+   for(const p of a.standingPlacements){assert.ok(p.hostId);assert.equal(p.baseY,a.supportHosts.find(h=>h.id===p.hostId).top);
+    const ray=new T.Raycaster(new T.Vector3(p.position[0],p.baseY+.001,p.position[2]),new T.Vector3(0,-1,0),0,.01);
+    assert.ok(ray.intersectObject(a.root,true).some(h=>Math.abs(h.point.y-p.baseY)<1e-5),'actual host triangles must meet the declared base');
+   }
+   const upper=a.standingPlacements.filter(p=>p.hostId==='upper-plaza');assert.equal(upper.length,2);
+   assert.equal(upper[0].baseY,a.layout.levels.find(l=>l.id==='upper').y+.08);
+   assert.equal(a.standingPlacements.find(p=>p.id==='bench/pavilion/0').baseY,.16);
+  }
+  for(const p of first.a.standingPlacements.filter(p=>p.hostId==='upper-plaza'))assert.ok(Math.abs(lifted.a.standingPlacements.find(q=>q.id===p.id).baseY-p.baseY-.4)<1e-9);
+ }finally{first.dispose();lifted.dispose();}
+});
+test('campus gateways physically join the context graph through full-width kerb openings',()=>{
+ for(const configuration of ['grid','ring','terraced']){
+  const c=setup({configuration}),a=c.a;try{
+   assert.equal(a.layout.connectionGraph.components.length,1);assert.equal(a.context.layout.connectionGraph.components.length,1);a.root.updateMatrixWorld(true);
+   for(const gateway of a.context.gateways){
+    const peer=a.context.layout.ports.find(p=>Math.hypot(p.center[0]-gateway.center[0],p.center[2]-gateway.center[2])<1e-6);assert.ok(peer);assert.equal(peer.width,gateway.width);assert.ok(new T.Vector3(...peer.normal).dot(new T.Vector3(...gateway.normal))<-.999);
+    const side=new T.Vector3(gateway.normal[2],0,-gateway.normal[0]);
+    for(const f of [-.49,0,.49]){const origin=new T.Vector3(...gateway.center).addScaledVector(new T.Vector3(...gateway.normal),-.4).addScaledVector(side,gateway.width*f);origin.y=.06;const support=new T.Raycaster(origin,new T.Vector3(0,-1,0),0,.03);assert.ok(support.intersectObject(a.root,true).some(h=>Math.abs(h.point.y-.05)<1e-5),'the road underside must remain supported beyond the inner plaza edge');}
+    for(const f of [-.49,0,.49]){const origin=new T.Vector3(...gateway.center).addScaledVector(new T.Vector3(...gateway.normal),-1.5).addScaledVector(side,gateway.width*f);origin.y=.22;const walk=new T.Raycaster(origin,new T.Vector3(...gateway.normal),0,3);assert.equal(walk.intersectObject(a.root,true).length,0,'the full gateway width must be free of kerb and standing obstructions above the walking surface');}
+    for(const t of [-1.1,-.2,.2,1.1])for(const f of [-.49,0,.49]){
+     const p=new T.Vector3(...gateway.center).addScaledVector(new T.Vector3(...gateway.normal),t).addScaledVector(side,gateway.width*f);p.y=.18;
+     const ray=new T.Raycaster(p,new T.Vector3(0,-1,0),0,.03),hit=ray.intersectObject(a.root,true)[0];assert.ok(hit);assert.ok(Math.abs(hit.point.y-.16)<1e-5,'the actual transition stays at the road datum across its full width');
+    }
+   }
+  }finally{c.dispose();}
+ }
 });
 test('all principal assets consume the same full-footprint region and road constraints',()=>{
  for(const configuration of ['grid','ring','terraced']){

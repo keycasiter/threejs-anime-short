@@ -41,7 +41,10 @@ export function createCoreWorldDesign(configuration='grid'){
       halls=[{id:'hall/0',regionId:'southwest',x:-8,z:6.2,width:7,depth:4.4,approachEdge:'wc'},{id:'hall/1',regionId:'upper-court',x:8,z:-6,width:7,depth:4.8,approachEdge:'upper-axis'},{id:'hall/2',regionId:'southeast',x:8,z:6.3,width:7.2,depth:5.2,approachEdge:'ce'}];
     }
     regions.push({id:'perimeter',level:'ground',outline:rect(0,configuration==='ring'?-20.5:-14.5,35,4.6),role:'background'});
-    return {levels,regions,links,pavilion,halls};
+    const ground=levels.find(l=>l.id==='ground'),gatewayX=configuration==='ring'?22:18,gatewayNodes=configuration==='ring'?['n5','n1']:['west','east'];
+    const gateways=gatewayNodes.map((from,i)=>{const node=ground.nodes.find(n=>n.id===from),id=`gateway/${i}`,x=i===0?-gatewayX:gatewayX;ground.nodes.push({id,x,z:node.z});ground.edges.push({id:`gateway-road/${i}`,from,to:id,width:2.6});return id;});
+    ground.openEnds=[...(ground.openEnds??[]),...gateways];
+    return {levels,regions,links,pavilion,halls,gateways};
 }
 
 /** Reader-facing task labels follow semantic program and viewing responsibility. */
@@ -70,7 +73,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     if(!Number.isFinite(tolerance)||tolerance<0||tolerance>1)throw new RangeError('Regional placement tolerance must be finite and in 0..1 metres');
     placementTolerances.set(hall,tolerance);
   }
-  const scope=createResourceScope(),root=new T.Group(),materialBindings=[],parts={},anchors=new Map(),detailGroups=[],placements=[],entrances=[],regionalAssets=[],materialRegionStats=[];
+  const scope=createResourceScope(),root=new T.Group(),materialBindings=[],parts={},anchors=new Map(),detailGroups=[],placements=[],entrances=[],regionalAssets=[],materialRegionStats=[],supportHosts=[],standingPlacements=[];
   root.name='core-capability-world';scope.defer(()=>root.removeFromParent());
   const materialOptions=(role,options)=>{
     const result={...ROLE[role],...options};
@@ -190,28 +193,42 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
       }
     }
     const siteWidth=configuration==='ring'?44:36,siteDepth=configuration==='ring'?39:30;
-    box([siteWidth,.42,siteDepth],[0,-.23,-2.5],'stone',{color:0x9daa97});
-    box([siteWidth-2.4,.07,siteDepth-5.4],[0,.015,0],'stone',{color:0xb4bba8});
-    if(configuration==='terraced'){box([14,2.16,9.7],[8.2,1,-7.3],'stone',{color:0xafa995});box([2.6,2.16,4.4],[0,1,-10.1],'stone',{color:0xafa995});}
+    function hostBox(id,size,position,options){box(size,position,'stone',options);supportHosts.push({id,outline:rect(position[0],position[2],size[0],size[2]),top:position[1]+size[1]/2});}
+    hostBox('site-base',[siteWidth,.42,siteDepth],[0,-.23,-2.5],{color:0x9daa97});
+    hostBox('ground-plaza',[siteWidth-2.4,.07,siteDepth-5.4],[0,.015,0],{color:0xb4bba8});
+    for(const port of layout.ports.filter(p=>design.gateways?.includes(p.nodeId))){
+      const from=Math.sign(port.center[0])*(siteWidth/2-1.2),to=port.center[0],base=supportHosts.find(h=>h.id==='site-base').top,top=supportHosts.find(h=>h.id==='ground-plaza').top;
+      hostBox(`${port.nodeId}/foundation`,[Math.abs(to-from),top-base,port.width],[(from+to)/2,(top+base)/2,port.center[2]],{color:0xb4bba8});
+    }
+    if(configuration==='terraced'){const top=layout.levels.find(l=>l.id==='upper').y+.08,height=top+.08,y=(top-.08)/2;hostBox('upper-plaza',[14,height,9.7],[8.2,y,-7.3],{color:0xafa995});hostBox('upper-arrival',[2.6,height,4.4],[0,y,-10.1],{color:0xafa995});}
     for(const level of layout.levels)for(const surface of level.surfaces)plate(surface,level.y+FLOOR,.12,'stone',{color:0xcfc5aa});
+    for(const level of layout.levels)for(const [i,surface]of level.surfaces.entries())supportHosts.push({id:`road/${level.id}/${i}`,outline:surface.outer,holes:surface.holes,top:level.y+FLOOR});
     // Actual entry-deck and road edges bound the supported connector. Shared
     // edges have no coplanar top-area overlap; its arbitrary chart stays scalar.
     for(const approach of approaches)plate(approach.surface,approach.start[1],approach.start[1]-.02,'stone',{maps:false});
     // Low kerbs, lamps and furniture are structural families with shared parameters.
-    for(const x of [-(siteWidth/2-1),siteWidth/2-1])box([.2,.34,siteDepth-3],[x,.18,-2],'stone');
+    for(const x of [-(siteWidth/2-1),siteWidth/2-1]){
+      const port=layout.ports.find(p=>design.gateways?.includes(p.nodeId)&&Math.sign(p.center[0])===Math.sign(x)),min=-2-(siteDepth-3)/2,max=-2+(siteDepth-3)/2;
+      if(!port)box([.2,.34,siteDepth-3],[x,.18,-2],'stone');
+      else for(const [a,b]of [[min,port.center[2]-port.width/2-.15],[port.center[2]+port.width/2+.15,max]])if(b>a)box([.2,.34,b-a],[x,.18,(a+b)/2],'stone');
+    }
     for(const z of [-(siteDepth/2+1),siteDepth/2-4])box([siteWidth-2,.34,.2],[0,.18,z],'stone');
-    function bench(x,z,y=FLOOR){
+    const inside=(x,z,ring)=>{let yes=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){const a=ring[i],b=ring[j];if((a[1]>z)!==(b[1]>z)&&x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0])yes=!yes;}return yes;};
+    function supportAt(x,z){const host=supportHosts.filter(h=>inside(x,z,h.outline)&&!(h.holes??[]).some(r=>inside(x,z,r))).sort((a,b)=>b.top-a.top)[0];if(!host)throw Error('Standing asset requires an actual host');return host;}
+    function bench(x,z,y,id){
+      const host=y===undefined?supportAt(x,z):supportHosts.find(h=>h.id==='pavilion-floor');y??=host.top;standingPlacements.push({id,role:'bench',position:[x,y,z],baseY:y,hostId:host.id});
       for(let i=0;i<5;i++)box([2.2,.065,.105],[x,y+.48,z+(i-2)*.12],'wood');
       for(const s of [-.8,.8]){box([.09,.46,.56],[x+s,y+.23,z],'metal');box([.09,.47,.07],[x+s,y+.72,z-.3],'metal');}
       for(let i=0;i<3;i++)box([2.2,.1,.06],[x,y+.65+i*.13,z-.3],'wood');
     }
-    function lamp(x,z){
-      beam([x,FLOOR,z],[x,2.8,z],.055);box([.3,.1,.3],[x,.2,z],'metal');box([.6,.08,.42],[x,2.85,z],'metal');
-      box([.42,.1,.27],[x,2.76,z],'coating',{color:0xf0deab,maps:false});
-      for(const side of [-1,1])beam([x+side*.22,2.78,z],[x,2.45,z],.02);
+    function lamp(x,z,id){
+      const host=supportAt(x,z),y=host.top;standingPlacements.push({id,role:'lamp',position:[x,y,z],baseY:y,hostId:host.id});
+      beam([x,y,z],[x,y+2.64,z],.055);box([.3,.1,.3],[x,y+.04,z],'metal');box([.6,.08,.42],[x,y+2.69,z],'metal');
+      box([.42,.1,.27],[x,y+2.6,z],'coating',{color:0xf0deab,maps:false});
+      for(const side of [-1,1])beam([x+side*.22,y+2.62,z],[x,y+2.29,z],.02);
     }
-    for(const [x,z]of [[-13,-7],[-13,7],[13,-8],[13,7],[-2,8],[2,-9]])lamp(x,z);
-    for(const [x,z]of [[-11,-9],[9,9],[-9,9],[12,2]])bench(x,z);
+    for(const [i,[x,z]]of [[-13,-7],[-13,7],[13,-8],[13,7],[-2,8],[2,-9]].entries())lamp(x,z,`lamp/${i}`);
+    for(const [i,[x,z]]of [[-11,-9],[9,9],[-9,9],[12,2]].entries())bench(x,z,undefined,`bench/plaza/${i}`);
     const pavilion=new T.Group();pavilion.position.set(design.pavilion[0],FLOOR,design.pavilion[1]);root.add(pavilion);
     const controlPoints=Array.from({length:4},(_,i)=>Array.from({length:4},(_,j)=>[-3.5+i*7/3,3.6+roofLift+.8*((i-1.5)/1.5)**2+.3*((j-1.5)/1.5)**2,2.5-j*5/3]));
     const roof=scope.own(createBezierPatchShell(T,{controlPoints,thickness:.14,segmentsU:32,segmentsV:24,uvMeters:1}));
@@ -260,7 +277,8 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     collar.computeBoundingBox();const bearingTop=collar.boundingBox.min.y+.02;
     parts.foundation=ownedMesh(new T.BoxGeometry(.8,bearingTop,.65),[slot('stone')],pavilion);parts.foundation.position.y=bearingTop/2;
     box([7.2,.12,5.2],[pavilion.position.x,FLOOR-.06,pavilion.position.z],'stone',{color:0xcbc5b1});
-    for(const dx of [-1.6,1.6])bench(pavilion.position.x+dx,pavilion.position.z+.6,FLOOR);
+    supportHosts.push({id:'pavilion-floor',outline:rect(pavilion.position.x,pavilion.position.z,7.2,5.2),top:FLOOR});
+    for(const [i,dx]of [-1.6,1.6].entries())bench(pavilion.position.x+dx,pavilion.position.z+.6,FLOOR,`bench/pavilion/${i}`);
     const service=roof.surfaceAt(.62,.15,'inner'),mount=new T.Group();service.frame.decompose(mount.position,mount.quaternion,mount.scale);pavilion.add(mount);
     anchors.set('roof-service',new T.Matrix4().makeTranslation(...pavilion.position.toArray()).multiply(service.frame));
     const pivot=new T.Group();mount.add(pivot);
@@ -333,7 +351,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
       assembled.root.traverse(o=>{if(o.isMesh){tangents(o);bind(o,[binding]);}});
     }
     root.updateWorldMatrix(true,true);const shadowBounds=new T.Box3().setFromObject(root);
-    const context=scope.own(buildLandscapeContext(T,{mergeGeometries,materialFor:mat,siteBounds:configuration==='ring'?[-25,-25,25,25]:[-21,-20,21,19]}));root.add(context.root);materialBindings.push(...context.materialBindings);
+    const context=scope.own(buildLandscapeContext(T,{mergeGeometries,materialFor:mat,configuration,gateways:layout.ports.filter(p=>design.gateways?.includes(p.nodeId)),siteBounds:configuration==='ring'?[-25,-25,25,25]:[-21,-20,21,19]}));root.add(context.root);materialBindings.push(...context.materialBindings);
     const viewTasks=[{id:'overview',position:[32,27,37],target:[0,1,0]},
       {id:'region',position:[design.pavilion[0]+10,10,design.pavilion[1]+12],target:[...design.pavilion.slice(0,1),2.1,design.pavilion[1]]},
       {id:'connection',position:[pavilion.position.x+4,5.7,pavilion.position.z+5.8],target:[pavilion.position.x+.3,2.9+roofLift,pavilion.position.z]},
@@ -386,7 +404,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     let disposed=false;
     const update=t=>{if(disposed)throw new Error('Core world disposed');if(!Number.isFinite(t))throw new TypeError('time must be finite');pivot.rotation.y=-.45+.3*Math.sin(t*.6);root.updateWorldMatrix(true,true);};
     update(0);
-    return {root,layout,parts,anchors,materialBindings,detailGroups,placements,entrances,approaches,regionalAssets,materialRegionStats,context,shadowBounds,viewTasks,observationSets,spec:Object.freeze({configuration,roofLift}),
+    return {root,layout,parts,anchors,materialBindings,detailGroups,placements,entrances,approaches,regionalAssets,materialRegionStats,supportHosts,standingPlacements,context,shadowBounds,viewTasks,observationSets,spec:Object.freeze({configuration,roofLift}),
       stats:{regionCount:layout.regions.length,buildingCount:design.halls.length+10+context.sites.length,pathSurfaceCount:layout.levels.reduce((n,l)=>n+l.surfaces.length,0)},update,
       dispose(){if(disposed)return;disposed=true;scope.dispose();}};
   }catch(error){try{scope.dispose();}catch(cleanupError){throw new AggregateError([error,cleanupError],'World build/cleanup failed');}throw error;}

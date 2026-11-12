@@ -27,6 +27,8 @@
 | 两侧宿主间的竖直承托 | 同模块`createVerticalBearingSampler(T,lower,upper)` | 给x/z、minY/maxY、上下XZ足迹偏移，有限射线输出bottomY/topY/clearance等；漏点/交叠失败，不是任意斜向接头生成器 |
 | 宽深/偏心/滚转独立的连续主形 | [section-loft](../assets/geometry/section-loft.mjs)：`createSectionLoftGeometry(T,{stations,...})`，用法见[放样配方](algorithm-recipes.md#随包工具宽深独立的沿程放样) | 椭圆环/传输架、实际端盖、米制UV/接缝法线；不含分枝、内壁、任意截面或防自交 |
 | 已设计连接图与沿边地块 | [corridor-layout](../assets/scene/corridor-layout.mjs)：`compileCorridorGraph`/`generateFrontageLots`，见[世界配方](algorithm-recipes.md#世界连接图与局部语法) | 真实宽度矩形、节点/分量与接受地块；道路厚度、地形基础/门口和任意路口需项目构造，不是自动城市 |
+| 区域用途、混合完整原型与真实入口共同布局 | [frontage-neighborhood](frontage-neighborhood.md)：`compileFrontageNeighborhood` | 纯数据、完整足迹/净距/邻件资格、组间节奏及预算诊断；不是最密填充或自动世界美术 |
+| 道路并集贴合实际地表三角 | [terrain-roads](terrain-roads.md)：`createTerrainRoadSource` | 最终规则XZ网格、厚度/底面/边壁和实际query；借用地表，拥有道路几何，限单值地表 |
 | 连续高度与共享世界梯度 | [height-field](../assets/environment/height-field.mjs)：`createFractalHeightField`/`createHeightFieldGeometry`，见[场配方](algorithm-recipes.md#地形水系与侵蚀) | 原创value-noise fBm、归一振幅、解析导数和单值上表面；非侵蚀/完整地貌，接触用最终三角网格 |
 | 发出网格的无效/退化/朝向检查 | [auditTriangles](../assets/geometry/audit-triangles.mjs)，调用见[几何配方](geometry-recipes.md) | 独立方向或逐顶点参考；不检查全部自交、水密、曲率或构图 |
 | 重复铺覆的完整轮廓与封边 | [bounded-profile](../assets/geometry/bounded-profile.mjs)：`clipConvexPolygon` / `createBoundedProfileGeometry`，见[边界代码](visual-construction.md#2-重复单元先归属区域再裁完整轮廓) | 凸域交集、局部XY、一维profile与Z厚度的闭合网格；非通用CSG/曲面贴合；角点在epsilon内归并采样层，真正Float32塌缩拒绝 |

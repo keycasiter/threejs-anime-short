@@ -20,6 +20,8 @@
 | 非轴对称单patch双层壳 | [bezier-shell](../assets/geometry/bezier-shell.mjs)；同上 | 控制网→内外壁/四封边/材料组/实际查询；不是任意多patch布尔或制造等厚证明 |
 | 融合体/负形的网格 | [implicit-surface](../assets/geometry/implicit-surface.mjs)；同上 | 同版MC、负内正外场、采样/容量/退化检查；场可非SDF，有限采样不保证所有薄特征 |
 | 无叠面道路与分层区域 | [world-layout](../assets/scene/world-layout.mjs)；[空间生成](world-layout.md) | 并集/孔、完整足迹、显式层间连接；不自动设计城市、房间或导航 |
+| 真实原型沿街组团 | [frontage-neighborhood](frontage-neighborhood.md) | 用途/完整包络/入口→混合组团pose与诊断；不自动设计用途或保证填满 |
+| 道路贴合最终地表 | [terrain-roads](terrain-roads.md) | 并集/孔×实际规则地表三角→有厚度网格/查询；单值地表，非桥洞/多层 |
 | PBR与分段受光材料 | [look-palette](../assets/materials/look-palette.mjs)；[材光接力](look-development.md) | 程序材料/Toon梯度、独立基色、缓存/归属；复杂透明/体积/GI另选方案 |
 | 同源直射灯与影区 | [lighting-rig](../assets/rendering/lighting-rig.mjs)；同上 | 方向/Box3派生主辅光/target/阴影；反射环境另接原[天空/PMREM](../assets/rendering/scene-environment.mjs) |
 | 近远与观察任务 | [projected-detail](../assets/runtime/projected-detail.mjs)、[observation-view](../assets/scene/observation-view.mjs) | 投影尺度/迟滞、真实样点的候选机位排序；不是完整HLOD或自动构图评分 |
@@ -100,7 +102,50 @@ function applyLook(palette, bindings) {
 
 局部机位的前进、侧移和抬高沿对象的实际法线/水平切向/+Y构造，再转入世界坐标。资产转向道路后，硬加世界X可能变成向前推近并裁掉包络；用真实变换后的完整bounds复核全部近景与背向任务。
 
-场域内外用同一地表源：先保留承托面，再平滑接回外围场；实际资产完整足迹决定保留面。`landscape-context`展示同族几何在多个距离层的组合与静态合并，但完整世界还要有区域邻接、道路到达与组团节奏；散布更多建筑不能替代这些关系。
+### 区域、原型、宿主与道路的接力
+
+[上下文工厂](../assets/examples/landscape-context.mjs)按同一条生成链组织场域内外。两种空间组织来自编辑的区域/道路图，原型和用途由设计决定；距离层、用途名称和数量都是例中的可替换数据。
+
+| 顺序 / 共享源 | 传给下游的内容 | 完成条件 |
+|---|---|---|
+| 区域与道路图 | 连通分量、用途、实际道路并集及暴露端口 | 主场/外围端口朝向、全宽、高程和行走净空一致；图连通还需实体通路验证 |
+| 正式原型工厂 | 真实完整包络、入口、结构规格和局部地面基准 | 包络包括屋檐/deck；变体改变实际内部结构/体量，材料身份独立 |
+| [混合沿街组团](frontage-neighborhood.md) | `prototypeId/regionId/edgeId/groupId`、世界pose、完整足迹、入口和诊断 | 全轮廓资格与邻件防重叠成立；检查用途覆盖、组间留白与预算余项，再实例化 |
+| 最终地形与[贴地道路](terrain-roads.md) | 保留面→最终网格→同一份地形三角索引→各自的道路/入口查询 | 场景在网格定稿后调用一次 `prepareTerrainRoadSupport({terrainGeometry})`；街网和入口用 `terrainSupport` 借用该索引。先释放道路，再释放共享索引及网格 |
+| 实例与静态合并 | 真实原型/pose、语义材料槽、观察数据与资源handle | 材质共享仍保留语义；全貌/区域/入口/侧背分别读图，重复数量不代表世界丰富度 |
+
+示例接收两个地面端口：`center` 在当前道路层（Y=0），`normal` 是指向主场外的水平单位向量，`width` 是完整净宽。用法线确定首段走向，用水平横向量确定端面左右边；两端连接时，中心重合、法线相反、左边对应对端右边。近圈街道内须能容纳整宽端面、4 个场景单位的直行段及转向空间；两条路线还须通过平面图不交叉、并集端面完整暴露和网格精度检查。端口平台跟随同一局部方向，并为实际地形网格单元留出支承余量。此例不推断任意主场的障碍物或自动寻找绕行路线。
+
+支承表记录实际宿主及其有限表面/高程，所有站立家具与通路构件从该记录派生。高层平台、地面道路和室内地板是不同宿主；改变其中一个高程应更新所属的全部消费者，而不是抬高单个摆件。检查实际基部和承托上下关系：道路顶面连通还须验证底部支承，路口整宽能落脚还须用水平净空射线核对路缘/立物。采样不能代替任意碰撞或承压证明。
+
+以下项目根目录ESM直接调用完整工厂；`three`及addons使用与入口相同的锁定版本。灰模借用一个材料，但各真实语义槽仍保留，后续可按槽切换look。
+
+```js
+import * as T from 'three';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {createResourceScope} from './assets/runtime/resource-scope.mjs';
+import {buildLandscapeContext} from './assets/examples/landscape-context.mjs';
+
+const owner=createResourceScope(), scene=new T.Scene();
+const clay=owner.own(new T.MeshStandardMaterial({color:0xb8b6ac,roughness:.8}));
+try {
+  const context=owner.own(buildLandscapeContext(T,{
+    mergeGeometries, materialFor:()=>clay, configuration:'ring'
+  }));
+  scene.add(context.root);
+  console.log(context.design.topology,context.sites.length,
+    context.neighborhood.diagnostics.status,context.roads.stats.topTriangles);
+  const snapshot={sites:context.sites.map(site=>({
+    id:site.id,prototypeId:site.prototypeId,regionId:site.regionId,
+    position:[...site.position],rotation:site.rotation
+  })),stats:context.stats};
+  console.log(JSON.stringify(snapshot));
+} finally {
+  owner.dispose(); // context先释放生成几何/挂载，再释放共享clay。
+}
+```
+
+完整renderer/材光/实际操作仍由[core-lab](../assets/examples/core-lab/index.html)提供。上述CPU构造与JSON检查不替代浏览器或视觉验收。
 
 静态装配可能中途放弃时，从创建就由scope拥有`createAssetAssembly`的builder，完成后借用其finish结果；builder.dispose同时覆盖未finish的私有快照和已finish的生成几何。材质/源几何/动态子树保持借用；不要再把同一生成几何登记给第二个owner。
 

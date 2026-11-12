@@ -63,22 +63,26 @@ function setView(id){
 }
 const getWorld=()=>slot.current.world;
 function readState(){
-  if(!slot.current)return {disposed:true,scope:owner.inspect(),ready:false};
+  if(!slot.current)return structuredClone({disposed:true,scope:owner.inspect(),ready:false});
   const world=getWorld();world.root.updateMatrixWorld(true);
   const count=Array.isArray(renderer.info.programs)?renderer.info.programs.length:null;
-  return {ready:state.ready,revision:slot.revision,state:{...state},spec:world.spec,
+  return structuredClone({ready:state.ready,revision:slot.revision,state:{...state},spec:world.spec,
     geometryIds:world.materialBindings.map(b=>b.object.geometry.uuid),
     materialTypes:[...new Set(world.materialBindings.flatMap(b=>(Array.isArray(b.object.material)?b.object.material:[b.object.material]).map(m=>m.type)))],
     roofBounds:(world.parts.curvedRoof.geometry.boundingBox??(world.parts.curvedRoof.geometry.computeBoundingBox(),world.parts.curvedRoof.geometry.boundingBox)).max.toArray(),
     service:world.anchors.get('roof-service').toArray(),stats:world.stats,
-    materialRegionStats:world.materialRegionStats,context:{sites:world.context.sites,stats:world.context.stats},regionalAssets:world.regionalAssets.map(({id,program,regionId})=>({id,program,regionId})),
-    observationSets:structuredClone(world.observationSets),
+    materialRegionStats:world.materialRegionStats,
+    context:{sites:world.context.sites.map(({route,...site})=>({...site,route:route?{start:[...route.start],end:[...route.end],width:route.width,geometryId:route.mesh.geometry.uuid}:null})),
+      stats:world.context.stats,topology:world.context.design.topology,graphComponents:world.context.layout.connectionGraph.components,
+      neighborhood:world.context.neighborhood.diagnostics,roads:world.context.roads.stats,gateways:world.context.gateways},
+    regionalAssets:world.regionalAssets.map(({id,program,regionId})=>({id,program,regionId})),
+    observationSets:world.observationSets,
     viewTasks:world.viewTasks.map(({id,program,regionId,direction,inspection,sampleIds,position,target})=>({id,program,regionId,direction,label:coreViewLabel({id,program,direction}),inspection,sampleIds,position:[...position],target:[...target]})),
     ports:world.layout.ports,placements:world.placements,layoutComponents:world.layout.connectionGraph.components,
     panelMatrix:world.parts.panel.matrixWorld.toArray(),camera:{position:camera.position.toArray(),target:controls.target.toArray(),fov:camera.fov},
     detail:world.detailGroups.map(g=>({id:g.id,level:g.level,visible:g.root.visible})),
     lighting:slot.current.rig.readState(),render:{...renderer.info.render},memory:{...renderer.info.memory,programs:count},
-    paletteEntries:{pbr:palettes.pbr.inspect().entries.length,toon:palettes.toon.inspect().entries.length}};
+    paletteEntries:{pbr:palettes.pbr.inspect().entries.length,toon:palettes.toon.inspect().entries.length}});
 }
 function report(){document.querySelector('#status').textContent=JSON.stringify({configuration:state.configuration,look:state.look,revision:slot.revision,
   calls:renderer.info.render.calls,triangles:renderer.info.render.triangles,error:state.error},null,2);}
