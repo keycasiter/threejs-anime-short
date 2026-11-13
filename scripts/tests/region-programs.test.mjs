@@ -166,3 +166,34 @@ test('additive actual entry binding preserves the three frozen program construct
  for(const program of Object.keys(expected)){const a=create({program,width:7,depth:4.8,height:3.4});try{const b=a.entryBinding;assert.ok(b,'entry binding exists');assert.equal(b.port,a.entrances[0]);assert.equal(b.jambs.length,2);assert.equal(b.reveals.length,2);const members=[];a.root.traverse(o=>{if(o.isMesh)members.push(o);});for(const o of [b.deck,...b.jambs,...b.reveals,b.header,b.lintel])assert.ok(members.includes(o),'binding refers to actual source mesh');assert.ok(b.reveals.every(o=>o.geometry.isBufferGeometry));assert.notEqual(b.header,b.lintel);
  let meshes=0,triangles=0;const h=createHash('sha256');a.root.updateMatrixWorld(true);a.root.traverse(o=>{if(!o.isMesh)return;meshes++;const g=o.geometry,p=g.attributes.position,idx=g.index;triangles+=(idx?.count??p.count)/3;h.update(o.name);h.update(JSON.stringify(o.matrixWorld.toArray()));h.update(Buffer.from(p.array.buffer,p.array.byteOffset,p.array.byteLength));if(idx)h.update(Buffer.from(idx.array.buffer,idx.array.byteOffset,idx.array.byteLength));h.update(JSON.stringify(g.groups));});assert.deepEqual([meshes,triangles,h.digest('hex')],expected[program]);}finally{a.dispose();}}
 });
+
+test('all regional frame objects own explicit stock slots while entry references and ordinary wood remain intact',()=>{
+ const calls=[],cache=new Map(),materialFor=(role,options,key)=>{calls.push({role,options,key});const id=JSON.stringify([role,options,key]);if(!cache.has(id))cache.set(id,new T.MeshStandardMaterial());return cache.get(id);};
+ for(const program of ['gallery','workshop','courtyard']){
+  const a=create({program,frameStock:{mode:program==='courtyard'?'continuous-bow-with-sill':'independent-rails'},materialFor});try{
+   const frames=a.boundarySources.filter(b=>a.parts.windows.some(w=>w.children.includes(b.part)));
+   assert.ok(frames.length>=8);
+   for(const {part,source}of frames){const b=a.materialBindings.find(b=>b.object===part);assert.equal(b.slots.length,1);assert.equal(b.slots[0].profileKey,'dressed-stock');assert.equal(part.material,materialFor(b.slots[0].role,b.slots[0].options,'dressed-stock'));assert.notDeepEqual(source.geometry.attributes.aFormationPosition.array,source.geometry.attributes.position.array);}
+   const frameParts=new Set(frames.map(b=>b.part));
+   for(const b of a.materialBindings)for(const slot of b.slots)if(!frameParts.has(b.object))assert.equal(slot.profileKey,undefined,'only actual frame object receives the recipe');
+   for(const part of [...a.entryBinding.jambs,...a.entryBinding.reveals,a.entryBinding.header,a.entryBinding.lintel])assert.ok(a.materialBindings.some(b=>b.object===part));
+  }finally{a.dispose();}
+ }
+ assert.ok(calls.some(c=>c.key==='dressed-stock'));assert.ok(calls.every(c=>!Object.hasOwn(c.options,'profileKey')));for(const m of cache.values())m.dispose();
+});
+test('regional frame lookup failure releases partial candidates and preserves borrowed materials',()=>{
+ const original=T.BufferGeometry.prototype.dispose,released=[],m=new T.MeshStandardMaterial();let borrowed=0;m.addEventListener('dispose',()=>borrowed++);
+ T.BufferGeometry.prototype.dispose=function(){released.push(this.uuid);return original.call(this);};
+ try{assert.throws(()=>create({frameStock:{mode:'independent-rails'},materialFor:(role,options,key)=>{if(key==='dressed-stock')throw Error('missing stock material');return m;}}),/missing stock material/);assert.ok(released.length>0);assert.equal(released.length,new Set(released).size);assert.equal(borrowed,0);}finally{T.BufferGeometry.prototype.dispose=original;m.dispose();}
+});
+
+test('default regional source used by activity B keeps old affine frames, four-role slots and two-argument borrowed lookups',()=>{
+ for(const program of ['gallery','workshop','courtyard']){
+  const calls=[],a=create({program,materialFor(...args){calls.push(args);return material;}});
+  try{
+   for(const b of a.materialBindings)for(const s of b.slots)assert.equal(s.profileKey,undefined);
+   for(const {source}of a.boundarySources)assert.deepEqual(source.geometry.attributes.aFormationPosition.array,source.geometry.attributes.position.array);
+   assert.ok(calls.every(c=>c.length===2),'no-declaration consumer keeps original callback shape');
+  }finally{a.dispose();}
+ }
+});

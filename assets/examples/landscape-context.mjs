@@ -78,15 +78,21 @@ function gatewayPlateau(field,g,thickness){
  */
 export function buildLandscapeContext(T,{mergeGeometries,materialFor,siteBounds=[-25,-25,25,25],configuration='grid',gateways}={}){
   if(typeof materialFor!=='function'||typeof mergeGeometries!=='function')throw TypeError('Inject materialFor and mergeGeometries');
-  const scope=createResourceScope(),sourceScope=createResourceScope(),assets=new Map(),root=new T.Group(),sites=[],materialBindings=[],prototypes=[];
+  const scope=createResourceScope(),sourceScope=createResourceScope(),assets=new Map(),root=new T.Group(),sites=[],materialBindings=[],prototypes=[],bakedBoundarySources=[];
   root.name='landscape-context';scope.defer(()=>root.removeFromParent());
   const buckets=new Map(),canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):v;
   function staticAdd(g,material,binding,settings){const key=JSON.stringify(canonical(binding));if(!buckets.has(key))buckets.set(key,{binding,assembly:scope.own(createAssetAssembly(T,{mergeGeometries,invariantAttributes:{[FORMATION_ATTRIBUTE]:3}}))});buckets.get(key).assembly.add(g,material,settings);}
-  function bake(asset){
+  function bake(asset,lot){
     const semantics=new Map(asset.materialBindings.map(b=>[b.object,b.slots]));asset.root.updateWorldMatrix(true,true);
+    const sourceIds=new Map();
+    for(const [index,{source,part}]of asset.boundarySources.entries()){
+      const id=`${lot.id}/boundary/${index}`,g=source.geometry;
+      sourceIds.set(part,id);
+      bakedBoundarySources.push({id,siteId:lot.id,prototypeId:lot.prototypeId,metadata:structuredClone(source.metadata),sourceGeometryId:g.uuid,sourceSpace:'context-root-local',sourceMatrix:part.matrixWorld.toArray(),semantic:structuredClone(semantics.get(part)[0]),triangleCount:g.index.count/3,disposed:true,sourceRanges:[]});
+    }
     asset.root.traverse(object=>{if(!object.isMesh)return;const slots=semantics.get(object),materials=Array.isArray(object.material)?object.material:[object.material],g=object.geometry;
       for(const group of g.groups.length?g.groups:[{start:0,count:g.index?.count??g.attributes.position.count,materialIndex:0}]){
-        const copy=copyFormationGroup(T,g,group);try{staticAdd(copy,materials[group.materialIndex]??materials[0],slots[group.materialIndex]??slots[0],{matrix:object.matrixWorld,castShadow:false,receiveShadow:false,layers:object.layers.mask});}finally{copy.dispose();}
+        const copy=copyFormationGroup(T,g,group);try{staticAdd(copy,materials[group.materialIndex]??materials[0],slots[group.materialIndex]??slots[0],{matrix:object.matrixWorld,castShadow:false,receiveShadow:false,layers:object.layers.mask,sourceId:sourceIds.get(object)});}finally{copy.dispose();}
       }
     });
   }
@@ -94,7 +100,7 @@ export function buildLandscapeContext(T,{mergeGeometries,materialFor,siteBounds=
   try{
     const design=createLandscapeContextDesign({configuration,gateways}),layout=compileWorldLayout(design),familiesByRole={};
     for(const tier of TIERS)for(const program of ['gallery','workshop','courtyard'])for(const variant of ['compact','long']){
-      const role=`${tier.id}/${program}`,id=`${role}/${variant}`,asset=sourceScope.own(buildRegionalArchitecture(T,{program,width:tier.width*(variant==='long'?1.12:1),depth:tier.depth,height:tier.height,courtyardRatio:variant==='long'?.5:.44,materialFor}));
+      const role=`${tier.id}/${program}`,id=`${role}/${variant}`,asset=sourceScope.own(buildRegionalArchitecture(T,{program,width:tier.width*(variant==='long'?1.12:1),depth:tier.depth,height:tier.height,courtyardRatio:variant==='long'?.5:.44,frameStock:{mode:program==='courtyard'?'continuous-bow-with-sill':'independent-rails'},materialFor}));
       // Capture each owned prototype once, before any lot translation or rotation.
       for(const {object} of asset.materialBindings)if(!object.geometry.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,object.geometry);
       const bounds=new T.Box3().setFromObject(asset.root),deck=asset.parts.floors.find(p=>p.name.endsWith('entry.deck')),deckBounds=new T.Box3().setFromObject(deck);
@@ -132,14 +138,17 @@ export function buildLandscapeContext(T,{mergeGeometries,materialFor,siteBounds=
       const connector=scope.own(createTerrainRoadSource(T,{surfaces:[surface],terrainSupport,thickness}));
       writeFormationCoordinates(T,connector.geometry);
       const connectorMesh=new T.Mesh(connector.geometry,materialFor(roadSlot.role,roadSlot.options));connectorMesh.name=`${lot.id}/arrival`;connectorMesh.receiveShadow=true;root.add(connectorMesh);materialBindings.push({object:connectorMesh,slots:[roadSlot,roadSlot,roadSlot]});
-      bake(asset);
+      bake(asset,lot);
       sites.push({id:lot.id,prototypeId:lot.prototypeId,regionId:lot.regionId,edgeId:lot.edgeId,groupId:lot.groupId,tier:lot.regionId.split('/')[0],program:asset.spec.program,footprint:lot.footprint,groundY,baseY,position:asset.root.position.toArray(),rotation:lot.pose.rotationY,spec:asset.spec,measuredBounds:prototype.measuredBounds,entrance:{position:asset.root.localToWorld(new T.Vector3(...prototype.entrance.position)).toArray(),normal:normal.toArray(),width:prototype.entrance.width},partCounts:Object.fromEntries(Object.entries(asset.parts).map(([k,v])=>[k,v.length])),route:{surface,roadCenter,start:start.toArray(),end:leftEnd.clone().add(rightEnd).multiplyScalar(.5).toArray(),width,mesh:connectorMesh}});
     }
     // Source prototypes have finished serving measurement and baking consumers.
     releaseSources();
     const settlement=new T.Group(),stats={staticInputs:0,staticMeshes:0,staticTriangles:0,dynamicRoots:0};settlement.name='merged-settlement';root.add(settlement);
-    for(const {assembly,binding}of buckets.values()){const merged=assembly.finish();settlement.add(merged.root);for(const key of Object.keys(stats))stats[key]+=merged.stats[key];merged.root.traverse(o=>{if(o.isMesh)materialBindings.push({object:o,slots:[binding]});});}
-    let disposed=false;return {root,terrain,field,sites,materialBindings,layout,design,neighborhood,prototypes,roads,gateways:design.gateways,stats:Object.freeze(stats),dispose(){if(disposed)return;disposed=true;scope.dispose();root.clear();}};
+    const boundaryById=new Map(bakedBoundarySources.map(record=>[record.id,record]));
+    for(const {assembly,binding}of buckets.values()){const merged=assembly.finish();settlement.add(merged.root);for(const key of Object.keys(stats))stats[key]+=merged.stats[key];
+      for(const {sourceId,object,geometry,vertexStart,vertexCount}of merged.sourceRanges){const record=boundaryById.get(sourceId);if(record)record.sourceRanges.push({sourceId,objectId:object.uuid,geometryId:geometry.uuid,vertexStart,vertexCount});}
+      merged.root.traverse(o=>{if(o.isMesh)materialBindings.push({object:o,slots:[binding]});});}
+    let disposed=false;return {root,terrain,field,sites,materialBindings,bakedBoundarySources,layout,design,neighborhood,prototypes,roads,gateways:design.gateways,stats:Object.freeze(stats),dispose(){if(disposed)return;disposed=true;scope.dispose();root.clear();}};
   }catch(error){
     const errors=[error];try{releaseSources();}catch(cleanupError){errors.push(cleanupError);}try{scope.dispose();}catch(cleanupError){errors.push(cleanupError);}
     if(errors.length>1)throw new AggregateError(errors,'Context build/cleanup failed');throw error;

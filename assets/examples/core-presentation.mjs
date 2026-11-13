@@ -23,6 +23,7 @@ function profiles(T,look,seed){
   stone:['aggregate',[.28,.09,.23],[.90,.92,.94],[1.08,1.06,1.04],.0012,.5,.16,101],
   coating:['aggregate',[.006,.006,.006],[.97,.97,.97],[1.03,1.03,1.03],.00008,.25,.10,211],
   wood:['fibres',[.024,.08,1.5],[.75,.72,.65],[1.12,1.10,1.05],.0003,.4,.18,307],
+  'dressed-stock':['fibres',[.034,.08,1.5],[.8684,.8416,.778],[1.0016,.9784,.922],.00012,.18,.10,307],
   metal:['bands',[.01,.3,.15],[.96,.96,.96],[1.04,1.04,1.04],.00002,.08,.12,401]
  };
  return Object.fromEntries(Object.entries(data).map(([role,[pattern,wavelengths,colorLow,colorHigh,heightAmplitude,warp,roughness,salt]])=>[role,
@@ -86,7 +87,7 @@ export function buildCorePresentation(T,options={}){
    palettes[mode]={base,formed};
   }
   const provider=palettes[look].formed;
-  world=scope.own(buildCoreWorld(T,{mergeGeometries,MarchingCubes,configuration,roofLift,materialFor:(role,opts)=>provider.get(role,opts)}));
+  world=scope.own(buildCoreWorld(T,{mergeGeometries,MarchingCubes,configuration,roofLift,materialFor:(role,opts,profileKey)=>provider.get(role,opts,profileKey)}));
   // Current casters are rigid opaque meshes: share a scope-owned depth material
   // before the first probe render, and retain it across both look tables.
   // Cutout/displaced/skinned/morphed consumers require their own representation.
@@ -99,14 +100,14 @@ export function buildCorePresentation(T,options={}){
   for(const mode of looks){
    // Resolve the complete candidate before changing any live binding. Every
    // initial/switch/capture lookup uses the same role/options and providers.
-   const formed=world.materialBindings.map(b=>b.slots.map(s=>palettes[mode].formed.get(s.role,s.options)));
+   const formed=world.materialBindings.map(b=>b.slots.map(s=>palettes[mode].formed.get(s.role,s.options,s.profileKey)));
    const base=world.materialBindings.map(b=>b.slots.map(s=>palettes[mode].base.get(s.role,s.options)));
    let responses=0,passthroughMaterialCount=0;
    world.materialBindings.forEach((b,i)=>{
     const n=b.slots.length,prior=Array.isArray(b.object.material)?b.object.material:[b.object.material];
     // Existing context roads bind one identical Material across three semantic
     // side/top/bottom slots. Expand the table, without rewriting their groups.
-    const validPrior=prior.length===n||(prior.length===1&&b.slots.every(s=>provider.get(s.role,s.options)===prior[0]));
+    const validPrior=prior.length===n||(prior.length===1&&b.slots.every(s=>provider.get(s.role,s.options,s.profileKey)===prior[0]));
     // Single-material geometry ignores groups in Three (e.g. BoxGeometry faces).
     if(!n||!validPrior||formed[i].length!==n||base[i].length!==n||(n>1&&b.object.geometry.groups.some(g=>!Number.isInteger(g.materialIndex)||g.materialIndex<0||g.materialIndex>=n)))fail('material slots/groups mismatch');
     const result=palettes[mode].formed.validateMesh(b.object,formed[i]);responses+=result.responses.length;passthroughMaterialCount+=result.passthroughMaterialCount;

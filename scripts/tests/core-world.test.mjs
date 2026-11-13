@@ -356,3 +356,15 @@ test('formation reaches direct, grouped, unmerged and moving core meshes without
   }
  }finally{c.dispose();clay.dispose();}
 });
+
+test('complete world forwards actual frame profile through central, regional and context consumers and source ranges',()=>{
+ const calls=[],cache=new Map(),materialFor=(role,options,key)=>{calls.push({role,options,key});const id=JSON.stringify([role,Object.entries(options).sort(([a],[b])=>a.localeCompare(b)),key]);if(!cache.has(id))cache.set(id,new T.MeshStandardMaterial());return cache.get(id);};
+ const {a,dispose}=setup({materialFor});try{
+  assert.equal(a.bakedBoundarySources.length,36);
+  for(const source of a.bakedBoundarySources){assert.equal(source.semantic.profileKey,'dressed-stock');assert.ok(source.sourceRanges.length);let count=0;for(const range of source.sourceRanges){const b=a.materialBindings.find(b=>b.object.uuid===range.objectId);assert.ok(b);assert.equal(b.slots[0].profileKey,'dressed-stock');assert.equal(b.object.geometry.uuid,range.geometryId);assert.equal(b.object.material,materialFor(b.slots[0].role,b.slots[0].options,b.slots[0].profileKey));assert.ok(range.vertexStart>=0&&range.vertexStart+range.vertexCount<=b.object.geometry.attributes.position.count);count+=range.vertexCount;}assert.equal(count,source.triangleCount*3);}
+  for(const {asset}of a.regionalAssets)for(const window of asset.parts.windows){const part=window.children.find(o=>o.name==='bay.frame'),b=asset.materialBindings.find(b=>b.object===part);assert.equal(b.slots[0].profileKey,'dressed-stock');assert.equal(part.material,materialFor('wood',b.slots[0].options,'dressed-stock'));}
+  assert.ok(a.context.materialBindings.some(b=>b.slots.some(s=>s.profileKey==='dressed-stock')));
+  assert.ok(calls.some(c=>c.key==='dressed-stock'));assert.ok(calls.every(c=>!Object.hasOwn(c.options,'profileKey')));
+  for(const b of a.materialBindings)for(const slot of b.slots)if(slot.profileKey!==undefined)assert.equal(slot.role,'wood');
+ }finally{dispose();for(const m of cache.values())m.dispose();}
+});

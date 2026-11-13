@@ -8,10 +8,12 @@ import {frameBoundaryProfile,solidBoundaryProfile,containerBoundaryProfile} from
  * Program selects real roof/floor/interior topology, never a prescribed placement.
  * maps:false is deliberate on every slot: these curved/rotated procedural parts
  * have no common metric tangent chart. Material mode swaps may reuse all meshes.
+ * Optional frameStock is the explicit bay declaration for this program's window
+ * variant. Omission retains the original four-role/affine source contract.
  */
 export function buildRegionalArchitecture(T,{
   program='gallery',width=8,depth=6,height=4,materialFor,
-  wallThickness=.24,roofOverhang=.35,courtyardRatio=.44
+  wallThickness=.24,roofOverhang=.35,courtyardRatio=.44,frameStock
 }={}) {
   const range=(name,value,min,max)=>{if(!Number.isFinite(value)||value<min||value>max)throw new RangeError(`Regional ${name} must be ${min}..${max}`);};
   if(!['gallery','workshop','courtyard'].includes(program))throw new Error('Unknown regional program');
@@ -28,8 +30,9 @@ export function buildRegionalArchitecture(T,{
   const colors={stone:0xc3beb0,coating:0xd9dfd2,wood:0xa68152,metal:0x596d68};
   const slot=(role,color=colors[role])=>({role,options:{maps:false,baseColor:color,color:0xffffff}});
   const stone=slot('stone'),wall=slot('coating'),wood=slot('wood'),metal=slot('metal');
+  const frameSlot=frameStock===undefined?wood:{...slot('wood'),profileKey:'dressed-stock'};
   const roofSlot=slot('coating',0x66817a),darkWood=slot('wood',0x6b5741);
-  function borrow(s){const m=materialFor(s.role,s.options);if(!m?.isMaterial)throw new TypeError('Regional materialFor must return borrowed THREE.Material');return m;}
+  function borrow(s){const m=s.profileKey===undefined?materialFor(s.role,s.options):materialFor(s.role,s.options,s.profileKey);if(!m?.isMaterial)throw new TypeError('Regional materialFor must return borrowed THREE.Material');return m;}
   function mesh(category,name,geometry,slots,position=[0,0,0],rotation=[0,0,0],ownGeometry=true){
     if(ownGeometry)owned.add(geometry);const object=new T.Mesh(geometry,slots.length===1?borrow(slots[0]):slots.map(borrow));
     object.name=`${program}.${name}`;object.position.set(...position);object.rotation.set(...rotation);
@@ -111,18 +114,18 @@ export function buildRegionalArchitecture(T,{
         // Center front bay reserves a generous industrial opening when needed.
         const windowWidth=Math.min(bayWidth-.5,program==='workshop'?1.7:1.35);
         const sill=height*.23,windowHeight=height*.5;
-        const wallMaterial=borrow(wall),trimMaterial=borrow(wood);
+        const wallMaterial=borrow(wall),trimMaterial=borrow(wood),frameMaterial=frameStock===undefined?undefined:borrow(frameSlot);
         const bay=buildArchitecturalBay(T,{width:bayWidth,height,depth:wallThickness,
           openingWidth:windowWidth,openingHeight:windowHeight,sillHeight:sill,
           variant:program==='courtyard'?'arch':'rect',frameWidth:.07,frameDepth:.045,
-          frameProfile:frameBoundaryProfile(.07,.045),materials:{wall:wallMaterial,trim:trimMaterial,interior:wallMaterial}});
+          frameProfile:frameBoundaryProfile(.07,.045),frameStock,materials:{wall:wallMaterial,trim:trimMaterial,...(frameMaterial===undefined?{}:{frame:frameMaterial}),interior:wallMaterial}});
         bays.push(scope.own(bay));for(const {source,part} of bay.profileSources)boundary(source,part);bay.root.name=`${program}.window-bay.${side}.${i}`;
         // The rear side reverses its tangent so all local outward normals agree.
         const x=side%2?(side===1?width/2:-width/2):(side===2?-offset:offset);
         const z=side%2?(side===1?-offset:offset):(side===0?depth/2:-depth/2);
         bay.root.position.set(x,0,z);bay.root.rotation.y=angle;root.add(bay.root);
         bay.root.traverse(object=>{if(!object.isMesh)return;
-          const surface=object===bay.parts.wall?wall:wood;
+          const surface=object===bay.parts.wall?wall:object===bay.parts.frame?frameSlot:wood;
           const slots=(Array.isArray(object.material)?object.material:[object.material]).map(()=>surface);
           materialBindings.push({object,slots});parts.walls.push(object);
         });
@@ -262,7 +265,7 @@ export function buildRegionalArchitecture(T,{
     const bounds=new T.Box3().setFromObject(root);
     const footprint=Object.freeze({minX:bounds.min.x,maxX:bounds.max.x,minZ:bounds.min.z,maxZ:bounds.max.z,width:bounds.max.x-bounds.min.x,depth:bounds.max.z-bounds.min.z});
     const spec=Object.freeze({program,width,depth,height,wallThickness,roofOverhang,courtyardRatio,
-      materialMapping:'scalar-only; maps:false',windows:Object.freeze(windows.map(w=>Object.freeze(w)))});
+      materialMapping:'scalar-only; maps:false',windows:Object.freeze(windows.map(w=>Object.freeze(w))),...(frameStock===undefined?{}:{frameStock:Object.freeze({mode:frameStock.mode})})});
     entryBinding.port=entrance;Object.freeze(entryBinding.jambs);Object.freeze(entryBinding.reveals);Object.freeze(entryBinding);
     return {root,spec,parts,footprint,entrances:[entrance],entryBinding,materialBindings,boundarySources,dispose};
   }catch(error){try{dispose();}catch(cleanupError){throw new AggregateError([error,cleanupError],'Regional construction/cleanup failed');}throw error;}

@@ -121,5 +121,5 @@ function draw(now){
 }
 owner.defer(()=>cancelAnimationFrame(frame));
 rebuild();setView('overview');frame=requestAnimationFrame(draw);report();
-window.__CORE_TEST__={readState,setView,setLook,setFormationEnabled,setEnvironmentMode,rebuild,seek(t){state.playing=false;state.time=t;getWorld().update(t);},dispose:()=>owner.dispose()};
+window.__CORE_TEST__={readState,getRuntime(){if(!slot.current)throw Error('Core lab is disposed');return {renderer,scene,camera,controls,presentation:slot.current,world:getWorld(),sky,revision:slot.revision};},setView,setLook,setFormationEnabled,setEnvironmentMode,rebuild,seek(t){state.playing=false;state.time=t;getWorld().update(t);},dispose:()=>owner.dispose()};
 listen(window,'pagehide',()=>owner.dispose());

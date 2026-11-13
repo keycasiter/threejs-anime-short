@@ -217,3 +217,15 @@ test('formation data tracks one measured source part through two real context lo
   }
  }finally{asset?.dispose();c.dispose();}
 });
+
+test('context inherits explicit frame slots and preserves actual per-lot frame source ranges after prototype retirement',()=>{
+ const cache=new Map(),materialFor=(role,options,key)=>{const id=JSON.stringify([role,options,key]);if(!cache.has(id))cache.set(id,new T.MeshStandardMaterial());return cache.get(id);};
+ const a=api.buildLandscapeContext(T,{mergeGeometries,materialFor});try{
+  assert.ok(a.bakedBoundarySources?.length>100,'actual source identities survive prototype disposal');
+  const slots=a.materialBindings.filter(b=>b.slots.some(s=>s.profileKey==='dressed-stock'));assert.ok(slots.length);
+  const frames=a.bakedBoundarySources.filter(s=>s.semantic.profileKey==='dressed-stock');assert.ok(frames.length>100);
+  for(const source of a.bakedBoundarySources){assert.ok(a.sites.some(s=>s.id===source.siteId));assert.ok(a.prototypes.some(p=>p.id===source.prototypeId));let vertices=0;for(const r of source.sourceRanges){const b=a.materialBindings.find(b=>b.object.uuid===r.objectId);assert.ok(b);assert.equal(b.object.geometry.uuid,r.geometryId);assert.equal(b.object.material,materialFor(source.semantic.role,source.semantic.options,source.semantic.profileKey));assert.ok(r.vertexStart+r.vertexCount<=b.object.geometry.attributes.position.count);vertices+=r.vertexCount;}assert.equal(vertices,source.triangleCount*3);}
+  assert.equal(new Set(a.bakedBoundarySources.map(s=>s.id)).size,a.bakedBoundarySources.length);
+  assert.ok(a.materialBindings.some(b=>b.slots.some(s=>s.role==='wood'&&s.profileKey===undefined)),'ordinary regional wood stays separate');
+ }finally{a.dispose();for(const m of cache.values())m.dispose();}
+});

@@ -101,3 +101,55 @@ test('rejects nonphysical dimensions, clipping surrounds, unsupported profiles a
   assert.throws(()=>buildArchitecturalBay(THREE),/material/i);
   assert.throws(()=>buildArchitecturalBay(THREE,{materials:{wall:{},trim:{}}}),/material/i);
 });
+
+// Stock declarations must be optional and fail before allocating any bay geometry.
+test('explicit frameStock requires a matching profile-backed source before allocation',async()=>{
+ const {frameBoundaryProfile}=await import('../../assets/examples/boundary-profile-design.mjs');
+ const profile=frameBoundaryProfile(.1,.06),m=materials();let allocations=0;
+ class Group extends THREE.Group{constructor(){super();allocations++;}}
+ for(const options of [{frameStock:{mode:'independent-rails'}},{frameProfile:profile,frameStock:'independent-rails'},{frameProfile:profile,frameStock:{mode:'wrong'}},{frameProfile:profile,frameStock:{mode:'continuous-bow-with-sill'}},{variant:'arch',frameProfile:profile,frameStock:{mode:'independent-rails'}},{frameProfile:profile,frameStock:{mode:'independent-rails',extra:true}}]){
+  assert.throws(()=>buildArchitecturalBay({...THREE,Group},{materials:m,...options}),/stock|profile|mode|topology/i);
+ }assert.equal(allocations,0);
+});
+test('rect stock uses four actual member frames and preserves omitted declaration geometry/query',async()=>{
+ const {frameBoundaryProfile}=await import('../../assets/examples/boundary-profile-design.mjs');
+ for(const dimensions of [{},{openingWidth:1.8,openingHeight:2.1,width:4,height:4,frameWidth:.12,frameDepth:.08}]){
+  const W=dimensions.frameWidth??.1,D=dimensions.frameDepth??.06,options={materials:materials(),...dimensions,frameProfile:frameBoundaryProfile(W,D)};
+  const legacy=buildArchitecturalBay(THREE,options),stock=buildArchitecturalBay(THREE,{...options,frameStock:{mode:'independent-rails'}});
+  try{
+   const a=legacy.parts.frame.geometry,b=stock.parts.frame.geometry,p=b.attributes.position,q=b.attributes.aFormationPosition,N=4;
+   for(const key of ['position','normal','uv'])assert.deepEqual(b.attributes[key].array,a.attributes[key].array,key);
+   assert.deepEqual(b.index.array,a.index.array);assert.deepEqual(b.groups,a.groups);
+   assert.deepEqual(a.attributes.aFormationPosition.array,a.attributes.position.array,'omission retains old affine behavior');
+   assert.notDeepEqual(q.array,p.array,'stock source chart must survive fallback');
+   const r=(dimensions.openingWidth??1.4)/2,lo=.7-W/2,hi=.7+(dimensions.openingHeight??1.9)+W/2,R=r+W/2;
+   for(let j=0;j<10;j++)for(let i=0;i<N;i++)for(let c=0;c<4;c++){
+    const v=(j*N+i)*4+c,x=p.getX(v),y=p.getY(v),z=p.getZ(v);
+    const expected=[[y-lo,z-D/2,x+R],[R-x,z-D/2,y-lo],[hi-y,z-D/2,R-x],[x+R,z-D/2,hi-y]][i];
+    expected.forEach((value,k)=>approx(q.getComponent(v,k),value));
+   }
+   for(const u of [.03,.35,.77])for(const v of [.07,.54]){const x=legacy.profileSources[0].surfaceAt(u,v),y=stock.profileSources[0].surfaceAt(u,v);assert.deepEqual(x.point.toArray(),y.point.toArray());assert.deepEqual(x.normal.toArray(),y.normal.toArray());}
+  }finally{legacy.dispose();stock.dispose();}
+ }
+});
+test('bow source has one sill member and a continuous developed rail across actual jambs/facets',async()=>{
+ const {frameBoundaryProfile}=await import('../../assets/examples/boundary-profile-design.mjs');
+ for(const archSegments of [8,24,64]){
+  const bay=buildArchitecturalBay(THREE,{variant:'arch',archSegments,materials:materials(),frameProfile:frameBoundaryProfile(.1,.06),frameStock:{mode:'continuous-bow-with-sill'}});
+  try{
+   const {geometry:g,metadata}=bay.profileSources[0].source,N=metadata.contour.length,q=g.attributes.aFormationPosition,p=g.attributes.position;assert.equal(N,archSegments+3);
+   // Every duplicated corner inside the bowed member agrees, including its spring joints.
+   for(let j=0;j<10;j++)for(let edge=1;edge<N-1;edge++)for(const [a,b]of [[1,0],[2,3]]){
+    const x=(j*N+edge)*4+a,y=(j*N+edge+1)*4+b;
+    for(let k=0;k<3;k++)approx(q.getComponent(x,k),q.getComponent(y,k));
+   }
+   for(let j=0;j<10;j++){
+    approx(q.getZ((j*N+1)*4),0);
+    assert.ok(q.getZ((j*N+N-1)*4+1)>4.5,'developed path includes both jambs and bow');
+    assert.ok(Math.abs(q.getZ(j*N*4+1)-q.getZ((j*N+1)*4))>1,'bottom-right is a real member joint');
+   }
+   for(let i=0;i<p.count;i++)approx(q.getY(i),p.getZ(i)-.03);
+   assert.notDeepEqual(q.array,p.array);
+  }finally{bay.dispose();}
+ }
+});

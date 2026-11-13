@@ -1,7 +1,8 @@
 import { createPerforatedPlate } from '../geometry/profile-surfaces.mjs';
 import {createContourProfileSource} from '../geometry/contour-profile.mjs';
-import {writeFormationCoordinates} from '../geometry/formation-coordinates.mjs';
+import {FORMATION_ATTRIBUTE,writeFormationCoordinates} from '../geometry/formation-coordinates.mjs';
 import {createResourceScope} from '../runtime/resource-scope.mjs';
+import {frameStockCharts} from './boundary-profile-design.mjs';
 
 /** Original, renderer-independent architectural midstructure. Inject THREE r180.
  * Metres; local +Y is up, floor y=0, x=0 is the centerline; facade faces +Z.
@@ -34,6 +35,8 @@ import {createResourceScope} from '../runtime/resource-scope.mjs';
  * may shear at miters and imply neither a metric chart nor a tangent attribute.
  * Current profile consumers borrow scalar maps:false materials with source-space
  * formation response. surfaceAt's geometric tangent is not a render tangent attribute.
+ * Optional frameStock declares four rectangular members or a continuous bow and
+ * separate sill; the actual bore/section supply all material metre coordinates.
  * profileSources and their geometry are borrowed until bay.dispose(); subsequent
  * source queries reject. The bay owns profile geometry; materials remain borrowed.
  */
@@ -41,7 +44,7 @@ export function buildArchitecturalBay(THREE, {
   width = 3, height = 3.3, depth = .24,
   openingWidth = 1.4, openingHeight = 1.9, sillHeight = .7,
   variant = 'rect', frameWidth = .1, frameDepth = .06, archSegments = 24,
-  materials, frameProfile
+  materials, frameProfile, frameStock
 } = {}) {
   const range = (name, n, lo, hi) => {
     if (!Number.isFinite(n) || n < lo || n > hi) throw new Error(`Bay ${name} must be finite in ${lo}..${hi} metres`);
@@ -81,6 +84,8 @@ export function buildArchitecturalBay(THREE, {
     return ring;
   }
   const bore = contour(), frameOutline = contour(frameWidth);
+  if(frameStock!==undefined&&frameProfile===undefined)throw new RangeError('Bay frameStock requires a profile-backed frame');
+  const formationCharts=frameStock===undefined?undefined:frameStockCharts(frameStock,{variant,contour:bore,frameWidth,frameDepth});
   const outline = [[-width/2,0],[width/2,0],[width/2,height],[-width/2,height]];
   const root = new THREE.Group(); root.name = 'architectural-bay';
   const parts = {}, anchors = new Map(), owned = new Set(), profileSources=[],scope=createResourceScope();
@@ -161,8 +166,8 @@ export function buildArchitecturalBay(THREE, {
       const rearBearing=hasBand((a,b)=>a[1]===0&&b[1]===0&&Math.abs(a[0]-b[0])>1e-9);
       const sillBearing=hasBand((a,b)=>a[0]===frameWidth&&b[0]===frameWidth&&Math.abs(a[1]-b[1])>1e-9);
       if(!rearBearing||!sillBearing)throw new RangeError('Bay frameProfile requires finite wall and sill contact bearing bands');
-      const source=scope.own(createContourProfileSource(THREE,{contour:bore,profile:frameProfile}));
-      writeFormationCoordinates(THREE,source.geometry);
+      const source=scope.own(createContourProfileSource(THREE,{contour:bore,profile:frameProfile,...(formationCharts===undefined?{}:{formationCharts})}));
+      if(!source.geometry.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(THREE,source.geometry);
       const part=new THREE.Mesh(source.geometry,materials.frame??materials.trim);part.name='bay.frame';part.position.z=depth/2;part.castShadow=part.receiveShadow=true;parts.frame=part;root.add(part);
       profileSources.push({source,part,surfaceAt(u,v,space='root'){
         const sample=source.surfaceAt(u,v);if(space==='source'||space==='part')return sample;

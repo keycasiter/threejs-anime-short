@@ -86,8 +86,8 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
     if(result.maps!==false){result.color=0xffffff;if(result.tileSizeMeters===undefined)result.tileSizeMeters=[1,1];}
     return result;
   };
-  const mat=(role,options={})=>materialFor(role,materialOptions(role,options));
-  const slot=(role,options={})=>({role,options:materialOptions(role,options)});
+  const mat=(role,options={},profileKey)=>materialFor(role,materialOptions(role,options),profileKey);
+  const slot=(role,options={},profileKey)=>({role,options:materialOptions(role,options),...(profileKey===undefined?{}:{profileKey})});
   function bind(object,slots){materialBindings.push({object,slots});return object;}
   function tangents(object){
     const g=object.geometry,ms=Array.isArray(object.material)?object.material:[object.material];
@@ -98,7 +98,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
   }
   function mesh(geometry,slots,parent=root){
     if(!geometry.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,geometry);
-    const object=new T.Mesh(geometry,slots.length===1?mat(slots[0].role,slots[0].options):slots.map(s=>mat(s.role,s.options)));
+    const object=new T.Mesh(geometry,slots.length===1?mat(slots[0].role,slots[0].options,slots[0].profileKey):slots.map(s=>mat(s.role,s.options,s.profileKey)));
     tangents(object);object.castShadow=object.receiveShadow=true;parent.add(object);bind(object,slots);return object;
   }
   const ownedMesh=(g,slots,parent=root)=>mesh(scope.own(g),slots,parent);
@@ -112,7 +112,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
   function addStatic(g,role,position,rotation=[0,0,0],options={}){
     try{
       const m=mat(role,options);const pose=new T.Object3D();pose.position.set(...position);pose.rotation.set(...rotation);pose.updateMatrix();
-      writeFormationCoordinates(T,g);staticAdd(g,m,slot(role,options),{matrix:pose.matrix});
+      if(!g.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,g);staticAdd(g,m,slot(role,options),{matrix:pose.matrix});
     }finally{g.dispose();}
   }
   function box(size,position,role='stone',options={}){
@@ -156,7 +156,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
       const {id,x,z,width,depth}=hall,zone=layout.regions.find(r=>r.id===hall.regionId);
       if(!zone||!['gallery','workshop','courtyard'].includes(zone.role))throw Error(`Regional purpose required: ${id}`);
       const program=zone.role,level=layout.levels.find(l=>l.id===zone.level),arrival=roadArrival(hall,level),normal=arrival.point.clone().sub(new T.Vector3(x,arrival.point.y,z)).normalize();
-      const asset=scope.own(buildRegionalArchitecture(T,{program,width,depth,height:program==='workshop'?3.8:3.2,materialFor:mat}));
+      const asset=scope.own(buildRegionalArchitecture(T,{program,width,depth,height:program==='workshop'?3.8:3.2,frameStock:{mode:program==='courtyard'?'continuous-bow-with-sill':'independent-rails'},materialFor:mat}));
       for(const {object} of asset.materialBindings)if(!object.geometry.hasAttribute(FORMATION_ATTRIBUTE))writeFormationCoordinates(T,object.geometry);
       asset.root.position.set(x,level.y+FLOOR,z);asset.root.rotation.y=Math.atan2(normal.x,normal.z);root.add(asset.root);
       const f=asset.footprint,localPolygon=[[f.minX,f.minZ],[f.maxX,f.minZ],[f.maxX,f.maxZ],[f.minX,f.maxZ]],clearance=.1;
@@ -329,12 +329,12 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
       const x=-15+i*3.8,z=configuration==='ring'?-20.8:-13.8,h=2.05+(i%3)*.3,w=2.4,d=1.5,base=.04;
       place(`perimeter/${i}`,'ground',rect(x,z,w+.4,d+.4));
       box([w+.4,.08,d+.4],[x,0,z],'stone');
-      const wallSlot=slot('coating',{color:0xaec0b5,maps:false}),trimSlot=slot('wood'),frameSlot=slot('wood',{maps:false});
-      const wall=mat(wallSlot.role,wallSlot.options),trim=mat(trimSlot.role,trimSlot.options),frame=mat(frameSlot.role,frameSlot.options);
+      const wallSlot=slot('coating',{color:0xaec0b5,maps:false}),trimSlot=slot('wood'),frameSlot=slot('wood',{maps:false},'dressed-stock');
+      const wall=mat(wallSlot.role,wallSlot.options,wallSlot.profileKey),trim=mat(trimSlot.role,trimSlot.options,trimSlot.profileKey),frame=mat(frameSlot.role,frameSlot.options,frameSlot.profileKey);
       for(let side=0;side<4;side++){
         const horizontal=side%2===0,span=horizontal?w:d;
         const bay=buildArchitecturalBay(T,{width:span,height:h,depth:.14,openingWidth:horizontal?1.05:.65,openingHeight:1,sillHeight:.5,
-          variant:i%2?'arch':'rect',frameWidth:.055,frameDepth:.035,frameProfile:frameBoundaryProfile(.055,.035),materials:{wall,trim,frame}});
+          variant:i%2?'arch':'rect',frameWidth:.055,frameDepth:.035,frameProfile:frameBoundaryProfile(.055,.035),frameStock:{mode:i%2?'continuous-bow-with-sill':'independent-rails'},materials:{wall,trim,frame}});
         bay.root.position.set(x+(horizontal?0:side===1?w/2:-w/2),base,z+(horizontal?side===0?d/2:-d/2:0));bay.root.rotation.y=[0,Math.PI/2,Math.PI,-Math.PI/2][side];
         try{
           bay.root.updateWorldMatrix(true,true);
@@ -351,7 +351,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
       try{
         const regionStats=assignMaterialRegions(T,{geometry:roofGeometry,regions:[{id:'weather-face',match:({normal})=>normal.y>.2},{id:'soffit',match:({normal})=>normal.y<-.2}],fallback:'cut-edge'});
         materialRegionStats.push({id:`perimeter/${i}/roof`,...regionStats});
-        const slots=[slot('coating',{baseColor:0x778b80,maps:false}),slot('wood',{baseColor:0x9c825d,maps:false}),slot('metal',{baseColor:0x65756c,maps:false})],materials=slots.map(s=>mat(s.role,s.options));
+        const slots=[slot('coating',{baseColor:0x778b80,maps:false}),slot('wood',{baseColor:0x9c825d,maps:false}),slot('metal',{baseColor:0x65756c,maps:false})],materials=slots.map(s=>mat(s.role,s.options,s.profileKey));
         const roofObject=new T.Mesh(roofGeometry,materials);roofObject.castShadow=roofObject.receiveShadow=true;roofObject.position.set(x,base+h+.04,z-d/2-.15);
         bakeObject(roofObject,new Map([[roofObject,slots]]));
       }finally{roofGeometry.dispose();}

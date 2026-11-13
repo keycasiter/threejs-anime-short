@@ -147,3 +147,25 @@ test('rigid shadow owner exists before both captures and retires once after repl
  for(const failAfterCapture of [1,2]){const n=h.events.filter(e=>e.startsWith('depth:')).length;assert.throws(()=>h.build({diagnostics:{failAfterCapture}}),/diagnostic/);assert.equal(h.events.filter(e=>e.startsWith('depth:')).length,n+1);}
  slot.dispose();slot.dispose();const ids=h.events.filter(e=>e.startsWith('depth:'));assert.equal(ids.length,4);assert.equal(new Set(ids).size,ids.length);
 });
+
+test('actual two-look stock responses share their old base yet remain separate through captures, toggles and rebuilds',()=>{
+ const h=setup();
+ for(let rebuild=0;rebuild<2;rebuild++){
+  const p=h.build();try{
+   const targets=p.world.materialBindings.filter(b=>b.slots.some(s=>s.profileKey==='dressed-stock'));assert.ok(targets.length>5,'full world carries actual target slots');
+   const geometry=targets.map(b=>b.object.geometry),formed={};
+   for(const look of ['pbr','toon']){
+    p.setLook(look);p.setFormationEnabled(true);const state=p.readState(),entries=state.palettes[look].formed.entries;
+    const frame=entries.filter(e=>e.profileKey==='dressed-stock');assert.ok(frame.length>=2);
+    for(const e of frame){const original=entries.find(x=>x.profileKey==='wood'&&x.baseMaterialUuid===e.baseMaterialUuid);assert.ok(original,'same original wood base');assert.notEqual(e.materialUuid,original.materialUuid);const r=e.response;assert.deepEqual(r.parameters.wavelengths,[.034,.08,1.5]);assert.deepEqual(r.parameters.colorLow,[.8684,.8416,.778]);assert.deepEqual(r.parameters.colorHigh,[1.0016,.9784,.922]);assert.equal(r.parameters.heightAmplitude,.00012);assert.equal(r.parameters.warp,.18);assert.equal(r.parameters.roughnessAmplitude,look==='pbr'?.10:0);assert.equal(r.parameters.seed,2941836582);assert.deepEqual(r.parameters.frameMatrix,new T.Matrix4().toArray());}
+    formed[look]=targets.map(b=>b.object.material);
+    for(const b of targets)assert.ok(frame.some(e=>e.materialUuid===b.object.material.uuid));
+    p.setEnvironmentMode('sky');for(const m of formed[look])if('envMap' in m)assert.equal(m.envMap,h.sky);
+    p.setFormationEnabled(false);for(let i=0;i<targets.length;i++){const e=frame.find(e=>e.materialUuid===formed[look][i].uuid);assert.equal(targets[i].object.material.uuid,e.baseMaterialUuid);}
+    p.setFormationEnabled(true);p.setEnvironmentMode('world');assert.deepEqual(targets.map(b=>b.object.material),formed[look]);for(const m of formed[look])if('envMap' in m)assert.equal(m.envMap.uuid,state.capture.textures[look]);
+   }
+   p.setLook('pbr');assert.deepEqual(targets.map(b=>b.object.material),formed.pbr);assert.deepEqual(targets.map(b=>b.object.geometry),geometry);
+  }finally{p.dispose();}
+ }
+ assert.equal(h.captures.length,4);
+});
