@@ -392,10 +392,12 @@ function normalize(input,budget){
 
 // Clipped pieces retain their exact source plane. Topology, overlap and every
 // height extremum are checked separately; area is only a redundant checksum.
-function cover(poly,hostIds,owner,index,budget,mode='walk'){
+function cover(poly,hostIds,owner,index,budget,mode='walk',requestFirst=false){
  const pieces=[];let minY=Infinity,maxY=-Infinity,maxGrade=0,maxStep=0;
  for(const face of index.query(poly,hostIds,owner)){
-  const ring=clip(face.ring,poly,budget,owner);if(!ring.length)continue;
+  // A turn with additional cap extrema must retain them as clipping subjects
+  // instead of reconstructing their shallow bend from nearly parallel lines.
+  const ring=requestFirst?clip(poly,face.ring,budget,owner):clip(face.ring,poly,budget,owner);if(!ring.length)continue;
   const ys=ring.map(face.y);if(!ys.every(Number.isFinite))fail('precision',owner,{peerId:face.key});
   pieces.push({ring,face,bounds:bounds(ring)});minY=Math.min(minY,...ys);maxY=Math.max(maxY,...ys);maxGrade=Math.max(maxGrade,face.grade);
  }
@@ -612,13 +614,7 @@ function atPoint(p,proof,owner,budget){
 }
 function edgeSection(edge,node,budget){
  budget.take(1,node.id);
- const tangent=edge.tangent,half=edge.width/2;
- // This is the actual constructed edge cap, not a second cap recomputed from
- // the approximately perpendicular port normal or its nominal width.
- return {
-  a:[node.xz[0]-tangent[0]*half,node.xz[1]-tangent[1]*half],
-  b:[node.xz[0]+tangent[0]*half,node.xz[1]+tangent[1]*half]
- };
+ return edge.sections[edge.a===node.id?0:1];
 }
 function finitePortSection(port,edge,node,budget){
  const {a,b}=edgeSection(edge,node,budget);
@@ -746,21 +742,24 @@ function makeWalkCandidate(n,members,frameTransform,budget){
   budget.take(1,e.key);
   const a=nodeMap.get(e.a),b=nodeMap.get(e.b),start=a.xz,end=b.xz,d=sub(end,start),len=length(d);
   if(len<MIN)invalid('authored physical edge length below .015m',true);
-  let tangent;
+  let tangent,uvAxis=null;
   if(a.uv&&b.uv){
    // Equal-width collinear UV strips need identical caps even at different
    // lengths. Reduce to the same exact component ratio before rounding and yaw.
-   const u=qvector(qpoint(b.uv),qpoint(a.uv));
-   const scale=qcompare(qmul(u[0],u[0]),qmul(u[1],u[1]))>=0?u[0]:u[1];
+   uvAxis=qvector(qpoint(b.uv),qpoint(a.uv));
+   const [ux,uz]=uvAxis,scale=qcompare(qmul(ux,ux),qmul(uz,uz))>=0?ux:uz;
    if(scale.n===0n)fail('precision',e.key);
    const sign=scale.n<0n?-1:1;
-   const [x,z]=u.map(q=>sign*roundedFraction(qdiv(q,scale))),norm=Math.hypot(x,z);
+   const [x,z]=uvAxis.map(q=>sign*roundedFraction(qdiv(q,scale))),norm=Math.hypot(x,z);
    tangent=rotate([-z/norm,x/norm]);
   }else tangent=[-d[1]/len,d[0]/len];
-  const h=e.width/2;
-  const polygon=canonical([[start[0]+tangent[0]*h,start[1]+tangent[1]*h],[start[0]-tangent[0]*h,start[1]-tangent[1]*h],[end[0]-tangent[0]*h,end[1]-tangent[1]*h],[end[0]+tangent[0]*h,end[1]+tangent[1]*h]]);polygon.flat().forEach(v=>number(v,'route world coordinate'));
+  budget.take(2,e.key);
+  const h=e.width/2,sections=[start,end].map(([x,z])=>({
+   a:[x-tangent[0]*h,z-tangent[1]*h],b:[x+tangent[0]*h,z+tangent[1]*h]
+  }));
+  const [first,last]=sections,polygon=canonical([first.b,first.a,last.a,last.b]);polygon.flat().forEach(v=>number(v,'route world coordinate'));
   budget.take(1,e.key);
-  const out={...e,start,end,tangent,polygon,portSections:new Map()};adjacency.get(e.a).push(out);adjacency.get(e.b).push(out);return out;
+  const out={...e,start,end,tangent,uvAxis,sections,polygon,portSections:new Map()};adjacency.get(e.a).push(out);adjacency.get(e.b).push(out);return out;
  });
  return {nodes,nodeMap,edges,adjacency};
 }
@@ -771,6 +770,44 @@ function qualifyStraightDomains(walk,index,obstacles,budget){
   const proof=cover(edge.polygon,edge.hostIds,edge.key,index,budget),ports=[...nodeMap.get(edge.a).ports,...nodeMap.get(edge.b).ports];edge.proof=proof;
   edge.minHeadroom=obstruct(edge.polygon,proof,obstacles,edge.hostIds,edge.headroom,edge.key,budget,ports);
  }
+}
+// Only exact UV parallel/perpendicular incidence in this rigid frame establishes
+// that the strip cap endpoints belong to the authored maximum-width turn square.
+function authoredTurnAxes(incident,budget,owner){
+ const axis=incident[0].uvAxis;if(!axis)return false;
+ let turns=false;
+ for(let i=1;i<incident.length;i++){
+  budget.take(1,owner);
+  const peer=incident[i].uvAxis;if(!peer)return false;
+  if(qdot(axis,peer).n===0n)turns=true;
+  else if(qcross(axis,peer).n!==0n)return false;
+ }
+ return turns;
+}
+// Monotone convex hull of the four square corners and their actual interfaces.
+// Only represented extrema are kept; no offset or angular tolerance is applied.
+function turnHull(square,incident,node,budget){
+ budget.take(square.length+2*incident.length,node.id);
+ const points=square.slice();
+ for(const edge of incident){
+  const {a,b}=edgeSection(edge,node,budget);points.push(a,b);
+ }
+ points.sort((a,b)=>{budget.take(1,node.id);return a[0]-b[0]||a[1]-b[1];});
+ const chain=(start,step)=>{
+  budget.take(points.length,node.id);
+  const out=[];
+  for(let i=start;i>=0&&i<points.length;i+=step){
+   for(;out.length>=2;out.pop()){
+    budget.take(1,node.id);
+    if(orientSign(out.at(-2),out.at(-1),points[i])>0)break;
+   }
+   out.push(points[i]);
+  }
+  out.pop();return out;
+ };
+ const lower=chain(0,1),upper=chain(points.length-1,-1);
+ budget.take(lower.length+upper.length,node.id);
+ return lower.concat(upper);
 }
 function qualifyTurnDomains(walk,index,obstacles,budget){
  const {nodes,adjacency}=walk;
@@ -785,8 +822,13 @@ function qualifyTurnDomains(walk,index,obstacles,budget){
   const straight=incident.length===2&&Math.abs(dot(directions[0],directions[1])+1)<=1e-6&&incident[0].width===incident[1].width;
   let turn=null;
   if(!straight){
-   const width=Math.max(...incident.map(e=>e.width)),h=width/2,u=directions[0],v=[-u[1],u[0]],poly=canonical([[-h,-h],[h,-h],[h,h],[-h,h]].map(([a,b])=>[node.xz[0]+a*u[0]+b*v[0],node.xz[1]+a*u[1]+b*v[1]])),hostIds=[...new Set(incident.flatMap(e=>e.hostIds))].sort(cmp),headroom=Math.max(...incident.map(e=>e.headroom));
-   turn=cover(poly,hostIds,node.id,index,budget);obstruct(poly,turn,obstacles,hostIds,headroom,node.id,budget);
+   budget.take(1,node.id);
+   const authored=authoredTurnAxes(incident,budget,node.id);
+   const width=Math.max(...incident.map(e=>e.width)),h=width/2,u=authored?incident[0].tangent:directions[0],v=[-u[1],u[0]];
+   const square=canonical([[-h,-h],[h,-h],[h,h],[-h,h]].map(([a,b])=>[node.xz[0]+a*u[0]+b*v[0],node.xz[1]+a*u[1]+b*v[1]]));
+   const poly=authored?turnHull(square,incident,node,budget):square;
+   const hostIds=[...new Set(incident.flatMap(e=>e.hostIds))].sort(cmp),headroom=Math.max(...incident.map(e=>e.headroom));
+   turn=cover(poly,hostIds,node.id,index,budget,'walk',poly.length>square.length);obstruct(poly,turn,obstacles,hostIds,headroom,node.id,budget);
   }
   for(const edge of incident){
    const {a,b}=edgeSection(edge,node,budget);

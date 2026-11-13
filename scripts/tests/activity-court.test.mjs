@@ -690,3 +690,41 @@ test('R4 N2 rigid rotation keeps the original collinear floor and exact-width se
  const r=qualify(transformFixture(joinedStripFixture(0),[5,6],Math.PI/3));
  assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
 });
+
+function authoredTurnFixture(yaw){
+ const f=fixture(),service=f.prototypes[0].ports[0];
+ service.width=1.25;service.witness=[[-.625,.8,-.5],[.625,.8,-.5]];
+ for(const port of [f.site.arrival.sourcePort,f.site.arrival.gatePort]){
+  port.width=1.25;const z=port.position[2];port.witness=[[-.625,0,z],[.625,0,z]];
+ }
+ f.site.hostFaces[0].faces=[{id:'flat',p:[[-40,0,-40],[0,0,40],[40,0,-40]]}];
+ f.recipe.nodes.push({id:'j',uv:[0,.5]},{id:'k',uv:[2,.5]},{id:'l',uv:[2,1.75]},{id:'o',uv:[0,1.75]});
+ f.recipe.edges=[['gate','j'],['j','k'],['k','l'],['l','o'],['o','end']]
+  .map(([a,b])=>({a,b,width:1.2,hostIds:['floor']}));
+ return transformFixture(f,[5,6],yaw);
+}
+
+for(const degrees of [0,45,60])test(`R5 N3 authored right-angle caps stay connected after ${degrees} degree rotation`,()=>{
+ const yaw=degrees*Math.PI/180,r=qualify(authoredTurnFixture(yaw));
+ assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+ // The two full physical caps through l are the transformed opposite points
+ // at x=2±.6 and z=1.75±.6 on the original orthogonal centre lines.
+ const c=Math.cos(yaw),s=Math.sin(yaw),world=(x,z)=>[5+c*x+s*z,6-s*x+c*z];
+ for(const [a,b,expected] of [
+  ['k','l',[world(1.4,1.75),world(2.6,1.75)]],
+  ['l','o',[world(2,1.15),world(2,2.35)]]
+ ]){
+  const route=r.snapshot.routes.find(e=>key(e.a,e.b)===key(a,b));
+  assert.equal(route.width,1.2);
+  for(const p of expected)assert.ok(route.polygon.some(q=>Math.hypot(q[0]-p[0],q[1]-p[1])<1e-13));
+ }
+});
+
+test('R5 N3 the outer corner between rotated strips still requires full turn clearance',()=>{
+ const f=authoredTurnFixture(Math.PI/4),c=Math.cos(Math.PI/4),s=Math.sin(Math.PI/4);
+ // NE of l: outside both terminating strips, inside the width-1.2 turn at (2,1.75).
+ const polygon=rect(2.35,2.07,2.48,2.2).map(([x,z])=>[5+c*x+s*z,6-s*x+c*z]);
+ f.site.blocks.push({owner:f.site.owner,id:'corner-post',polygon,yMin:0,yMax:1});
+ const reason=reject(f,'blocked-clearance').diagnostics.reasons[0];
+ assert.equal(reason.ownerId,'l');assert.equal(reason.peerId,'corner-post');
+});
