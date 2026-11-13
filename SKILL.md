@@ -33,7 +33,7 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 | 当前工作 | 方法 | 可执行能力 |
 |---|---|---|
 | 参考、宏微观拆解、短需求到规格 | [视觉设计](references/visual-design.md) | 总图/剖面、对象族、特征到构造与目标视图 |
-| 构图、白模、完整世界与多尺度 | [空间搭建](references/scene-layout.md)；生成图/街区/房间时读[算法配方](references/algorithm-recipes.md#世界连接图与局部语法) | 共享布局/表面、可调用连接图/地块、区域与近中远规则 |
+| 构图、白模、完整世界与多尺度 | [空间搭建](references/scene-layout.md)；生成图/街区/房间时读[算法配方](references/algorithm-recipes.md#世界连接图与局部语法)；多区域用途需扩成完整目的地时读[活动组接力](references/world-methods.md#区域用途到完整活动组) | 共享布局/表面、可调用连接图/地块、完整活动组候选分配与区域/近中远规则 |
 | 主形、中层、厚度/开口、连接与资产工厂 | [构造方法](references/procedural-construction.md)；[几何配方](references/geometry-recipes.md) | [截面工具](references/profile-geometry.md)、[开间样件](assets/examples/procedural-bay.mjs)、端口/静态装配 |
 | 群体与具体资产细节 | [分布方法](references/detail-distribution.md)；[表面方法](references/surface-detail.md) | 原型/实例、实际宿主/完整足迹、区域与米制通道 |
 | 材光、反射、后期与自写效果 | [渲染选择](references/rendering-choices.md)；[效果配方](references/effect-recipes.md)；部件/世界坐标驱动的渐变、有限扫带或径向响应读[坐标响应](references/coordinate-response.md) | 自定义多遍时再读[渲染契约](references/render-contracts.md) |

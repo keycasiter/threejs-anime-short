@@ -2,7 +2,7 @@
 
 在需要从设计关系生成路网、街区、房间或模块布局时读取本页对应小节。已有[图与地块工具](algorithm-recipes.md#随包工具走廊图与沿边地块)优先使用；下面补其未实现的求解方法。算法步骤是项目实现说明，不是隐藏的Three.js API。全部输出先经过真实场地资格，再进入几何工厂。
 
-导航：[方向场路网](#方向场与分级路网) · [交点与地块](#交点图与地块) · [房间与重写](#房间走廊与分阶段重写) · [WFC](#局部邻接约束求解) · [导航](#可达性导航与镜头阻挡)
+导航：[方向场路网](#方向场与分级路网) · [交点与地块](#交点图与地块) · [活动组分配](#区域用途到完整活动组) · [房间与重写](#房间走廊与分阶段重写) · [WFC](#局部邻接约束求解) · [导航](#可达性导航与镜头阻挡)
 
 ## 方向场与分级路网
 
@@ -45,6 +45,35 @@ t/u均在[0,1]内才在线段上。平行时再判断共线及投影区间：正
 随包`generateFrontageLots`是沿明确边放矩形的简化路线，已检查矩形互占；它没有实现上述任意街区提取或偏移。使用哪种路线，应由目标街区形状和实际场地决定。
 
 凸街区可用半平面裁切完成本地退界：统一外环朝向，对每条临路边建立指向内部的单位法线n，允许域为`dot(n,p-edgePoint)>=retreat`；从原多边形开始逐条裁切，边界交点按线性插值求出。空结果表示退界后无可用地块，尖角处明确miter上限/切角设计。对凹域和孔洞不套用这条凸算法；需要任意拓扑时可适配已查Manifold `CrossSection.offset(delta,joinType?,miterLimit?,circularSegments?)`，负delta内缩，保持孔洞朝向/填充语义并处理空域与多连通输出。异步WASM初始化、轮廓输出与delete归属按锁定包确认；未装该库时选择已提供的矩形/凸域路线，不虚构通用裁切工具。
+
+## 区域用途到完整活动组
+
+多区域场景先设计“哪些地方承担什么活动”，再决定重复资产。一个活动组是有用途的完整空间单元：成员、主要动作面、入口/服务端、内部路径、保留负形、承托面和高度包络由同一组输入描述。街区、设备场、展区、营地或自然观察点都可采用这条接力；用途名称与物件类别由场景设计提供，分配器不内置题材分支。
+
+### 生成顺序
+
+1. 从布局数据导出稳定的`zoneId / role / level / boundary / approach`。不要从ID字符串拆出区域语义。给区域指定所需的活动组、重要性、目标尺度和必要关系；大场景允许一个区域容纳完整目的地，也允许留空，避免每个地块机械复制同一套道具。
+2. 先用实际道路边、入口端口、区域轴线和已测完整包络，生成有限、有稳定ID的候选位姿。候选应携带所有组成员/保留空间的凸包络、所在区域/层及真实Y范围。通过物件数量、随机扰动或中心点合法，不能证明完整组可落位。
+3. 把候选交给`allocateActivityGroups`。它按显式优先级与ID稳定排序；验证每个完整占用包络落在真实布局区域内，并消除与已选活动组的水平/垂直包络冲突。必需组无法放置时返回`unsatisfied`且不输出部分分配；候选遍历和包络比较有硬预算。
+4. 将选中的候选重新交给真实生成器：读实际mesh测出足迹、端口、服务面、支承和阻挡；用活动关系内核证明地面与路径连续；最后才创建/合批几何，并登记sourceId、最终draw范围、材料借用和owner。若真实生成或资格核验失败，换下一个有界候选并重跑，不移动相机掩盖失败。
+
+### 候选分配示例
+
+分配器只解决多组候选之间的布局决策；它不生成候选、不从AABB推断端口、不证明通路、坡度或真实承托。候选包络必须来自目标原型的完整测量；候选结构、角色、活动成员和路线仍由调用方的作者数据与几何资格器负责。
+
+将以下代码保存为`references/activity-distribution-example.mjs`后运行`node references/activity-distribution-example.mjs`，可用来检查候选分配逻辑；其中包络只是输入，生产候选必须由真实原型测量得到。
+
+```js
+import {createActivityDistributionExample} from '../assets/examples/activity-distribution-example.mjs';
+
+const result=createActivityDistributionExample();
+if(result.status!=='complete')throw new Error(`Required activity groups do not fit: ${result.unassignedGroupIds.join(', ')}`);
+console.log(result.assignments.map(({groupId,candidateId})=>`${groupId} → ${candidateId}`));
+```
+
+`priority`高的完整目的地先占位；第二组会跳过与其水平/垂直包络冲突的候选。`clearance`参与区域边界与组间净距；`minY/maxY`来自实际完整资产包络，不使用地面高度代替。可选`payload`只收有限、无循环的JSON式作者数据，分配器会返回深拷贝并冻结它，供下游按选中的组成员、位姿等字段重建；Three对象、Mesh和材质不能放入payload。布局结果不等于场景验收：接着仍须提交真实生成器、真实三角形支承/通路检查，并从全景、区域、连接和背面视角核对活动关系是否清晰。
+
+该工具的实际实现和边界见[`activity-distribution.mjs`](../assets/scene/activity-distribution.mjs)，完整候选数据见[`activity-distribution-example.mjs`](../assets/examples/activity-distribution-example.mjs)，可失败行为见[`activity-distribution.test.mjs`](../scripts/tests/activity-distribution.test.mjs)。它目前是可复用的候选分配器；没有接入`core-world`或任意场景工厂之前，不将它描述成完整世界活动生成工具。
 
 ## 房间、走廊与分阶段重写
 
