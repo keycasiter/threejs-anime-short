@@ -82,10 +82,10 @@ test('ten opposed districts receive non-family apron regions measured from their
    const xs=apron.outline.map(p=>p[0]),zs=apron.outline.map(p=>p[1]),width=Math.max(...xs)-Math.min(...xs),depth=Math.max(...zs)-Math.min(...zs);
    assert.equal(apron.sourceRegionId,`${tierId}/${side}`);
    assert.equal(apron.activityMode,'opposed-frontage');
-   if(side==='west'){assert.ok(Math.abs(Math.min(...xs)-(a.x+halfRoad))<1e-9);assert.ok(Math.abs(width-7.6)<1e-9);}
-   if(side==='east'){assert.ok(Math.abs(Math.max(...xs)-(a.x-halfRoad))<1e-9);assert.ok(Math.abs(width-7.6)<1e-9);}
-   if(side==='north'){assert.ok(Math.abs(Math.min(...zs)-(a.z+halfRoad))<1e-9);assert.ok(Math.abs(depth-7.6)<1e-9);}
-   if(side==='south'){assert.ok(Math.abs(Math.max(...zs)-(a.z-halfRoad))<1e-9);assert.ok(Math.abs(depth-7.6)<1e-9);}
+   if(side==='west'){assert.ok(Math.abs(Math.min(...xs)-(a.x+halfRoad-.06))<1e-9);assert.ok(Math.abs(width-7.72)<1e-9);}
+   if(side==='east'){assert.ok(Math.abs(Math.max(...xs)-(a.x-halfRoad+.06))<1e-9);assert.ok(Math.abs(width-7.72)<1e-9);}
+   if(side==='north'){assert.ok(Math.abs(Math.min(...zs)-(a.z+halfRoad-.06))<1e-9);assert.ok(Math.abs(depth-7.72)<1e-9);}
+   if(side==='south'){assert.ok(Math.abs(Math.max(...zs)-(a.z-halfRoad+.06))<1e-9);assert.ok(Math.abs(depth-7.72)<1e-9);}
    assert.ok(Math.abs((side==='west'||side==='east'?depth:width)-(axisLength+.12))<1e-9,'tangent length retains the authored district axis plus 6cm end allowance');
   }
  }

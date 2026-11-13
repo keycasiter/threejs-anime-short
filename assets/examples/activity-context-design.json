@@ -13,6 +13,6 @@
   },
   "opposedApron": {
     "inwardDepth": 7.6,
-    "tangentEndExtension": 0.06
+    "edgeExpansion": 0.06
   }
 }

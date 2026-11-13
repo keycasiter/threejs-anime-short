@@ -46,13 +46,14 @@ export function createLandscapeContextDesign({configuration='grid',gateways}={})
         const roadIndex={west:7,east:3,north:1,south:5}[side],road=edges.find(e=>e.id===`${id}/street/${roadIndex}`),start=nodes.find(n=>n.id===road?.from),end=nodes.find(n=>n.id===road?.to);
         if(!road||!start||!end)throw Error(`Missing real perimeter street for opposed district ${regionId}`);
         const inward={west:[1,0],east:[-1,0],north:[0,1],south:[0,-1]}[side],vertical=side==='west'||side==='east',centerline=vertical?start.x:start.z;
-        const boundary=centerline+inward[vertical?0:1]*road.width/2,axis=vertical?1:0,axisValues=[bounds[axis],bounds[axis+2]],extension=activityContextDesign.opposedApron.tangentEndExtension,depth=activityContextDesign.opposedApron.inwardDepth;
-        const lo=Math.min(...axisValues)-extension,hi=Math.max(...axisValues)+extension;
+        const boundary=centerline+inward[vertical?0:1]*road.width/2,axis=vertical?1:0,axisValues=[bounds[axis],bounds[axis+2]],depth=activityContextDesign.opposedApron.inwardDepth;
+        const lo=Math.min(...axisValues),hi=Math.max(...axisValues);
         let apron;
         if(side==='west')apron=[boundary,lo,boundary+depth,hi];
         else if(side==='east')apron=[boundary-depth,lo,boundary,hi];
         else if(side==='north')apron=[lo,boundary,hi,boundary+depth];
         else apron=[lo,boundary-depth,hi,boundary];
+        const expansion=activityContextDesign.opposedApron.edgeExpansion;apron=[apron[0]-expansion,apron[1]-expansion,apron[2]+expansion,apron[3]+expansion];
         const activityRegionId=`activity-apron/${regionId}`;
         regions.push({id:activityRegionId,level:'context',outline:rectangle(...apron),role:'activity-apron',sourceRegionId:regionId,activityRole,activityMode});
         district.activityRegionId=activityRegionId;
