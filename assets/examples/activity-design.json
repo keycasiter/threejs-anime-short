@@ -1,0 +1,912 @@
+{
+  "format": "activity-design/1",
+  "units": "metres, Y up, +v from road into court; yawDeg is Three.rotation.y in this right-handed group frame; service front = local -Z",
+  "rectangle": "all [u0,v0,u1,v1] rectangles include their boundary; pad arrays may be simple rings",
+  "localFixture": {
+    "graph": {
+      "id": "test-street",
+      "y": 0,
+      "nodes": [
+        [
+          -12,
+          -1.5
+        ],
+        [
+          12,
+          -1.5
+        ]
+      ],
+      "width": 3,
+      "openBothEnds": true
+    },
+    "sourceBuilding": {
+      "exchange": "workshop",
+      "exhibit": "gallery",
+      "width": 7,
+      "depth": 4.8,
+      "height": 3.4,
+      "setback": 0.8,
+      "endClearance": "(24−measured complete frontage)/2",
+      "outerRegion": [
+        -12,
+        -13,
+        12,
+        -3
+      ],
+      "centerOnStreetU": 0
+    },
+    "padRegion": [
+      -7,
+      -0.06,
+      7,
+      6.5
+    ],
+    "terrain": {
+      "size": [
+        32,
+        32
+      ],
+      "segments": [
+        32,
+        32
+      ],
+      "baseHeight": -0.18,
+      "surfaceHeight": 0,
+      "innerB2FillTop": -0.1
+    },
+    "routeWidthFromEntry": 1.05,
+    "mouth": {
+      "u": 0,
+      "v": 0
+    },
+    "complementaryCameras": {
+      "overview": {
+        "eye": [
+          12,
+          12,
+          14
+        ],
+        "target": [
+          0,
+          0.8,
+          -1
+        ]
+      },
+      "workingFace": {
+        "eye": [
+          6.8,
+          5.2,
+          -6.3
+        ],
+        "target": [
+          0.8,
+          1.1,
+          3.8
+        ]
+      },
+      "reverse": {
+        "eye": [
+          -8.2,
+          4.0,
+          9.6
+        ],
+        "target": [
+          0,
+          1.0,
+          2.0
+        ]
+      },
+      "gradeView": {
+        "eye": [
+          8.2,
+          2.2,
+          -1.0
+        ],
+        "target": [
+          0,
+          0.58,
+          2.9
+        ]
+      },
+      "FOV": 42,
+      "viewport": [
+        1280,
+        720
+      ],
+      "dpr": 1
+    }
+  },
+  "portNotation": "prototype.port = local arrival anchor, Y=0 convention for the intended standing datum, never a worktop or actual ground measurement. measureActivityPrototype returns actual servicePosition and face witnesses separately. The walking host supplies world standingPosition. Cross ports require an actual floor sill and full-width height continuity.",
+  "prototypes": {
+    "feedCradle": {
+      "envelope": [
+        4.0,
+        1.52,
+        1.5
+      ],
+      "port": [
+        0,
+        0,
+        -0.75
+      ],
+      "aperture": 1.28,
+      "geometry": "two triangular trestles 0.20 wide at x=±1.50; y=.20 base on two 0.48×1.28 sole plates, two 3.84m timber trough rails at y=.71 and 1.08, three bound stock beams 3.60×.20×.21, rear stop y=1.52; no solid across receiving side",
+      "role": "unload and stage stock"
+    },
+    "partsRack": {
+      "envelope": [
+        2.3,
+        2.05,
+        0.9
+      ],
+      "port": [
+        0,
+        0,
+        -0.45
+      ],
+      "aperture": 1.16,
+      "geometry": "two inverted-U side frames .09 section, three 2.20×.58 shelves at .34,1.01,1.65; two open storage trays on lower shelves; two continuous 0.20×.90 feet",
+      "role": "sort tools and blanks"
+    },
+    "coveredPress": {
+      "envelope": [
+        4.2,
+        3.2,
+        2.82
+      ],
+      "port": [
+        0,
+        0,
+        -0.7
+      ],
+      "aperture": 1.36,
+      "geometry": "shed roof x ±2.10 z ±1.41, eaves y=2.60/3.20 incl .14 shell; paired frames at x=±1.82 support roof, base feet 0.33 square at z=±1.10; work bed 2.52×1.22, front edge -.70, height .88, four steel feet, raised screw y=2.15 in yoke fixed to bed; keep approach |x|<.68 through canopy open; local port on real bed front projected to datum",
+      "role": "covered operation"
+    },
+    "foldScreen": {
+      "envelope": [
+        2.7,
+        2.34,
+        1.3
+      ],
+      "port": [
+        0,
+        0,
+        -0.65
+      ],
+      "aperture": 1.2,
+      "geometry": "two splayed timber-faced panels each 1.25 wide, 0.14 thick on 2.70×1.30×.14 folded plinth; plan angle ±19°, stagger heights 1.83/2.34; pin + braced rear mount visible from reverse, relief .10 thick faces visitor",
+      "role": "inspect paired exhibits"
+    },
+    "restSeat": {
+      "envelope": [
+        2.6,
+        0.85,
+        0.94
+      ],
+      "port": [
+        0,
+        0,
+        -0.47
+      ],
+      "aperture": 1.2,
+      "geometry": "slatted seat 2.60×.52 top .46, planted .34×.82 stone feet at x=±.91, .85-high rear rail; front toe plate aligns actual measurement at -.47",
+      "role": "face the island and wait"
+    },
+    "foldIsland": {
+      "envelope": [
+        2.6,
+        2.54,
+        1.35
+      ],
+      "port": [
+        0,
+        0,
+        -0.675
+      ],
+      "aperture": 1.2,
+      "geometry": "2.60×1.35×.23 stone plinth with public front coping; bent asymmetric double-sided metal blade twists through +18°, four trapezoidal cross sections (height/width) [.23,.91],[.72,1.74],[1.86,.83],[2.54,.28]; second blade .94 high set back .25; slab has a real bottom",
+      "role": "walk around silhouette"
+    }
+  },
+  "relations": {
+    "exchange": {
+      "pad": [
+        -5.65,
+        0,
+        5.65,
+        5.45
+      ],
+      "pavedHoles": [],
+      "members": [
+        [
+          "feed",
+          "feedCradle",
+          -3.38,
+          3.93,
+          0
+        ],
+        [
+          "sort",
+          "partsRack",
+          0,
+          4.76,
+          0
+        ],
+        [
+          "work",
+          "coveredPress",
+          3.35,
+          3.92,
+          0
+        ]
+      ],
+      "nodes": {
+        "gate": [
+          0,
+          0
+        ],
+        "fork": [
+          0,
+          1.35
+        ],
+        "left": [
+          -3.38,
+          1.35
+        ],
+        "right": [
+          3.35,
+          1.35
+        ],
+        "feed": "feed:front",
+        "sort": "sort:front",
+        "work": "work:front"
+      },
+      "edges": [
+        [
+          "gate",
+          "fork",
+          1.2
+        ],
+        [
+          "fork",
+          "left",
+          1.2
+        ],
+        [
+          "left",
+          "feed",
+          1.2
+        ],
+        [
+          "fork",
+          "right",
+          1.2
+        ],
+        [
+          "right",
+          "work",
+          1.2
+        ],
+        [
+          "fork",
+          "sort",
+          1.12
+        ]
+      ],
+      "require": [
+        "feed",
+        "sort",
+        "work"
+      ],
+      "negative": [
+        "receiving-apron",
+        [
+          -1.5,
+          0.12,
+          1.5,
+          2.3
+        ]
+      ],
+      "purpose": "arrive and choose unload/sort/operate; stock cradle and rack feed the sheltered press via one free cart aisle; star/tree, no loop"
+    },
+    "exhibit": {
+      "pad": [
+        -5.65,
+        0,
+        5.65,
+        5.42
+      ],
+      "pavedHoles": [
+        [
+          -1.33,
+          2.02,
+          1.33,
+          3.43
+        ]
+      ],
+      "islandFill": {
+        "host": "contained registered fill inside the same hole",
+        "topBelowWalk": 0.1,
+        "region": [
+          -1.33,
+          2.02,
+          1.33,
+          3.43
+        ]
+      },
+      "members": [
+        [
+          "object",
+          "foldIsland",
+          0,
+          2.695,
+          0
+        ],
+        [
+          "panels",
+          "foldScreen",
+          -4.55,
+          2.7,
+          -90
+        ],
+        [
+          "rest",
+          "restSeat",
+          4.55,
+          2.7,
+          90
+        ]
+      ],
+      "nodes": {
+        "gate": [
+          0,
+          0
+        ],
+        "south": [
+          0,
+          1.13
+        ],
+        "sw": [
+          -2.68,
+          1.13
+        ],
+        "w": [
+          -2.68,
+          2.7
+        ],
+        "nw": [
+          -2.68,
+          4.48
+        ],
+        "ne": [
+          2.68,
+          4.48
+        ],
+        "e": [
+          2.68,
+          2.7
+        ],
+        "se": [
+          2.68,
+          1.13
+        ],
+        "object": "object:front",
+        "panels": "panels:front",
+        "rest": "rest:front"
+      },
+      "edges": [
+        [
+          "gate",
+          "south",
+          1.15
+        ],
+        [
+          "south",
+          "sw",
+          1.1
+        ],
+        [
+          "sw",
+          "w",
+          1.1
+        ],
+        [
+          "w",
+          "nw",
+          1.1
+        ],
+        [
+          "nw",
+          "ne",
+          1.1
+        ],
+        [
+          "ne",
+          "e",
+          1.1
+        ],
+        [
+          "e",
+          "se",
+          1.1
+        ],
+        [
+          "se",
+          "south",
+          1.1
+        ],
+        [
+          "south",
+          "object",
+          1.1
+        ],
+        [
+          "w",
+          "panels",
+          1.1
+        ],
+        [
+          "e",
+          "rest",
+          1.1
+        ]
+      ],
+      "require": [
+        "object",
+        "panels",
+        "rest"
+      ],
+      "negative": [
+        "two-way viewing loop",
+        [
+          -1.18,
+          3.78,
+          1.18,
+          5.15
+        ]
+      ],
+      "purpose": "choose either return around a physically inset, protected exhibit; different resting and viewing faces; graph has one cycle"
+    }
+  },
+  "render": {
+    "three": "180",
+    "renderer": {
+      "antialias": true,
+      "pixelRatio": 1,
+      "viewport": [
+        1280,
+        720
+      ],
+      "outputColorSpace": "SRGBColorSpace",
+      "toneMapping": "ACESFilmicToneMapping",
+      "shadowMapType": "PCFSoftShadowMap"
+    },
+    "seed": 42,
+    "paletteResolution": 128,
+    "environment": {
+      "mode": "fixed sky PMREM only",
+      "captureResolution": 128,
+      "perWorldProbe": false,
+      "intensity": 0.8,
+      "skyOptions": {
+        "resolution": 128,
+        "radius": 190,
+        "zenith": "#9fbebf",
+        "horizon": "#e7e7cf",
+        "ground": "#6b7569",
+        "sunDirection": [
+          -0.65,
+          0.85,
+          0.5
+        ],
+        "sunColor": "#ffe2b0",
+        "sunIntensity": 3
+      },
+      "fog": {
+        "type": "FogExp2",
+        "color": 14410446,
+        "density": 0.006
+      }
+    },
+    "keyDirection": [
+      -0.65,
+      0.85,
+      0.5
+    ],
+    "shadowMapSize": 2048,
+    "looks": {
+      "pbr": {
+        "exposure": 1.1,
+        "key": 3.6,
+        "fill": 0.65,
+        "ambient": 0.12,
+        "hemisphere": 0.85,
+        "skyColor": 14216423,
+        "groundColor": 9409140
+      },
+      "toon": {
+        "exposure": 1.05,
+        "key": 1.7,
+        "fill": 0.35,
+        "ambient": 0.19,
+        "hemisphere": 0.65,
+        "skyColor": 14804436,
+        "groundColor": 10723975
+      },
+      "clay": {
+        "exposure": 1.1,
+        "material": {
+          "type": "MeshStandardMaterial",
+          "color": 12105912,
+          "roughness": 1,
+          "metalness": 0
+        },
+        "rig": "same pbr",
+        "purpose": "geometry diagnostic only"
+      }
+    },
+    "formationProfiles": {
+      "pbr": {
+        "stone": {
+          "pattern": "aggregate",
+          "space": "attached",
+          "parameters": {
+            "wavelengths": [
+              0.28,
+              0.09,
+              0.23
+            ],
+            "colorLow": [
+              0.9,
+              0.92,
+              0.94
+            ],
+            "colorHigh": [
+              1.08,
+              1.06,
+              1.04
+            ],
+            "heightAmplitude": 0.0012,
+            "warp": 0.5,
+            "roughnessAmplitude": 0.16,
+            "seed": 1164157376,
+            "frameMatrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        "coating": {
+          "pattern": "aggregate",
+          "space": "attached",
+          "parameters": {
+            "wavelengths": [
+              0.006,
+              0.006,
+              0.006
+            ],
+            "colorLow": [
+              0.97,
+              0.97,
+              0.97
+            ],
+            "colorHigh": [
+              1.03,
+              1.03,
+              1.03
+            ],
+            "heightAmplitude": 8e-05,
+            "warp": 0.25,
+            "roughnessAmplitude": 0.1,
+            "seed": 1756225461,
+            "frameMatrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        "wood": {
+          "pattern": "fibres",
+          "space": "attached",
+          "parameters": {
+            "wavelengths": [
+              0.024,
+              0.08,
+              1.5
+            ],
+            "colorLow": [
+              0.75,
+              0.72,
+              0.65
+            ],
+            "colorHigh": [
+              1.12,
+              1.1,
+              1.05
+            ],
+            "heightAmplitude": 0.0003,
+            "warp": 0.4,
+            "roughnessAmplitude": 0.18,
+            "seed": 2941836582,
+            "frameMatrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        "metal": {
+          "pattern": "bands",
+          "space": "attached",
+          "parameters": {
+            "wavelengths": [
+              0.01,
+              0.3,
+              0.15
+            ],
+            "colorLow": [
+              0.96,
+              0.96,
+              0.96
+            ],
+            "colorHigh": [
+              1.04,
+              1.04,
+              1.04
+            ],
+            "heightAmplitude": 2e-05,
+            "warp": 0.08,
+            "roughnessAmplitude": 0.12,
+            "seed": 2689826499,
+            "frameMatrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      "toon": {
+        "stone": {
+          "pattern": "aggregate",
+          "space": "attached",
+          "parameters": {
+            "wavelengths": [
+              0.28,
+              0.09,
+              0.23
+            ],
+            "colorLow": [
+              0.9,
+              0.92,
+              0.94
+            ],
+            "colorHigh": [
+              1.08,
+              1.06,
+              1.04
+            ],
+            "heightAmplitude": 0.0012,
+            "warp": 0.5,
+            "roughnessAmplitude": 0,
+            "seed": 1164157376,
+            "frameMatrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        "coating": {
+          "pattern": "aggregate",
+          "space": "attached",
+          "parameters": {
+            "wavelengths": [
+              0.006,
+              0.006,
+              0.006
+            ],
+            "colorLow": [
+              0.97,
+              0.97,
+              0.97
+            ],
+            "colorHigh": [
+              1.03,
+              1.03,
+              1.03
+            ],
+            "heightAmplitude": 8e-05,
+            "warp": 0.25,
+            "roughnessAmplitude": 0,
+            "seed": 1756225461,
+            "frameMatrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        "wood": {
+          "pattern": "fibres",
+          "space": "attached",
+          "parameters": {
+            "wavelengths": [
+              0.024,
+              0.08,
+              1.5
+            ],
+            "colorLow": [
+              0.75,
+              0.72,
+              0.65
+            ],
+            "colorHigh": [
+              1.12,
+              1.1,
+              1.05
+            ],
+            "heightAmplitude": 0.0003,
+            "warp": 0.4,
+            "roughnessAmplitude": 0,
+            "seed": 2941836582,
+            "frameMatrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        "metal": {
+          "pattern": "bands",
+          "space": "attached",
+          "parameters": {
+            "wavelengths": [
+              0.01,
+              0.3,
+              0.15
+            ],
+            "colorLow": [
+              0.96,
+              0.96,
+              0.96
+            ],
+            "colorHigh": [
+              1.04,
+              1.04,
+              1.04
+            ],
+            "heightAmplitude": 2e-05,
+            "warp": 0.08,
+            "roughnessAmplitude": 0.12,
+            "seed": 2689826499,
+            "frameMatrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      }
+    },
+    "newStockProfileApplied": false,
+    "orbit": {
+      "horizontal": "full 2pi",
+      "minDistance": 4,
+      "maxDistance": 36,
+      "minPolarAngle": 0.08,
+      "maxPolarAngle": 1.48
+    },
+    "cameraClip": {
+      "near": 0.1,
+      "far": 420
+    }
+  }
+}

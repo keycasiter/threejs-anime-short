@@ -82,17 +82,18 @@ export function buildRegionalArchitecture(T,{
     box(category,`${name}.left`,[(w-holeW)/2,h,holeD],[-(w+holeW)/4,y,0],s);
     box(category,`${name}.right`,[(w-holeW)/2,h,holeD],[(w+holeW)/4,y,0],s);
   }
+  const entryBinding={jambs:[],reveals:[]};
   const entranceWidth=Math.min(width*.24,program==='workshop'?2.8:1.8);
   const entranceHeight=height*(program==='workshop'?.77:.65);
   const entrance={position:[0,0,depth/2+wallThickness/2],normal:[0,0,1],width:entranceWidth,height:entranceHeight};
   function doorway(span){
     const side=(span-entranceWidth)/2,z=depth/2;
     for(const sign of [-1,1]){
-      box('walls',`entry.jamb.${sign}`,[side,height,wallThickness],[sign*(entranceWidth+side)/2,height/2,z],wall);
-      box('doors',`entry.reveal.${sign}`,[.065,entranceHeight,wallThickness+.1],[sign*(entranceWidth/2+.0325),entranceHeight/2,z],wood);
+      entryBinding.jambs.push(box('walls',`entry.jamb.${sign}`,[side,height,wallThickness],[sign*(entranceWidth+side)/2,height/2,z],wall));
+      entryBinding.reveals.push(box('doors',`entry.reveal.${sign}`,[.065,entranceHeight,wallThickness+.1],[sign*(entranceWidth/2+.0325),entranceHeight/2,z],wood));
     }
-    box('walls','entry.header',[entranceWidth,height-entranceHeight,wallThickness],[0,(height+entranceHeight)/2,z],wall);
-    box('doors','entry.lintel',[entranceWidth+.13,.09,wallThickness+.1],[0,entranceHeight+.045,z],wood);
+    entryBinding.header=box('walls','entry.header',[entranceWidth,height-entranceHeight,wallThickness],[0,(height+entranceHeight)/2,z],wall);
+    entryBinding.lintel=box('doors','entry.lintel',[entranceWidth+.13,.09,wallThickness+.1],[0,entranceHeight+.045,z],wood);
     // Doors rest open against the inside jambs; no invisible solid across entry.
     for(const sign of [-1,1]){
       const leaf=entranceWidth*.46;
@@ -138,7 +139,7 @@ export function buildRegionalArchitecture(T,{
   }
   function entryDeck(){
     const deckWidth=Math.max(entranceWidth+.45,width*.34),reach=.85;
-    box('floors','entry.deck',[deckWidth,.13,reach],[0,-.065,depth/2+reach/2],stone);
+    entryBinding.deck=box('floors','entry.deck',[deckWidth,.13,reach],[0,-.065,depth/2+reach/2],stone);
     solidEdge('roofs','entry.canopy',deckWidth,.8,.1,entranceHeight+.26,metal);
     for(const object of parts.roofs.filter(o=>o.name.startsWith(`${program}.entry.canopy`)))object.position.z=depth/2+.35;
     for(const x of [-deckWidth*.42,deckWidth*.42])beam('entry.canopy-brace',[x,entranceHeight-.25,depth/2+.1],[x,entranceHeight+.21,depth/2+.65],.027);
@@ -262,6 +263,7 @@ export function buildRegionalArchitecture(T,{
     const footprint=Object.freeze({minX:bounds.min.x,maxX:bounds.max.x,minZ:bounds.min.z,maxZ:bounds.max.z,width:bounds.max.x-bounds.min.x,depth:bounds.max.z-bounds.min.z});
     const spec=Object.freeze({program,width,depth,height,wallThickness,roofOverhang,courtyardRatio,
       materialMapping:'scalar-only; maps:false',windows:Object.freeze(windows.map(w=>Object.freeze(w)))});
-    return {root,spec,parts,footprint,entrances:[entrance],materialBindings,boundarySources,dispose};
+    entryBinding.port=entrance;Object.freeze(entryBinding.jambs);Object.freeze(entryBinding.reveals);Object.freeze(entryBinding);
+    return {root,spec,parts,footprint,entrances:[entrance],entryBinding,materialBindings,boundarySources,dispose};
   }catch(error){try{dispose();}catch(cleanupError){throw new AggregateError([error,cleanupError],'Regional construction/cleanup failed');}throw error;}
 }
