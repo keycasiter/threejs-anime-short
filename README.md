@@ -37,7 +37,7 @@ README记录维护范围与验证，不作为普通制作的历史指令加载�
 
 变更：在`references/render-contracts.md`补充CSS尺寸、drawing buffer、RT像素、`gl_FragCoord`和`gl_PointCoord`边界；新增诊断材质与独立r187实验，使用既有renderer状态捕获/恢复，不更改作品渲染路径或题材规则。
 
-验证：r187 Chrome/WebGL2离屏target非零viewport+scissor、Canvas DPR1、DPR2及DPR2 resize共4条GPU读回全部通过；像素中心误差≤2/255，Node机制专项2/2，Skill校验、语法与差异检查通过。证据见[R100坐标校准记录](../threejs-r187-replay-r100/坐标校准记录.md)。这只是机制/像素资格；不代表跨GPU/WebGPU、整场画质、Agent泛化或关闭跨域课程记录22。
+验证：r187 Chrome/WebGL2离屏target非零viewport+scissor、Canvas DPR1、DPR2及DPR2 resize共4条GPU读回全部通过；像素中心误差≤2/255，Node机制专项2/2，Skill校验、语法与差异检查通过。提交`31ec6d6`已推送并完成远端SHA回读。证据见[R100坐标校准记录](../threejs-r187-replay-r100/坐标校准记录.md)。这只是机制/像素资格；不代表跨GPU/WebGPU、整场画质、Agent泛化或关闭跨域课程记录22。
 
 ### 2026-11-13｜R99 当前提交 r187 全量复验
 
