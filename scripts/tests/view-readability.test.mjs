@@ -131,7 +131,7 @@ for (const orthographic of [true,false]) {
       // Ordinary depth keeps both its blocker ray and far-clip behavior.
       assert.equal(inspect({camera:c,points,occluders:[blocker]}).samples[0].status,
         scenario==='blocked surface' ? 'occluded' : 'clipped');
-      // r180's public reversedDepth is getter-only. This is the real state change
+      // r187's public reversedDepth is getter-only. This is the real state change
       // WebGLRenderer performs before updateProjectionMatrix(), not a mocked flag.
       c._reversedDepth=true;c.updateProjectionMatrix();c.updateMatrixWorld();
       assert.equal(c.reversedDepth,true);assert.equal(c.coordinateSystem,T.WebGLCoordinateSystem);

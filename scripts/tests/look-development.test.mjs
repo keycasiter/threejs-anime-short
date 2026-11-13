@@ -39,7 +39,7 @@ test('toon uses a real nearest-filter stepped light ramp and keeps reflective me
 
 test('toon direct irradiance is zero behind the light and stepped only on its lit hemisphere',()=>{
  const p=palette({mode:'toon'}),ramp=p.get('coating',{maps:false}).gradientMap;
- // r180 getGradientIrradiance maps NdotL -1..1 to texture coordinate 0..1.
+ // r187 getGradientIrradiance maps NdotL -1..1 to texture coordinate 0..1.
  const sample=dot=>ramp.image.data[Math.min(ramp.image.width-1,Math.floor((dot*.5+.5)*ramp.image.width))]/255;
  for(const dot of [-1,-.75,-.5,-.25,-.001])assert.equal(sample(dot),0,`back-facing direct light at ${dot}`);
  const lit=[.01,.3,.6,.9].map(sample);
@@ -101,7 +101,7 @@ test('sky and ground indirect light reaches an owned hemisphere source and mutab
  assert.equal(r.hemisphere.color.getHex(),0xaabbff);assert.equal(r.hemisphere.groundColor.getHex(),0x685746);assert.equal(r.ambient.intensity,.07);
  r.hemisphere.intensity=.9;r.hemisphere.color.set(0xffeecc);r.hemisphere.groundColor.set(0x332211);
  assert.deepEqual(r.readState().hemisphere,{skyColor:0xffeecc,groundColor:0x332211,intensity:.9});
- // r180 Light.dispose is a no-op for lights without shadows; it emits no event.
+ // r187 Light.dispose is a no-op for lights without shadows; it emits no event.
  const scene=new T.Scene();scene.add(r.root);let releases=0;const dispose=r.hemisphere.dispose;
  r.hemisphere.dispose=function(){releases++;return dispose.call(this);};
  r.dispose();r.dispose();assert.equal(releases,1);assert.equal(r.hemisphere.parent,null);

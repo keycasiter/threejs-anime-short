@@ -470,7 +470,7 @@
     }
   },
   "render": {
-    "three": "180",
+    "three": "187",
     "renderer": {
       "antialias": true,
       "pixelRatio": 1,

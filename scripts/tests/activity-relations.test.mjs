@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pathToFileURL} from 'node:url';
 import {resolve,dirname} from 'node:path';
+import design from '../../assets/examples/activity-design.json' with {type:'json'};
 const T=await import(pathToFileURL(resolve(process.env.THREE_MODULE)).href);
 const {mergeGeometries}=await import(pathToFileURL(resolve(dirname(process.env.THREE_MODULE),'../examples/jsm/utils/BufferGeometryUtils.js')).href);
 let api={},geometry={};
@@ -9,6 +10,9 @@ try{api=await import('../../assets/examples/activity-relations.mjs');}catch(e){i
 try{geometry=await import('../../assets/examples/activity-geometry.mjs');}catch(e){if(e.code!=='ERR_MODULE_NOT_FOUND')throw e;}
 const material=new T.MeshStandardMaterial();
 const build=(kind,patch={})=>{assert.equal(typeof api.buildActivityRelation,'function','rebuildable real activity factory');return api.buildActivityRelation(T,{kind,mergeGeometries,materialFor:()=>material,...patch});};
+test('activity design locks to the same Three revision as its executable renderer',()=>{
+ assert.equal(design.render.three,T.REVISION);
+});
 for(const kind of ['exchange','exhibit'])test(`${kind}: complete measured original relation, real entry and final provenance`,()=>{
  const a=build(kind);try{const s=a.readState();assert.equal(s.qualification.status,'complete');assert.equal(s.members.length,3);assert.equal(s.snapshot.members.length,3);assert.equal(s.snapshot.routes.length,kind==='exchange'?9:14);
  assert.equal(s.recipe.edges.length,kind==='exchange'?6:11);assert.equal(s.recipe.edges.length-s.recipe.nodes.length+1,kind==='exchange'?0:1);
