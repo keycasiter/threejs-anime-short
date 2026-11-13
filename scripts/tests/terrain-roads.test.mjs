@@ -50,6 +50,23 @@ test('actual opposite cell diagonal and shuffled triangle index order are honore
  for(const [x,z]of [[-2.7,-2.2],[-1.1,2.3],[2.1,1.2],[.4,-1.3]])near(down(road.geometry,x,z)[0].point.y,down(g,x,z)[0].point.y+.12);
  road.dispose();g.dispose();
 });
+test('opt-in constrained triangulated terrain preserves an irregular shared surface for road draping',()=>{
+ const g=new T.BufferGeometry(),positions=[-4,0,-4, 4,0,-4, 4,0,4, -4,0,4, 0,1,0];
+ g.setAttribute('position',new T.Float32BufferAttribute(positions,3));g.setIndex([0,4,1,1,4,2,2,4,3,3,4,0]);
+ const support=api.prepareTerrainRoadSupport({terrainGeometry:g,topology:'triangulated'}),road=api.createTerrainRoadSource(T,{terrainSupport:support,surfaces:[{outer:[[-3,-2],[3,-2],[3,2],[-3,2]]}]});
+ assert.ok(road.stats.topTriangles>0);for(const [x,z]of [[-2.5,-1.5],[2.5,-1.5],[2.5,1.5],[-2.5,1.5],[0,0]]){const ground=down(g,x,z)[0],top=down(road.geometry,x,z)[0];assert.ok(ground&&top);near(top.point.y,ground.point.y+.12);near(road.query(x,z).topHeight,top.point.y);}
+ assert.equal(road.query(3.5,0),null);road.dispose();support.dispose();const standalone=make(g,{terrainTopology:'triangulated'});assert.ok(standalone.query(0,0));standalone.dispose();g.dispose();
+});
+test('constrained triangulated support rejects holes, overlaps, reversed faces, and exhausted indexes',()=>{
+ const create=()=>{const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute([-4,0,-4,4,0,-4,4,0,4,-4,0,4,0,1,0],3));g.setIndex([0,4,1,1,4,2,2,4,3,3,4,0]);return g;};
+ const valid=create();assert.throws(()=>api.prepareTerrainRoadSupport({terrainGeometry:valid,topology:'triangulated',maxSpatialReferences:1}),/maxSpatialReferences/i);assert.throws(()=>api.prepareTerrainRoadSupport({terrainGeometry:valid,topology:'unsupported'}),/topology/i);valid.dispose();
+ const cases=[
+  [0,4,1,1,4,2,2,4,3],
+  [0,4,1,1,4,2,2,4,3,3,4,0,0,4,2],
+  [1,4,0,1,4,2,2,4,3,3,4,0]
+ ];
+ for(const index of cases){const g=create();g.setIndex(index);assert.throws(()=>api.prepareTerrainRoadSupport({terrainGeometry:g,topology:'triangulated'}));g.dispose();}
+});
 test('ownership is detached, disposal idempotent, bad inputs and budgets reject without touching borrowed terrain',()=>{
  const g=terrain(),before=[...g.attributes.position.array],index=[...g.index.array],surfaces=[{outer:rectangle.map(p=>[...p]),holes:[]}];let terrainDisposals=0;g.addEventListener('dispose',()=>terrainDisposals++);const road=make(g,{surfaces});let disposals=0;road.geometry.addEventListener('dispose',()=>disposals++);surfaces[0].outer[0][0]=999;assert.ok(road.query(-2.5,-2.5));road.dispose();road.dispose();assert.equal(disposals,1);assert.equal(terrainDisposals,0);assert.deepEqual([...g.attributes.position.array],before);assert.deepEqual([...g.index.array],index);
  for(const patch of [{thickness:0},{thickness:NaN},{epsilon:0},{maxCandidatePairs:1},{maxOutputTriangles:1},{maxTerrainTriangles:1},{maxRoadVertices:3},{maxCandidatePairs:Infinity},{surfaces:[{outer:[[0,0],[2,2],[0,2],[2,0]],holes:[]}]},{surfaces:[{outer:rectangle,holes:[[[2,2],[4,2],[4,4],[2,4]]]}]},{surfaces:[{outer:rectangle},{outer:[[-1,-1],[2,-1],[2,2],[-1,2]]}]},{surfaces:[{outer:[[-5,-1],[0,-1],[0,1],[-5,1]]}]}])assert.throws(()=>make(g,patch));

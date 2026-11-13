@@ -2,7 +2,25 @@
 
 `createTerrainRoadSource` in `assets/environment/terrain-roads.mjs` turns the **union surfaces** from `compileWorldLayout(...).levels[n].surfaces` into one road geometry. Each road polygon triangle is intersected with the actual terrain triangles before it is lifted. Junctions have one top surface; holes stay empty. Only outer and hole boundaries receive walls.
 
-The terrain must be the final indexed, single-valued regular XZ grid, such as the output of `createHeightFieldGeometry`. Terrain, road surfaces and generated road share one coordinate space with +Y up. The grid may have varying heights, either diagonal in each cell, and reordered vertices/triangles. The function validates the complete grid and actual cell diagonals. Use a noninstanced, nonnormalized, noninterleaved xyz `BufferAttribute` (itemSize 3) backed by `Float32Array`, with its default `gpuType: THREE.FloatType`. This helper deliberately accepts that subset of r187 WebGL position formats; convert other encodings before preparation. In particular, `Float64Array` can be read on the CPU but cannot be uploaded by the r187 WebGL attribute path. The element index must be a nonnormalized, noninterleaved scalar unsigned `Uint8Array`, `Uint16Array` or `Uint32Array` attribute; itemSize 2 and floating/signed element layouts reject. Encountered fixed primitive-restart values (`255`, `65535`, `4294967295` for the respective element type) also reject, because WebGL2 treats them as restart markers rather than vertices. Widen a Uint8/Uint16 element buffer to the next supported unsigned type when the grid needs that index; split geometry when Uint32 cannot represent it. It accepts a `BufferGeometry`, not a `Mesh`; transformed mesh objects, partial draw ranges, instanced/morphed geometry, irregular triangulations, bridges, caves and overhangs are unsupported. Apply scene placement to terrain and road together after construction.
+The default terrain contract is a final indexed, single-valued regular XZ grid, such as the output of `createHeightFieldGeometry`. Terrain, road surfaces and generated road share one coordinate space with +Y up. The grid may have varying heights, either diagonal in each cell, and reordered vertices/triangles. The function validates the complete grid and actual cell diagonals. Use a noninstanced, nonnormalized, noninterleaved xyz `BufferAttribute` (itemSize 3) backed by `Float32Array`, with its default `gpuType: THREE.FloatType`. This helper deliberately accepts that subset of r187 WebGL position formats; convert other encodings before preparation. In particular, `Float64Array` can be read on the CPU but cannot be uploaded by the r187 WebGL attribute path. The element index must be a nonnormalized, noninterleaved scalar unsigned `Uint8Array`, `Uint16Array` or `Uint32Array` attribute; itemSize 2 and floating/signed element layouts reject. Encountered fixed primitive-restart values (`255`, `65535`, `4294967295` for the respective element type) also reject, because WebGL2 treats them as restart markers rather than vertices. Widen a Uint8/Uint16 element buffer to the next supported unsigned type when the grid needs that index; split geometry when Uint32 cannot represent it. It accepts a `BufferGeometry`, not a `Mesh`; transformed mesh objects, partial draw ranges, instanced/morphed geometry, bridges, caves and overhangs are unsupported. Apply scene placement to terrain and road together after construction.
+
+## Opt-in constrained triangulated surface
+
+For a terrain producer that inserts local constraint vertices, `prepareTerrainRoadSupport` accepts `topology: 'triangulated'`; a standalone road can pass `terrainTopology: 'triangulated'` to `createTerrainRoadSource`. This is an opt-in consumer for an already-built `BufferGeometry`, not a constrained triangulation generator. It requires unique XZ vertices, upward nondegenerate triangles, consistent manifold edge winding, a complete rectangular outer boundary, no holes or projected overlaps, and one height at every XZ point. Every condition is checked before road construction. The default remains `regular-grid`; do not switch a producer until its final geometry satisfies this stricter contract.
+
+The constrained path builds a bounded uniform XZ lookup over the authored triangles, then shares the same road clipping, Float32 support proof, query and disposal behavior as the regular-grid path. This lets a producer insert vertices near hard terrain constraints while retaining the original large-scale mesh, but does not itself protect or preserve any preexisting road, prove a grading design, or generate the terrain. Compare source/target vertex and face ranges in the terrain producer before claiming old geometry is preserved.
+
+```js
+const terrainSupport = prepareTerrainRoadSupport({
+  terrainGeometry, topology: 'triangulated',
+  maxTerrainTriangles: 262144,
+  maxValidationPairs: 1000000,
+  maxSpatialReferences: 1000000
+});
+const road = createTerrainRoadSource(THREE, {
+  terrainSupport, surfaces, thickness: .12
+});
+```
 
 ```js
 import * as THREE from 'three';
@@ -100,7 +118,9 @@ Surfaces must already be disjoint unions, with simple unclosed `outer` rings and
 | `maxRoadVertices` | `4096` | integer `1..8192`, total outer/hole vertices |
 | `maxCandidatePairs` | `1000000` | integer `1..4000000`, road/terrain triangle candidates |
 | `maxOutputTriangles` | `500000` | integer `1..1000000`, all top/underside/wall triangles |
-| `maxValidationPairs` | `1000000` | integer `1..8000000`, boundary/subdivision/coverage/support checks |
+| `maxValidationPairs` | `1000000` | integer `1..8000000`, boundary/subdivision/coverage/support checks per road |
+| `maxTerrainValidationPairs` | `4000000` | integer `1..8000000`, projected overlap checks while preparing `topology: 'triangulated'` |
+| `maxTerrainSpatialReferences` | `4000000` | integer `1..8000000`, triangle-to-XZ-bin index references for `topology: 'triangulated'` |
 
 There are at most 128 surface components and 128 holes per component. All position components are finite and within ±100000. Input ring edges must exceed `8 * epsilon`; grid spacing must exceed `16 * epsilon`. Regular grid coordinates allow the normal Float32 rounding tolerance. Near-coincident features can still collapse at Float32 precision. Epsilon controls input short-edge/grid validation; it is not a road expansion or a clipping bin. Internal clipping uses a much smaller, coordinate-scaled double-precision tolerance. Quantized geometry is independently checked for projection, coverage, closed boundaries and support. A scene needing finer detail should use a shared local coordinate frame and rebuild both terrain and roads there.
 

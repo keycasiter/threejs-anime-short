@@ -22,7 +22,7 @@
 | 融合体/负形的网格 | [implicit-surface](../assets/geometry/implicit-surface.mjs)；同上 | 同版MC、负内正外场、采样/容量/退化检查；场可非SDF，有限采样不保证所有薄特征 |
 | 无叠面道路与分层区域 | [world-layout](../assets/scene/world-layout.mjs)；[空间生成](world-layout.md) | 并集/孔、完整足迹、显式层间连接；不自动设计城市、房间或导航 |
 | 真实原型沿街组团 | [frontage-neighborhood](frontage-neighborhood.md) | 用途/完整包络/入口→混合组团pose与诊断；不自动设计用途或保证填满 |
-| 道路贴合最终地表 | [terrain-roads](terrain-roads.md) | 并集/孔×实际规则地表三角→有厚度网格/查询；单值地表，非桥洞/多层 |
+| 道路贴合最终地表 | [terrain-roads](terrain-roads.md) | 并集/孔×实际地表三角→有厚度网格/查询；默认规则网格，另有严格校验的显式共形三角输入；单值地表，非桥洞/多层 |
 | PBR与分段受光材料 | [look-palette](../assets/materials/look-palette.mjs)；[材光接力](look-development.md) | 程序材料/Toon梯度、独立基色、缓存/归属；复杂透明/体积/GI另选方案 |
 | 同源直射灯与影区 | [lighting-rig](../assets/rendering/lighting-rig.mjs)；同上 | 方向/Box3派生主辅光/target/阴影；反射环境另接原[天空/PMREM](../assets/rendering/scene-environment.mjs) |
 | 近远与观察任务 | [projected-detail](../assets/runtime/projected-detail.mjs)、[observation-view](../assets/scene/observation-view.mjs) | 投影尺度/迟滞、真实样点的候选机位排序；不是完整HLOD或自动构图评分 |
@@ -138,7 +138,7 @@ PMREM输出使用锁版r187归属边界：同步调用期间只临时包装当�
 | 区域与道路图 | 连通分量、用途、实际道路并集及暴露端口 | 主场/外围端口朝向、全宽、高程和行走净空一致；图连通还需实体通路验证 |
 | 正式原型工厂 | 真实完整包络、入口、结构规格和局部地面基准 | 包络包括屋檐/deck；变体改变实际内部结构/体量，材料身份独立 |
 | [混合沿街组团](frontage-neighborhood.md) | `prototypeId/regionId/edgeId/groupId`、世界pose、完整足迹、入口和诊断 | 全轮廓资格与邻件防重叠成立；检查用途覆盖、组间留白与预算余项，再实例化 |
-| 最终地形与[贴地道路](terrain-roads.md) | 保留面→最终网格→同一份地形三角索引→各自的道路/入口查询 | 场景在网格定稿后调用一次 `prepareTerrainRoadSupport({terrainGeometry})`；街网和入口用 `terrainSupport` 借用该索引。先释放道路，再释放共享索引及网格 |
+| 最终地形与[贴地道路](terrain-roads.md) | 保留面→最终网格→同一份地形三角索引→各自的道路/入口查询 | 默认规则网格；明确需要插点时选择`prepareTerrainRoadSupport({terrainGeometry,topology:'triangulated'})`并满足共形/完整域校验。场景定稿后只准备一次，街网和入口借用同一`terrainSupport`。先释放道路，再释放共享索引及网格 |
 | 实例与静态合并 | 真实原型/pose、语义材料槽、观察数据与资源handle | 材质共享仍保留语义；全貌/区域/入口/侧背分别读图，重复数量不代表世界丰富度 |
 
 示例接收两个地面端口：`center` 在当前道路层（Y=0），`normal` 是指向主场外的水平单位向量，`width` 是完整净宽。用法线确定首段走向，用水平横向量确定端面左右边；两端连接时，中心重合、法线相反、左边对应对端右边。近圈街道内须能容纳整宽端面、4 个场景单位的直行段及转向空间；两条路线还须通过平面图不交叉、并集端面完整暴露和网格精度检查。端口平台跟随同一局部方向，并为实际地形网格单元留出支承余量。此例不推断任意主场的障碍物或自动寻找绕行路线。
