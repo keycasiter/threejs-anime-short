@@ -64,7 +64,7 @@ function gridTerrain(g,epsilon,maxTriangles){
  const cell=(x,z)=>cells[Math.max(0,Math.min(nz-1,upper(zs,z)-1))*nx+Math.max(0,Math.min(nx-1,upper(xs,x)-1))];
  function sample(p){const pair=cell(...p);return evaluate(p,pair.find(t=>weights(p,t).every(w=>w>=-1e-10))??pair[0]);}
  function range(a,b,values){return [Math.max(0,Math.min(values.length-2,upper(values,a)-1)),Math.max(0,Math.min(values.length-2,upper(values,b)-1))];}
- return {xs,zs,nx,nz,cells,cell,sample,evaluate,range};
+ return {xs,zs,snapXs:xs,snapZs:zs,nx,nz,cells,cell,sample,evaluate,range};
 }
 
 // Opt-in path for a CPU-authored, conforming heightfield triangulation. The
@@ -80,8 +80,8 @@ function triangulatedTerrain(g,epsilon,maxTriangles,maxValidationPairs,maxSpatia
  if(idx.count%3||idx.count/3>maxTriangles||p.count>maxTriangles*2+4)throw new Error('indexed triangulated terrain required within maxTerrainTriangles');
  const restart=idx.array instanceof Uint8Array?255:idx.array instanceof Uint16Array?65535:4294967295;for(let i=0;i<idx.count;i++)if(idx.array[i]===restart)throw new Error(`terrain index contains WebGL2 fixed primitive restart value ${restart}; widen the unsigned element type or split the grid`);
  if(g.drawRange.start!==0||g.drawRange.count!==Infinity&&g.drawRange.count!==idx.count)throw new Error('partial terrain drawRange is unsupported');
- const vertices=[],coordinateIds=new Set();let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
- for(let i=0;i<p.count;i++){const v=[p.getX(i),p.getY(i),p.getZ(i)];if(!v.every(x=>finite(x)&&Math.abs(x)<=100000))throw new Error('terrain positions must be finite within ±100000');const key=`${v[0]},${v[2]}`;if(coordinateIds.has(key))throw new Error('triangulated terrain requires unique XZ vertices');coordinateIds.add(key);vertices.push(v);minX=Math.min(minX,v[0]);maxX=Math.max(maxX,v[0]);minZ=Math.min(minZ,v[2]);maxZ=Math.max(maxZ,v[2]);}
+ const vertices=[],coordinateIds=new Set(),snapXSet=new Set(),snapZSet=new Set();let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+ for(let i=0;i<p.count;i++){const v=[p.getX(i),p.getY(i),p.getZ(i)];if(!v.every(x=>finite(x)&&Math.abs(x)<=100000))throw new Error('terrain positions must be finite within ±100000');const key=`${v[0]},${v[2]}`;if(coordinateIds.has(key))throw new Error('triangulated terrain requires unique XZ vertices');coordinateIds.add(key);snapXSet.add(v[0]);snapZSet.add(v[2]);vertices.push(v);minX=Math.min(minX,v[0]);maxX=Math.max(maxX,v[0]);minZ=Math.min(minZ,v[2]);maxZ=Math.max(maxZ,v[2]);}
  if(vertices.length<4||idx.count<6)throw new Error('triangulated terrain requires at least four vertices and two faces');
  if(!(maxX-minX>epsilon*16&&maxZ-minZ>epsilon*16))throw new Error('triangulated terrain requires positive XZ bounds');
  const triangles=[],edgeUse=new Map();let sumArea=0;
@@ -106,7 +106,7 @@ function triangulatedTerrain(g,epsilon,maxTriangles,maxValidationPairs,maxSpatia
  function cell(x,z){const ix=Math.max(0,Math.min(nx-1,upperBound(xGrid,x)-1)),iz=Math.max(0,Math.min(nz-1,upperBound(zGrid,z)-1));return cells[iz*nx+ix];}
  const weights=(p,t)=>[cross(t.xz[1],t.xz[2],p)/t.den,cross(t.xz[2],t.xz[0],p)/t.den,cross(t.xz[0],t.xz[1],p)/t.den],evaluate=(p,t)=>{const w=weights(p,t);return {height:w.reduce((s,v,i)=>s+v*t.pts[i][1],0),normal:[...t.normal]};};
  function sample(p){const candidates=cell(...p);for(const t of candidates){if(p[0]<t.minX-epsilon||p[0]>t.maxX+epsilon||p[1]<t.minZ-epsilon||p[1]>t.maxZ+epsilon)continue;const w=weights(p,t);if(w.every(v=>v>=-epsilon))return evaluate(p,t);}throw new Error('terrain query is outside the represented triangulated surface');}
- return {xs:xGrid,zs:zGrid,nx,nz,cells,cell,sample,evaluate,range};
+ return {xs:xGrid,zs:zGrid,snapXs:[...snapXSet].sort((a,b)=>a-b),snapZs:[...snapZSet].sort((a,b)=>a-b),nx,nz,cells,cell,sample,evaluate,range};
 }
 
 // Private data is keyed only by the explicit owner token, never by mutable
@@ -172,8 +172,8 @@ function buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTria
   for(let j=0;j<i;j++){const other=roads[j];disjointBoundaries([s.outer,...s.holes],[other.outer,...other.holes],epsilon,spend);if(filled(s.outer[0],other,epsilon)||filled(other.outer[0],s,epsilon))throw new Error('overlapping road surfaces; supply world-layout union surfaces');}
  }
  const positions=[],normals=[],uvs=[],groups=[],pointCache=new Map(),topFaces=[];
- const anchors=[grid.xs,grid.zs].map((values,axis)=>[...new Set([...values,...roads.flatMap(s=>[s.outer,...s.holes].flatMap(r=>r.map(p=>p[axis])))])].sort((a,b)=>a-b));
- const snap=(value,axis)=>{for(const values of [[grid.xs,grid.zs][axis],anchors[axis]]){const i=upper(values,value);for(const j of [i-1,i])if(j>=0&&j<values.length&&Math.abs(values[j]-value)<=numericEpsilon)return values[j];}return value;};
+ const snapAxes=[grid.snapXs??grid.xs,grid.snapZs??grid.zs],anchors=snapAxes.map((values,axis)=>[...new Set([...values,...roads.flatMap(s=>[s.outer,...s.holes].flatMap(r=>r.map(p=>p[axis])))])].sort((a,b)=>a-b));
+ const snap=(value,axis)=>{for(const values of [snapAxes[axis],anchors[axis]]){const i=upper(values,value);for(const j of [i-1,i])if(j>=0&&j<values.length&&Math.abs(values[j]-value)<=numericEpsilon)return values[j];}return value;};
  const takeCandidates=n=>{if(candidatePairs+n>maxCandidatePairs)throw new Error('maxCandidatePairs exceeded');candidatePairs+=n;};
  function point(p){
   // XZ rounding is part of the representation. Sample the final terrain at

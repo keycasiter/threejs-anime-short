@@ -23,6 +23,7 @@
 | 无叠面道路与分层区域 | [world-layout](../assets/scene/world-layout.mjs)；[空间生成](world-layout.md) | 并集/孔、完整足迹、显式层间连接；不自动设计城市、房间或导航 |
 | 真实原型沿街组团 | [frontage-neighborhood](frontage-neighborhood.md) | 用途/完整包络/入口→混合组团pose与诊断；不自动设计用途或保证填满 |
 | 道路贴合最终地表 | [terrain-roads](terrain-roads.md) | 并集/孔×实际地表三角→有厚度网格/查询；默认规则网格，另有严格校验的显式共形三角输入；单值地表，非桥洞/多层 |
+| 既有网格上的局部地形约束与道路保形 | [constrained-terrain](constrained-terrain.md)；消费端见[terrain-roads](terrain-roads.md) | 规则高度场→凸约束/保护走廊→共形三角网格→最终道路支承；有工作量预算，不覆盖任意输入地形或完整地貌求解 |
 | PBR与分段受光材料 | [look-palette](../assets/materials/look-palette.mjs)；[材光接力](look-development.md) | 程序材料/Toon梯度、独立基色、缓存/归属；复杂透明/体积/GI另选方案 |
 | 同源直射灯与影区 | [lighting-rig](../assets/rendering/lighting-rig.mjs)；同上 | 方向/Box3派生主辅光/target/阴影；反射环境另接原[天空/PMREM](../assets/rendering/scene-environment.mjs) |
 | 近远与观察任务 | [projected-detail](../assets/runtime/projected-detail.mjs)、[observation-view](../assets/scene/observation-view.mjs) | 投影尺度/迟滞、真实样点的候选机位排序；不是完整HLOD或自动构图评分 |
