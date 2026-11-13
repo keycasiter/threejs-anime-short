@@ -172,6 +172,89 @@ export function buildActivityPrototype(T,{id,materialFor,pressFrontOffset=0,pres
    mesh('twisted-blade',loftGeometry(T,rings),'metal');
    const small=[[.23,.63,-.45],[.66,.46,-.40],[.94,.17,-.31]].map(([y,w,x])=>[[-w/2,-.065],[w/2,-.065],[w/2,.065],[-w/2,.065]].map(([u,z])=>[x+u,y,z+.25]));mesh('second-blade',loftGeometry(T,small),'metal');
    for(const x of [-.40,.32])box(`anchor-shoe/${x}`,[.24,.10,.34],[x,.28,.02],'metal');
+  }else if(id==='shadeBed'){
+   // Open planted bed with a genuinely empty soil volume, a continuous
+   // bearing tray, and a real visitor-facing seat edge. Tree crowns are
+   // overlapping low-poly ellipsoids, not a single opaque sphere.
+   box('tray-floor',[4.65,.12,2.09],[0,.06,0],'stone',undefined,true);
+   for(const x of [-2.28,2.28])box(`curb-side/${x}`,[.09,.32,2.09],[x,.16,0],'stone',undefined,true);
+   for(const z of [-1.00,1.00])box(`curb-end/${z}`,[4.56,.32,.09],[0,.16,z],'stone',undefined,true);
+   box('soil',[4.40,.08,1.88],[0,.23,0],'wood');
+   service(box('seat-lip',[1.55,.18,.42],[0,.43,-.85],'stone'));
+   for(const [i,x,z,h] of [[0,-1.72,-.20,2.25],[1,-.20,.34,2.05],[2,1.86,.10,2.65]]){
+    beam(`stem/${i}`,[x,.28,z],[x*.72,h,z*.62],.075,'wood');
+    beam(`limb/${i}/a`,[x*.72,h,z*.62],[x*.48,2.72,z*.62-.16],.042,'wood');
+    beam(`limb/${i}/b`,[x*.72,h,z*.62],[x*.96,2.62,z*.62+.18],.038,'wood');
+   }
+   const crown=(name,pos,r)=>{const g=new T.IcosahedronGeometry(1,1);g.scale(...r);mesh(name,g,'coating',pos);};
+   crown('crown/west',[-1.10,2.91,-.18],[1.25,.85,.87]);
+   crown('crown/east',[1.36,2.91,.19],[.99,.85,.87]);
+   crown('crown/high',[.20,2.94,0],[.85,.82,.78]);
+   for(const [i,x,z] of [[0,-1.60,-.10],[1,.10,.20],[2,1.72,.03]]){
+    box(`root-collar/${i}`,[.24,.08,.24],[x,.32,z],'wood');
+   }
+  }else if(id==='waterBench'){
+   box('plinth',[2.40,.18,1.00],[0,.09,0],'stone',undefined,true);
+   box('trough-bottom',[2.22,.12,.78],[0,.27,0],'stone');
+   for(const x of [-1.08,1.08])box(`trough-side/${x}`,[.12,.47,.78],[x,.50,0],'stone');
+   for(const z of [-.33,.33])box(`trough-end/${z}`,[2.16,.47,.12],[0,.50,z],'stone');
+   // The basin interior is left open; the dark inset is below the .64m rim.
+   box('basin-water',[1.92,.018,.52],[0,.405,0],'metal');
+   service(box('front-rim',[2.40,.10,.14],[0,.64,-.43],'stone'));
+   box('rear-rim',[2.40,.10,.14],[0,.64,.43],'stone');
+   for(const x of [-.96,.96])box(`shelf-bracket/${x}`,[.06,.35,.06],[x,.50,-.46],'metal');
+   box('side-work-shelf',[.38,.08,.42],[.80,.61,-.29],'wood');
+   beam('faucet-riser',[.52,.66,.20],[.52,1.00,.20],.035,'metal');
+   beam('faucet-neck',[.52,1.00,.20],[.52,1.00,-.12],.035,'metal');
+   mesh('spout',new T.CylinderGeometry(.045,.045,.22,10),'metal',[.52,.89,-.12],[Math.PI/2,0,0]);
+   mesh('spout-tip',new T.CylinderGeometry(.035,.035,.10,10),'metal',[.52,1.00,-.12]);
+  }else if(id==='longSeat'){
+   for(const x of [-1.15,1.15])box(`stone-foot/${x}`,[.34,.37,.82],[x,.185,0],'stone',undefined,true);
+   for(let i=0;i<4;i++)box(`seat-slat/${i}`,[3.40,.09,.118],[0,.415,-.26+.059+i*.134],'wood');
+   for(const x of [-1.49,1.49])box(`back-post/${x}`,[.07,.39,.07],[x,.605,.39],'metal');
+   box('rear-rail',[3.40,.14,.10],[0,.73,.42],'wood');
+   box('back-slat',[3.40,.09,.07],[0,.70,.42],'wood');
+   service(box('front-toe',[3.40,.045,.06],[0,.2375,-.44],'metal'));
+  }else if(id==='demoBench'){
+   for(const x of [-1.08,1.08]){
+    box(`trestle-foot/${x}`,[.20,.10,.74],[x,.05,0],'metal',undefined,true);
+    for(const z of [-.27,.27])beam(`trestle-leg/${x}/${z}`,[x,.10,z],[x*.91,.79,z*.82],.055,'wood');
+    beam(`trestle-tie/${x}`,[x,.30,-.28],[x,.30,.28],.035,'metal');
+   }
+   service(box('worktop',[2.62,.10,.86],[0,.81,0],'wood'));
+   box('joint-specimen',[.48,.46,.32],[0,1.09,.06],'stone');
+   box('specimen-tenon',[.18,.16,.48],[0,1.16,.06],'wood');
+   for(const x of [-.27,.27])box(`cradle-stop/${x}`,[.07,.14,.38],[x,.93,.06],'metal');
+  }else if(id==='sampleStand'){
+   box('stone-foot',[1.05,.16,.78],[0,.08,0],'stone',undefined,true);
+   box('reading-deck',[.88,.10,.62],[0,.21,0],'wood');
+   for(const x of [-.34,.34]){
+    beam(`inclined-reader/${x}`,[x,.27,-.22],[x,.74,.13],.035,'metal');
+    box(`support-pad/${x}`,[.18,.06,.15],[x,.74,.13],'wood');
+   }
+   // Forked specimen: central stem, two separated prongs and visible end grain.
+   beam('joint-stem',[0,.78,.03],[0,1.03,.03],.065,'wood');
+   beam('joint-prong/left',[0,.93,.03],[-.19,1.03,.03],.045,'wood');
+   beam('joint-prong/right',[0,.93,.03],[.19,1.03,.03],.045,'wood');
+   box('cutaway-end',[.26,.025,.16],[0,1.047,.03],'stone');
+   box('end-grain-cap',[.12,.01,.12],[0,1.095,.03],'metal');
+   service(box('front-ledge',[.88,.06,.12],[0,.30,-.33],'metal'));
+  }else if(id==='courtIsland'){
+   box('support-tray',[2.60,.12,1.35],[0,.06,0],'stone',undefined,true);
+   box('soil-bed',[2.30,.20,1.05],[0,.22,0],'wood');
+   for(const x of [-1.20,1.20])box(`seat-edge/${x}`,[.20,.46,1.30],[x,.35,0],'stone');
+   for(const z of [-.585,.585])box(`seat-edge/${z}`,[2.20,.46,.18],[0,.35,z],'stone');
+   service(box('visitor-seat-lip',[1.55,.12,.22],[0,.58,-.565],'stone'));
+   for(const [i,x] of [[0,-.46],[1,.46]]){
+    beam(`canopy-stem/${i}`,[x,.30,0],[x*.86,1.66,0],.075,'wood');
+    beam(`canopy-limb/${i}/front`,[x*.86,1.66,0],[x*1.15,2.19,-.18],.046,'wood');
+    beam(`canopy-limb/${i}/back`,[x*.86,1.66,0],[x*.72,2.12,.22],.043,'wood');
+    beam(`canopy-brace/${i}`,[x,.52,.40],[x*.86,1.66,0],.035,'metal');
+   }
+   const canopy=(name,pos,r)=>{const g=new T.IcosahedronGeometry(1,1);g.scale(...r);mesh(name,g,'coating',pos);};
+   canopy('split-crown/left',[-.58,2.28,-.02],[.64,.47,.60]);
+   canopy('split-crown/right',[.58,2.28,-.02],[.64,.47,.60]);
+   for(const x of [-.70,.70])box(`root-bearing/${x}`,[.22,.08,.24],[x,.34,.05],'stone');
   }
   root.updateWorldMatrix(true,true);
   const serviceRow=scanActivityDraws(T,root,{space:'local'}).find(r=>r.object===portBinding.object),top=serviceRow.box[4],front=serviceRow.box[2];

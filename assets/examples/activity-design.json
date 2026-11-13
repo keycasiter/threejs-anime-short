@@ -207,6 +207,48 @@
       "aperture": 1.2,
       "geometry": "2.60×1.35×.23 stone plinth with public front coping; bent asymmetric double-sided metal blade twists through +18°, four trapezoidal cross sections (height/width) [.23,.91],[.72,1.74],[1.86,.83],[2.54,.28]; second blade .94 high set back .25; slab has a real bottom",
       "role": "walk around silhouette"
+    },
+    "shadeBed": {
+      "envelope": [4.7, 3.76, 2.12],
+      "port": [0, 0, -1.06],
+      "aperture": 1.25,
+      "geometry": "open 4.65×2.09 stone curb and bearing tray, soil at .23m, front seat lip, three branching stems, overlapping low-poly crowns with clear silhouette gaps; all foliage remains within the authored 4.70×2.12m plan envelope",
+      "role": "shaded gathering edge"
+    },
+    "waterBench": {
+      "envelope": [2.4, 1.05, 1.0],
+      "port": [0, 0, -0.5],
+      "aperture": 1.2,
+      "geometry": "stepped stone trough with real open basin, .64m front rim, recessed inset, neck and spout over the bowl to 1.05m, short side work shelf within the complete envelope",
+      "role": "draw water for planted edge"
+    },
+    "longSeat": {
+      "envelope": [3.4, 0.8, 0.94],
+      "port": [0, 0, -0.47],
+      "aperture": 1.2,
+      "geometry": "slatted 3.40m seat with .46m sitting surface, back to .80m, two stone bearing feet at x=±1.15 and registered front edge",
+      "role": "face common shaded apron"
+    },
+    "demoBench": {
+      "envelope": [2.62, 1.32, 0.86],
+      "port": [0, 0, -0.43],
+      "aperture": 1.2,
+      "geometry": "2.62×.86 braced timber demonstration table at .86m with an independent reversible timber joint specimen reaching 1.32m; registered real working edge",
+      "role": "visible assembly demonstration"
+    },
+    "sampleStand": {
+      "envelope": [1.05, 1.1, 0.78],
+      "port": [0, 0, -0.39],
+      "aperture": 0.8,
+      "geometry": "stone base, two inclined reading supports and a dimensioned forked timber joint with visible end grain; no signboard",
+      "role": "compare material or joint with demonstration"
+    },
+    "courtIsland": {
+      "envelope": [2.6, 2.75, 1.35],
+      "port": [0, 0, -0.675],
+      "aperture": 1.2,
+      "geometry": "stone support tray with open planted center, raised .45m seat edge and two braced stems with a split canopy; canopy and roots remain within the 2.60×1.35m plan envelope",
+      "role": "face a shared living island, stop and greet"
     }
   },
   "relations": {

@@ -23,11 +23,11 @@ for(const kind of ['exchange','exhibit'])test(`${kind}: complete measured origin
  if(kind==='exhibit'){assert.equal(s.hosts.find(h=>h.id==='fill').maxY,Math.fround(-.1));assert.equal(s.recipe.edges.filter(e=>e.a==='nw'||e.b==='nw').length,2);}
  }finally{a.dispose();}assert.equal(a.readState().disposed,true);assert.throws(()=>a.getRuntime(),/disposed/);
 });
-test('six prototypes are actual distinct construction units and keep authored dimensions',()=>{
+test('all twelve frozen activity prototypes are distinct measured construction units with authored dimensions',()=>{
  assert.equal(typeof geometry.buildActivityPrototype,'function');
- const ids=['feedCradle','partsRack','coveredPress','foldScreen','restSeat','foldIsland'];
- const dims=[[4,1.52,1.5],[2.3,2.05,.9],[4.2,3.2,2.82],[2.7,2.34,1.3],[2.6,.85,.94],[2.6,2.54,1.35]];
- ids.forEach((id,i)=>{const p=geometry.buildActivityPrototype(T,{id,materialFor:()=>material});try{const f=geometry.measureActivityPrototype(T,p);assert.equal(f.parts.length,p.units.length);assert.ok(f.parts.length<=96);assert.ok(f.bearings.length<=16);const e=f.envelope;for(let k=0;k<3;k++)assert.ok(Math.abs((e[k+3]-e[k])-dims[i][k])<2e-6,`${id} dimension ${k}`);assert.ok(f.ports[0].servicePosition[1]>0);assert.equal(f.ports[0].kind,'serve');assert.ok(f.ports[0].witness.length>=2);}finally{p.dispose();}});
+ const ids=['feedCradle','partsRack','coveredPress','foldScreen','restSeat','foldIsland','shadeBed','waterBench','longSeat','demoBench','sampleStand','courtIsland'];
+ const dims=[[4,1.52,1.5],[2.3,2.05,.9],[4.2,3.2,2.82],[2.7,2.34,1.3],[2.6,.85,.94],[2.6,2.54,1.35],[4.7,3.76,2.12],[2.4,1.05,1.0],[3.4,.8,.94],[2.62,1.32,.86],[1.05,1.1,.78],[2.6,2.75,1.35]];
+ ids.forEach((id,i)=>{const p=geometry.buildActivityPrototype(T,{id,materialFor:()=>material});try{const f=geometry.measureActivityPrototype(T,p);assert.equal(f.parts.length,p.units.length);assert.ok(f.parts.length<=96);assert.ok(f.bearings.length<=16);const e=f.envelope;for(let k=0;k<3;k++)assert.ok(Math.abs((e[k+3]-e[k])-dims[i][k])<2e-6,`${id} dimension ${k}: ${e}`);assert.ok(f.ports[0].servicePosition[1]>0);assert.equal(f.ports[0].kind,'serve');assert.ok(f.ports[0].witness.length>=2);}finally{p.dispose();}});
 });
 test('actual draw semantics: indexed scalar groups, array slots, drawRange and omitted triangle detection',()=>{
  assert.equal(typeof geometry.scanActivityDraws,'function');const g=new T.BoxGeometry(),root=new T.Group(),m=new T.Mesh(g,material);root.add(m);
