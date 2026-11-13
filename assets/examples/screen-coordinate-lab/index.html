@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Three.js · 窗口坐标校准</title>
+  <link rel="icon" href="data:,">
+  <!-- Copy the locked Three.js r187 build/ folder here; do not commit vendor files. -->
+  <script type="importmap">{"imports":{"three":"./vendor/build/three.module.js"}}</script>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#10171d;color:#e5e9e7;font:14px/1.55 system-ui,sans-serif}
+    main{max-width:900px;margin:40px auto;padding:0 24px}h1{font-size:28px;margin:0 0 8px}
+    p{max-width:760px;color:#b8c5c7}canvas{display:block;background:#17232c;border:1px solid #46535a}
+    pre{padding:16px;background:#1a242b;white-space:pre-wrap;overflow-wrap:anywhere}
+    [data-status="PASS"]{color:#9ce2b5}[data-status="FAIL"]{color:#ffad9f}
+  </style>
+</head>
+<body><main>
+  <h1>窗口坐标校准</h1>
+  <p>同一个片元探针分别验证 r187 画布的 DPR=1/2、调整尺寸后的 drawing buffer，以及带非零 viewport/scissor 的 render target。颜色的红绿通道编码 viewport 内像素位置；结果直接读真实 GPU 像素。</p>
+  <pre id="result" data-status="RUNNING">正在创建 WebGL 像素探针……</pre>
+</main><script type="module" src="./main.mjs"></script></body></html>

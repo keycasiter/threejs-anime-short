@@ -8,6 +8,37 @@
 
 每项效果记录：数据源、单位/坐标、何时绑定、实际消费者、可见检查。声明了uniform或写了公式，但未正确绑定的功能不可记为已实现。不同模块的writeOut签名、alpha含义和pass状态不一致时先统一或适配，不能凭同名函数混用。
 
+## 屏幕 / 窗口坐标实测校准
+
+先写清着色器读的是哪一种坐标：模型/世界坐标描述物体位置，裁剪坐标是透视除法前的齐次坐标，窗口坐标是当前framebuffer的像素坐标，`gl_PointCoord`是单个点图元内部的局部坐标。它们不能共用同一组“画布宽高”。
+
+在 WebGL/GLSL 中，`gl_FragCoord` 是 `vec4` 窗口坐标：默认原点在左下角，左下像素中心为`(0.5,0.5)`；`.xy`已经包含活动 framebuffer viewport 的像素偏移。它不等于CSS坐标、NDC或`gl_PointCoord`。`gl_PointCoord`用于粒子/点精灵内部的0..1裁形，不表示画布位置。
+
+Three.js r187 的画布 viewport API以逻辑像素传入，并乘当前 pixel ratio；render target 则直接使用 target 自己的像素 viewport/scissor，target pixel ratio 为1。画布用`renderer.getDrawingBufferSize()`读取真实输出尺寸，用`renderer.getCurrentViewport(new THREE.Vector4())`读取已换算的活动 viewport；RT使用当前 target 的 viewport。resize、DPR、分屏和离屏pass切换后，必须同步更新对应shader uniform，不得固定写死`800×600`或误用CSS宽高。
+
+最小着色器应把活动窗口像素换算成当前 viewport 的局部比例：
+
+```glsl
+uniform vec4 uViewportPixels; // x, y, width, height：当前 framebuffer 像素
+void main() {
+  vec2 localPixels = gl_FragCoord.xy - uViewportPixels.xy;
+  vec2 uv = localPixels / uViewportPixels.zw;
+  outColor = vec4(uv, 0.0, 1.0);
+}
+```
+
+uniform须在实际绘制前从活动输出读取，而不是由上层重复推算：
+
+```js
+const viewportPixels = renderer.getCurrentViewport(new THREE.Vector4());
+material.uniforms.uViewportPixels.value.copy(viewportPixels);
+renderer.render(scene, camera);
+```
+
+如果调用方自己绑定 target 或 viewport，应由那个 pass 显式传入其像素矩形；恢复renderer状态不能代替坐标正确性。局部0..1映射还须决定是否减半像素/是否使用pixel center；不要靠视觉微调掩盖半像素偏差。
+
+校准至少包含一条真实像素链：非零viewport原点、目标右上区域、viewport外像素、scissor裁边；画布路径覆盖DPR1/2与resize，离屏路径覆盖target真实尺寸。用`readRenderTargetPixels`或同一帧内`gl.readPixels`比较GPU结果与理论像素中心值。查看状态和uniform数值只证明输入接线，不能证明GPU采用了同一坐标。可运行的r187探针：[窗口坐标校准实验](../assets/examples/screen-coordinate-lab/index.html)与[材质构造器](../assets/rendering/screen-coordinate-probe.mjs)。
+
 ## 可选G-buffer
 
 | 信息 | 消费方式与约束 |
