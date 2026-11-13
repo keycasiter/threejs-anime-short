@@ -128,13 +128,17 @@ test('probe ownership adapter rejects another revision or missing native protoco
 test('post toggles installed real passes, scales render buffers and preserves borrowed resources',()=>{
  const r=renderer(),scene=new T.Scene(),camera=new T.PerspectiveCamera();let disposed=0;
  class Pass{constructor(){this.enabled=true;}dispose(){disposed++;}}
+ class Outline extends Pass{constructor(size,s,c){super();this.scene=s;this.camera=c;this.selectedObjects=[];}}
  class EffectComposer{constructor(rr,target){this.target=target;this.passes=[];this.renders=0;}addPass(p){this.passes.push(p);}setPixelRatio(v){this.ratio=v;}setSize(w,h){this.target.setSize(w*this.ratio,h*this.ratio);}render(){this.renders++;}dispose(){this.target.dispose();}}
- const addons={EffectComposer,RenderPass:Pass,OutputPass:Pass,GTAOPass:Pass,UnrealBloomPass:Pass,SMAAPass:Pass};
- const post=createPostPipeline(T,addons,{renderer:r,scene,camera,width:100,height:50,pixelRatio:2,ao:true,bloom:false});
- assert.deepEqual(post.readState().order,['scene','ao','output','smaa']);assert.equal(post.composer.target.width,200);
+ const addons={EffectComposer,RenderPass:Pass,OutputPass:Pass,GTAOPass:Pass,UnrealBloomPass:Pass,OutlinePass:Outline,SMAAPass:Pass};
+ assert.throws(()=>createPostPipeline(T,addons,{renderer:r,scene,camera,outlineStrength:Infinity}),/outline strength/);
+ const post=createPostPipeline(T,addons,{renderer:r,scene,camera,width:100,height:50,pixelRatio:2,ao:true,bloom:false,outline:true});
+ assert.deepEqual(post.readState().order,['scene','ao','outline','output','smaa']);assert.equal(post.composer.target.width,200);
+ assert.equal(post.passes.outline.scene,scene);assert.equal(post.passes.outline.camera,camera);
  post.setEnabled('bloom',true);post.setEnabled('ao',false);assert.equal(post.passes.bloom.enabled,true);assert.equal(post.passes.ao.enabled,false);
+ post.setEnabled('outline',false);assert.equal(post.passes.outline.enabled,false);
  post.setExposure(1.7);assert.equal(r.toneMappingExposure,1.7);post.resize(120,80,1.5);assert.equal(post.composer.target.width,180);post.render();assert.equal(post.composer.renders,1);
- assert.throws(()=>post.setEnabled('output',false));assert.throws(()=>post.resize(0,1));post.dispose();post.dispose();assert.equal(disposed,5);assert.equal(r.toneMapping,T.ACESFilmicToneMapping);assert.equal(r.toneMappingExposure,.7);assert.throws(()=>post.render(),/disposed/);
+ assert.throws(()=>post.setEnabled('output',false));assert.throws(()=>post.resize(0,1));post.dispose();post.dispose();assert.equal(disposed,6);assert.equal(r.toneMapping,T.ACESFilmicToneMapping);assert.equal(r.toneMappingExposure,.7);assert.throws(()=>post.render(),/disposed/);
 });
 
 test('failed post pass restores framebuffer and viewport so a caller can render again',()=>{

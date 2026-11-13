@@ -15,6 +15,7 @@
 | 核心三线与完整组合 | [核心接力](references/core-systems.md)、[连续形体](references/continuous-surfaces.md)、[分层空间](references/world-layout.md)、[材光](references/look-development.md)、[运行入口](assets/examples/core-lab/index.html) |
 | 区域用途与真实构造 | [区域程序](references/region-programs.md)、[同源工厂](assets/examples/region-programs.mjs)；真实足迹、到达面、材料语义与互补观察随同一设计接力 |
 | 空间、相机构图与世界规则 | [空间搭建](references/scene-layout.md)、[相机操作](references/camera-interaction.md) |
+| 点击选择与对象级反馈 | [选择状态接力](references/selection-feedback.md)、[选择实验](assets/examples/selection-lab/index.html) |
 | 形体与真实关系 | [构造](references/procedural-construction.md)、[几何配方](references/geometry-recipes.md)、[分布](references/detail-distribution.md) |
 | 表面与表现 | [表面](references/surface-detail.md)、[渲染](references/rendering-choices.md)、[效果代码](references/effect-recipes.md)、[坐标响应](references/coordinate-response.md) |
 | 实际工具与运行 | [工具目录](references/production-toolkit.md)、[运行/规模](references/motion-and-scale.md)、[条件库接线](references/library-integration.md) |
@@ -30,6 +31,14 @@ README记录维护范围与验证，不作为普通制作的历史指令加载�
 维护执行引导与比较版本时读[分层测评](references/skill-evaluation.md)。它保留执行、正确性、视觉和交付的独立判断及完整A/B设计，不自动扩展普通制作任务。
 
 ## 迭代记录
+
+### 2026-11-13｜R101 选择状态与可见反馈接力
+
+依据：课程机制对账中的下一项共享机制为稳定选择ID与实际可见反馈；当前只有Raycaster、相机、后期管线等零散依赖，没有完整约定最近可见命中、不可选遮挡、业务ID映射和退出清理。
+
+变更：新增对象级选择控制器，连接完整场景最近命中、稳定ID、对象根与实际OutlinePass；扩展后期管线在OutputPass前安装选择轮廓，并提供真实可操作实验和验收方法。说明同一合批Mesh内多个语义部位需拆分或采用真实ID缓冲，不能靠faceIndex冒充OutlinePass选择。
+
+验证：r187相关Node行为/后期/离线检查25/25通过；本地浏览器实测未注册遮挡、目标/第二对象选择、真实OutlinePass轮廓和清空；离线闭包18个本地模块、无远程依赖；Skill格式、`node --check`与`git diff --check`通过。四条重复来源记录获得限定本地方法资格；未重跑798项完整套件，不证明大规模拾取、同Mesh局部ID、跨GPU、完整作品交互或画质提升。详细记录见[R101资格记录](../threejs-r187-selection-r101/选择反馈资格记录.md)。
 
 ### 2026-11-13｜R100 通用窗口与投影坐标校准
 
