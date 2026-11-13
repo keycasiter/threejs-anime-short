@@ -58,7 +58,7 @@ export function createLookPalette(T, options={}) {
   }
   function ramp() {
     if(!gradient){
-      // r180 maps NdotL -1..1 to texture coordinate 0..1 and does not
+      // r187 maps NdotL -1..1 to texture coordinate 0..1 and does not
       // multiply by max(NdotL, 0) afterwards. Keep the unlit hemisphere
       // free of direct light; indirect/fill light supplies dark-side detail.
       // Raw radiance multipliers, not encoded display colors. Nearest sampling

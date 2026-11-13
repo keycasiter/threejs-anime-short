@@ -23,7 +23,7 @@ const snap=g=>JSON.stringify({attributes:Object.fromEntries(Object.entries(g.att
 let g=plane(), before=snap(g);
 let out=await prepareGeometry(g,{operation:'mikk',negateSign:false});
 assert.equal(snap(g),before); assert.equal(g.index.count,6); assert.equal(out.index,null); assert.equal(out.name,'fixture'); assert.equal(out.userData.intent,g.userData.intent); assert.deepEqual(out.groups,g.groups); assert.ok(out.boundingBox && out.boundingSphere); assert.equal(out.userData.geometryQueries,'rebuild');
-assert.equal(MikkTSpace.isReady,true); assert.ok(MikkTSpace.wasm.memory instanceof WebAssembly.Memory);
+assert.equal(MikkTSpace.isReady,true); assert.equal(typeof MikkTSpace.generateTangents,'function'); await MikkTSpace.ready;
 for(const mirrored of [false,true]) {
  g=plane(); if(mirrored) for(let i=0;i<g.attributes.uv.count;i++) g.attributes.uv.setX(i,-g.attributes.uv.getX(i));
  const a=await prepareGeometry(g,{operation:'mikk',negateSign:false}), b=await prepareGeometry(g,{operation:'mikk',negateSign:true});
@@ -34,7 +34,7 @@ const duplicate=()=>{ const g=plane().toNonIndexed(); g.setAttribute('color',new
 g=duplicate(); before=snap(g); out=await prepareGeometry(g,{operation:'weld',tolerance:1e-4}); assert.notEqual(out,g); assert.equal(out.attributes.position.count,4); assert.equal(snap(g),before); assert.deepEqual([...out.attributes.color.array],[128,64,255,128,64,255,128,64,255,128,64,255]); near(out.attributes.color.getX(0),128/255);
 g=duplicate(); g.setAttribute('signed',new THREE.Int8BufferAttribute(Array(6).fill(-128),1,true));
 out=await prepareGeometry(g,{operation:'weld',tolerance:1e-4});
-assert.equal(g.attributes.signed.array[0],-128); assert.equal(out.attributes.signed.array[0],-127);
+assert.equal(g.attributes.signed.array[0],-128); assert.equal(out.attributes.signed.array[0],-128);
 near(g.attributes.signed.getX(0),-1); near(out.attributes.signed.getX(0),-1);
 for(const name of ['uv','normal','formation']) {g=duplicate(); if(name==='formation')g.setAttribute(name,new THREE.Float32BufferAttribute([0,0,0,1,0,0],1)); else g.attributes[name].setX(3,0.37); out=await prepareGeometry(g,{operation:'weld',tolerance:1e-4}); assert.ok(out.attributes.position.count>4,name);}
 for(const mutate of [g=>g.setDrawRange(3,3),g=>g.morphAttributes.position=[g.attributes.position.clone()],g=>g.setAttribute('extra',new THREE.Float32BufferAttribute(new Float32Array(20),5)),g=>g.attributes.position.setX(0,1e10),g=>g.setAttribute('extra',new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(new Float32Array(12),3),3,0))]) {g=plane(); mutate(g); await assert.rejects(prepareGeometry(g,{operation:'weld',tolerance:1e-4}));}
@@ -96,8 +96,8 @@ for(const operation of ['weld','crease','mikk']) test(`review I3 ${operation} pr
   }
   loaded.computeBoundingBox();assert.deepEqual(loaded.boundingBox.getSize(new THREE.Vector3()).toArray(),[3,2,0]);
   if(operation==='mikk')assert.equal(loaded.attributes.tangent.itemSize,4);
-  // Native r180 JSON omits gpuType: in-memory preservation is not transport preservation.
-  assert.equal(result.attributes.region.gpuType,THREE.IntType);assert.equal(loaded.attributes.region.gpuType,THREE.FloatType);
+  // r187 BufferAttribute JSON now carries gpuType through ObjectLoader.
+  assert.equal(result.attributes.region.gpuType,THREE.IntType);assert.equal(loaded.attributes.region.gpuType,THREE.IntType);
   assert.equal(snap(g),before);assert.equal(g.type,'PlaneGeometry');assert.equal(g.parameters.width,3);
  } finally {restored?.geometry.dispose();restored?.material.dispose();mesh?.material.dispose();result?.dispose();g.dispose();}
 });

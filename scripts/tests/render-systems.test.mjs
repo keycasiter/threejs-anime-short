@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {targetState} from './fixtures/r180-target-state.mjs';
+import {targetState} from './fixtures/r187-target-state.mjs';
 import assert from 'node:assert/strict';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
@@ -28,9 +28,9 @@ test('sky recapture replaces real applied texture, excludes solar disk and frees
  const r=renderer(),targets=[];let fail=false,seenCapture=false;
  class CubeCamera extends T.Group{update(rr,s){seenCapture=s.children[0].material.uniforms.capture.value===1;if(fail){r.setRenderTarget(null);r.setScissorTest(false);r.autoClear=false;r.toneMapping=T.NoToneMapping;throw Error('capture failure');}}}
  class PMREMGenerator extends T.PMREMGenerator{
-  _allocateTargets(){const rt=super._allocateTargets();rt.released=0;rt.addEventListener('dispose',()=>rt.released++);targets.push(rt);return rt;}
+  _allocateTarget(){const rt=super._allocateTarget();rt.released=0;rt.addEventListener('dispose',()=>rt.released++);targets.push(rt);return rt;}
   fromScene(){assert.fail('sky must use owned cube capture, not native fromScene');}
-  _textureToCubeUV(){}_applyPMREM(){}
+  _textureToCubemap(){}_applyPMREM(){}
  }
  const sky=createSkyEnvironment({...T,CubeCamera,PMREMGenerator},{renderer:r}),scene=new T.Scene(),before=state(r);sky.apply(scene);const prior=scene.environment;
  sky.setSun([1,2,3]);sky.capture();assert.notEqual(scene.environment,prior);assert.equal(scene.environment,sky.texture);assert.equal(targets[0].released,1);assert.equal(seenCapture,true);
@@ -48,9 +48,9 @@ test('sky owned cube path retains old state on allocation/conversion/blur/callba
  }}
  class PMREMGenerator extends T.PMREMGenerator{
   constructor(...args){super(...args);this.released=0;generators.push(this);}
-  _allocateTargets(){if(phase==='allocation')throw Error('sky allocation failure');const rt=super._allocateTargets();rt.released=0;rt.addEventListener('dispose',()=>rt.released++);outputs.push(rt);return rt;}
+  _allocateTarget(){if(phase==='allocation')throw Error('sky allocation failure');const rt=super._allocateTarget();rt.released=0;rt.addEventListener('dispose',()=>rt.released++);outputs.push(rt);return rt;}
   fromScene(){assert.fail('native _sceneToCubeUV hidden transient path must never run');}
-  _textureToCubeUV(){r.setRenderTarget(outputs.at(-1));r.autoClear=false;if(phase==='conversion')throw Error('sky conversion failure');if(phase==='callback')r.debug.onShaderError();}
+  _textureToCubemap(){r.setRenderTarget(outputs.at(-1));r.autoClear=false;if(phase==='conversion')throw Error('sky conversion failure');if(phase==='callback')r.debug.onShaderError();}
   _applyPMREM(){if(phase==='blur')throw Error('sky blur failure');}
   dispose(){super.dispose();this.released++;generatorReleased++;}
  }
@@ -59,7 +59,7 @@ test('sky owned cube path retains old state on allocation/conversion/blur/callba
  for(const failure of ['cube','allocation','conversion','blur','callback']){
   phase=failure;const count=outputs.length,cubeCount=cubes.length;assert.throws(()=>sky.capture(),new RegExp('sky .*'+failure+'|sky '+failure));
   const allocates=!['cube','allocation'].includes(failure);assert.equal(outputs.length,count+(allocates?1:0));if(allocates)assert.equal(outputs.at(-1).released,1);
-  assert.equal(cubes.length,cubeCount+1);assert.equal(cubes.at(-1).released,1);assert.equal(generators.at(-1).released,1);assert.equal(Object.hasOwn(generators.at(-1),'_allocateTargets'),false);
+  assert.equal(cubes.length,cubeCount+1);assert.equal(cubes.at(-1).released,1);assert.equal(generators.at(-1).released,1);assert.equal(Object.hasOwn(generators.at(-1),'_allocateTarget'),false);
   assert.equal(sky.texture,prior);assert.equal(scene.environment,prior);assert.equal(sky.readState().captures,1);assert.equal(outputs[0].released,0);assert.equal(r.debug.onShaderError,oldCallback);assert.equal(r.debug.checkShaderErrors,true);assert.deepEqual(state(r),before);
  }
  phase=null;sky.capture();assert.equal(sky.readState().captures,2);assert.equal(outputs[0].released,1);assert.equal(scene.environment,outputs.at(-1).texture);assert.equal(generators.length,7);assert.equal(generatorReleased,7);assert.deepEqual(state(r),before);
@@ -81,21 +81,21 @@ test('probe forces full clear for a new cube and restores all clear flags on suc
   const r=renderer(),scene=new T.Scene();for(const key of ['autoClear','autoClearColor','autoClearDepth','autoClearStencil'])r[key]=false;
   const before=[r.autoClear,r.autoClearColor,r.autoClearDepth,r.autoClearStencil];let seen=0,released=0;
   class CubeCamera extends T.Group{update(rr){seen++;assert.deepEqual([rr.autoClear,rr.autoClearColor,rr.autoClearDepth,rr.autoClearStencil],[true,true,true,true]);if(fail)throw Error('clear failure');}}
-  class PMREMGenerator extends T.PMREMGenerator{_textureToCubeUV(){}_applyPMREM(){}dispose(){super.dispose();released++;}}
+  class PMREMGenerator extends T.PMREMGenerator{_textureToCubemap(){}_applyPMREM(){}dispose(){super.dispose();released++;}}
   if(fail)assert.throws(()=>captureEnvironmentProbe({...T,CubeCamera,PMREMGenerator},{renderer:r,scene}),/clear failure/);
   else captureEnvironmentProbe({...T,CubeCamera,PMREMGenerator},{renderer:r,scene}).dispose();
   assert.equal(seen,1);assert.equal(released,1);assert.deepEqual([r.autoClear,r.autoClearColor,r.autoClearDepth,r.autoClearStencil],before);
  }
 });
 
-test('r180 probe owns native PMREM output before conversion or blur can throw',()=>{
+test('r187 probe owns native PMREM output before conversion or blur can throw',()=>{
  for(const [phase,releaseThrows] of [['conversion',false],['blur',false],['conversion',true]]){
   const r=renderer(),scene=new T.Scene(),before=state(r),outputs=[];let generatorReleased=0,cubeReleased=0;
   class CubeCamera extends T.Group{update(){}}
   class WebGLCubeRenderTarget extends T.WebGLCubeRenderTarget{constructor(...args){super(...args);this.addEventListener('dispose',()=>cubeReleased++);}}
   class PMREMGenerator extends T.PMREMGenerator{
-   _allocateTargets(){const output=super._allocateTargets();output.released=0;output.addEventListener('dispose',()=>{output.released++;if(releaseThrows)throw Error('intentional failed output release');});outputs.push(output);return output;}
-   _textureToCubeUV(texture,output){assert.ok(this._lodPlanes.length);assert.ok(this._pingPongRenderTarget.isRenderTarget);assert.ok(this._blurMaterial.isMaterial);assert.equal(output,outputs[0]);r.setRenderTarget(output);r.autoClear=false;if(phase==='conversion')throw Error('allocated conversion failure');}
+   _allocateTarget(){const output=super._allocateTarget();output.released=0;output.addEventListener('dispose',()=>{output.released++;if(releaseThrows)throw Error('intentional failed output release');});outputs.push(output);return output;}
+   _textureToCubemap(texture){assert.equal(texture.isCubeTexture,true);assert.ok(this._cubeSize>=16);r.setRenderTarget(outputs[0]);r.autoClear=false;if(phase==='conversion')throw Error('allocated conversion failure');}
    _applyPMREM(){throw Error('allocated blur failure');}
    dispose(){super.dispose();generatorReleased++;}
   }
@@ -104,23 +104,23 @@ test('r180 probe owns native PMREM output before conversion or blur can throw',(
  }
 });
 
-test('first r180 probe native allocation initializes LOD/ping-pong and restores the instance method',()=>{
+test('first r187 probe native allocation is owned before filtering and restores the instance method',()=>{
  const r=renderer(),scene=new T.Scene(),outputs=[];let generator,allocator;
  class CubeCamera extends T.Group{update(){}}
  class PMREMGenerator extends T.PMREMGenerator{
-  constructor(...args){super(...args);generator=this;allocator=this._allocateTargets;}
-  _allocateTargets(){const output=super._allocateTargets();outputs.push(output);return output;}
-  _textureToCubeUV(texture,output){assert.notEqual(this._allocateTargets,allocator);assert.equal(output,outputs[0]);assert.ok(this._lodPlanes.length);assert.ok(this._pingPongRenderTarget);assert.ok(this._blurMaterial);}_applyPMREM(){}
+  constructor(...args){super(...args);generator=this;allocator=this._allocateTarget;}
+  _allocateTarget(){const output=super._allocateTarget();outputs.push(output);return output;}
+  _textureToCubemap(texture){assert.notEqual(this._allocateTarget,allocator);assert.ok(this._cubeSize>=16);}_applyPMREM(){}
  }
  const probe=captureEnvironmentProbe({...T,CubeCamera,PMREMGenerator},{renderer:r,scene,resolution:150});
- const output=outputs[0];assert.equal(outputs.length,1);assert.equal(probe.texture,output.texture);assert.equal(output.width,384);assert.equal(output.height,512);assert.equal(output.depthBuffer,false);
- assert.equal(output.texture.mapping,T.CubeUVReflectionMapping);assert.equal(output.texture.type,T.HalfFloatType);assert.equal(output.texture.format,T.RGBAFormat);assert.equal(output.texture.colorSpace,T.LinearSRGBColorSpace);assert.equal(output.texture.generateMipmaps,false);assert.equal(generator._allocateTargets,allocator);assert.equal(Object.hasOwn(generator,'_allocateTargets'),false);probe.dispose();
+ const output=outputs[0];assert.equal(outputs.length,1);assert.equal(probe.texture,output.texture);assert.equal(output.width,256);assert.equal(output.height,256);assert.equal(output.depthBuffer,false);
+ assert.equal(output.texture.mapping,T.CubeReflectionMapping);assert.equal(output.texture.isCubeTexture,true);assert.equal(output.texture.isPMREMTexture,true);assert.equal(output.texture.type,T.HalfFloatType);assert.equal(output.texture.format,T.RGBAFormat);assert.equal(output.texture.colorSpace,T.LinearSRGBColorSpace);assert.equal(output.texture.generateMipmaps,false);assert.equal(output.texture.mipmaps.length,6);assert.equal(generator._allocateTarget,allocator);assert.equal(Object.hasOwn(generator,'_allocateTarget'),false);probe.dispose();
 });
 test('probe ownership adapter rejects another revision or missing native protocol without fallback',()=>{
  const r=renderer(),scene=new T.Scene();let conversions=0;
  class CubeCamera extends T.Group{update(){}}
- class PMREMGenerator extends T.PMREMGenerator{_textureToCubeUV(){conversions++;}_applyPMREM(){}}
- assert.throws(()=>captureEnvironmentProbe({...T,REVISION:'179',CubeCamera,PMREMGenerator},{renderer:r,scene}),/r180/);
+  class PMREMGenerator extends T.PMREMGenerator{_textureToCubemap(){conversions++;}_applyPMREM(){}}
+ assert.throws(()=>captureEnvironmentProbe({...T,REVISION:'186',CubeCamera,PMREMGenerator},{renderer:r,scene}),/r187/);
  class Unsupported extends PMREMGenerator{constructor(...args){super(...args);this._setSize=undefined;}}
  assert.throws(()=>captureEnvironmentProbe({...T,CubeCamera,PMREMGenerator:Unsupported},{renderer:r,scene}),/protocol/);assert.equal(conversions,0);
 });
@@ -149,7 +149,7 @@ test('standalone probe owns exactly the finite numeric indices used by its camer
  for(let i=0;i<3;i++)Object.defineProperty(input,i,{get(){reads[i]++;return xyz[i];}});
  input.every=()=>true;input[Symbol.iterator]=function*(){yield 20;yield 30;yield 40;};
  class CubeCamera extends T.Group{update(){view=this.position.toArray();}}
- class PMREMGenerator extends T.PMREMGenerator{_textureToCubeUV(){}_applyPMREM(){}}
+ class PMREMGenerator extends T.PMREMGenerator{_textureToCubemap(){}_applyPMREM(){}}
  const ns={...T,CubeCamera,PMREMGenerator},probe=captureEnvironmentProbe(ns,{renderer:r,scene,position:input});
  try{xyz.fill(NaN);assert.deepEqual(view,[2,7,5]);assert.deepEqual(probe.readState().position,[2,7,5]);assert.deepEqual(reads,[1,1,1]);
   assert.throws(()=>captureEnvironmentProbe(ns,{renderer:r,scene,position:input}),/finite position/);

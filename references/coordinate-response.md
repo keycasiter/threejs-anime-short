@@ -2,7 +2,7 @@
 
 当颜色或出射光要由部件坐标、资产共同坐标或世界位置控制，且需要梯度、局部带或可反向 seek 的扫过效果时，读本页。它是[材质扩展桥](material-shader-bridge.md)上的一个具名配方，复用稳定 uniform、原生材质光照与输出链；不另建 Composer、动画时钟或资源框架。
 
-本地模块为[createCoordinateResponse](../assets/materials/coordinate-response.mjs)。仅支持 Three.js r180 WebGLRenderer 中普通 Mesh、普通 BufferGeometry 和原生 Standard / Physical / Toon 材质。Mesh、geometry、base material 与纹理由调用方持有；响应器仅拥有其派生材质。实例化、蒙皮、morph、位移贴图、材质数组、用户 shader hook 与其他版本明确不在此实现范围。
+本地模块为[createCoordinateResponse](../assets/materials/coordinate-response.mjs)。仅支持 Three.js r187 WebGLRenderer 中普通 Mesh、普通 BufferGeometry 和原生 Standard / Physical / Toon 材质。Mesh、geometry、base material 与纹理由调用方持有；响应器仅拥有其派生材质。实例化、蒙皮、morph、位移贴图、材质数组、用户 shader hook 与其他版本明确不在此实现范围。
 
 ## 先定坐标，再选消费者
 
@@ -19,7 +19,7 @@
 
 ## 可运行接线
 
-以下片段假设当前页面已有锁定 r180 的 `THREE`、`scene`、`renderer` 和相机。`geometry` 的位置是以米计的部件局部坐标；如有源部件共同架，应把 `geometryToFormation` 设置为真实的 mesh→资产架变换。
+以下片段假设当前页面已有锁定 r187 的 `THREE`、`scene`、`renderer` 和相机。`geometry` 的位置是以米计的部件局部坐标；如有源部件共同架，应把 `geometryToFormation` 设置为真实的 mesh→资产架变换。
 
 ```js
 import {createResourceScope} from './assets/runtime/resource-scope.mjs';
@@ -72,12 +72,12 @@ owner.defer(()=>{mesh.material=base;});
 
 ## 复现和验证
 
-[像素实验页](../assets/examples/coordinate-response-lab/index.html)包含原生 r180 可运行入口；将同版本 Three.js `build/` 与 `examples/jsm/` 复制到 `vendor/`，在 skill 根目录运行 `python3 -m http.server 8000` 后打开 `http://localhost:8000/assets/examples/coordinate-response-lab/`。页面会显示 JSON 检查结果；检查不通过时会显示具体失败项。它比较真实 GPU 像素与原生材质参照，覆盖附着梯度、普通输出及单次 OutputPass、未修改邻件、原生受光、双父级世界扫带、绝对时间反向 seek、实际材质重编译、出射光不自发光、XY径向带、不同Z位置和alpha保留。
+[像素实验页](../assets/examples/coordinate-response-lab/index.html)包含原生 r187 可运行入口；将同版本 Three.js `build/` 与 `examples/jsm/` 复制到 `vendor/`，在 skill 根目录运行 `python3 -m http.server 8000` 后打开 `http://localhost:8000/assets/examples/coordinate-response-lab/`。页面会显示 JSON 检查结果；检查不通过时会显示具体失败项。它比较真实 GPU 像素与原生材质参照，覆盖附着梯度、普通输出及单次 OutputPass、未修改邻件、原生受光、双父级世界扫带、绝对时间反向 seek、实际材质重编译、出射光不自发光、XY径向带、不同Z位置和alpha保留。
 
-Node 行为检查使用与 skill 示例相同的已安装 Three.js r180：
+Node 行为检查使用与 skill 示例相同的已安装 Three.js r187：
 
 ```sh
-THREE_MODULE=/path/to/three@0.180.0/build/three.module.js \
+THREE_MODULE=/path/to/three@0.187.0/build/three.module.js \
   node --test scripts/tests/coordinate-response.test.mjs
 ```
 

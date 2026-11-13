@@ -7,7 +7,7 @@
   <style>
     *{box-sizing:border-box}body{margin:0;background:#f1f2ef;color:#26302d;font:14px/1.6 system-ui,sans-serif}main{max-width:1600px;margin:auto;padding:24px 28px}header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}h1{font-size:24px;letter-spacing:.03em;margin:0 0 5px;font-weight:600}p{margin:0;color:#63706a}.intro{max-width:750px}.tag{font-size:11px;letter-spacing:.16em;color:#78827c;margin-bottom:6px}.controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:470px}button{font:inherit;font-size:12px;border:1px solid #c9cfca;background:#fff;color:#35433c;padding:8px 12px;border-radius:4px;cursor:pointer}button[aria-pressed=true]{background:#35433c;color:#fff;border-color:#35433c}button:focus-visible{outline:3px solid #9aae9e;outline-offset:2px}.labels,.facts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px}.labels{margin-top:26px;padding-top:18px;border-top:1px solid #d6dbd5}.labels h2{font-size:14px;font-weight:600;margin:0}.labels p{font-size:12px;margin-top:3px}.number{color:#8b9690;margin-right:9px;font-variant-numeric:tabular-nums}#stage{height:510px;min-height:360px;position:relative;margin-top:6px;border-bottom:1px solid #d6dbd5}canvas{display:block;width:100%;height:100%;touch-action:none}.facts{margin-top:15px;font-size:12px}.facts strong{font-weight:600;display:block;color:#33443b;margin-bottom:4px}.facts output{display:block;color:#6b756e;white-space:pre-line}footer{display:flex;justify-content:space-between;gap:20px;font-size:11px;color:#78827c;margin-top:24px}#error{color:#a83a2e;white-space:pre-wrap}details{font-size:12px;margin-top:18px;color:#63706a}summary{cursor:pointer}.hint{font-size:11px;margin-top:8px} @media(max-width:800px){main{padding:18px 14px}header{display:block}.controls{justify-content:flex-start;margin-top:14px;max-width:none}.labels,.facts{gap:12px}.labels h2{font-size:12px}.labels p{font-size:10px}#stage{height:430px}.facts{font-size:10px}.number{display:block}footer{display:block}}
   </style>
-  <!-- Supply the SAME Three.js r180 runtime here and to the imported utilities.
+  <!-- Supply the SAME Three.js r187 runtime here and to the imported utilities.
        vendor/ is a deployment/test dependency, intentionally not vendored here. -->
   <script type="importmap">{"imports":{"three":"../../../vendor/build/three.module.js","three/addons/":"../../../vendor/examples/jsm/"}}</script>
 </head>
@@ -32,7 +32,7 @@
     <section><strong>结构数据与材料字段</strong><output id="variant-info"></output></section>
   </div>
   <details><summary>读数边界与操作</summary><p>拖动旋转，滚轮缩放。样点来自中央实际三角形的重心，包含目标自身作为遮挡对象。样点比例只用于定位，不是画质分；切换节奏用于比较不同站位的遮挡迁移，不表示全体样点可见比例提高。分段只按记录的构建机位和 CSS 像素目标作局部估计，不承诺最近端误差；旋转只改变观看层，不重建条带。材料候选只改变中央同一 Mesh 的 roughness，光、相机、环境和曝光保持当前状态。放样原型仅示范侧壁，未自动生成端盖。</p></details>
-  <footer><span>机制教学入口 · 不是造型模板或画质标杆</span><span>Three.js r180 · 无外部模型 / 无贴图</span></footer><pre id="error" role="alert"></pre>
+  <footer><span>机制教学入口 · 不是造型模板或画质标杆</span><span>Three.js r187 · 无外部模型 / 无贴图</span></footer><pre id="error" role="alert"></pre>
 </main>
 <script type="module" src="./main.mjs"></script>
 </body>

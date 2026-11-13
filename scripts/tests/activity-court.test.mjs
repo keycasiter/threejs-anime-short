@@ -5,7 +5,7 @@ import { qualifyActivityCourt as qualify } from '../../assets/scene/activity-cou
 import { compileWorldLayout } from '../../assets/scene/world-layout.mjs';
 
 const T=await import(pathToFileURL(process.env.THREE_MODULE));
-assert.equal(T.REVISION,'180','CPU fixtures use the locked real Three r180');
+assert.equal(T.REVISION,'187','CPU fixtures use the locked real Three r187');
 const rect=(a,b,c,d)=>[[a,b],[c,b],[c,d],[a,d]];
 const approx=(a,b,e=1e-8)=>assert.ok(Math.abs(a-b)<=e,`${a} != ${b}`);
 const vector=(a,b)=>b.forEach((v,i)=>approx(a[i],v));

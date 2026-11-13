@@ -32,10 +32,10 @@
 
 | 教程写法/假设 | 当前实现选择 |
 |---|---|
-| 依赖PBR默认值 | 显式写设计值，并查看实际安装版；r180的MeshStandardMaterial默认metalness=0、roughness=1，不照抄教程中的默认0.5 |
+| 依赖PBR默认值 | 显式写设计值，并查看实际安装版；r187的MeshStandardMaterial默认metalness=0、roughness=1，不照抄教程中的默认0.5 |
 | `texture.encoding`、`renderer.outputEncoding` | 现代版本按`texture.colorSpace`、`renderer.outputColorSpace`及实际末端pass接入；JS对象能添加旧属性不证明renderer读取了它 |
 | EffectComposer末端再加旧GammaCorrectionShader | 先确认当前线性/HDR/tone mapping/输出链；Three原生现代Composer通常用OutputPass，不能与旧校正机械叠加 |
-| 调`shadow.radius`就会变柔 | 按灯型与shadowMap.type确认；r180方向光PCFSoft路径不使用此radius，PCF使用。点光路径不同，不能推广到所有灯 |
+| 调`shadow.radius`就会变柔 | 按灯型与shadowMap.type确认；r187方向光PCFSoft路径不使用此radius，PCF使用。点光路径不同，不能推广到所有灯 |
 
 用小型真实像素探针核对字段/通道：编码、粗糙度G、法线方向和阴影参数都应追到消费者；再在目标场景里评效果。
 
@@ -74,9 +74,9 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 | 材料反射带 | 程序HDR环境/PMREM、面积光或真实局部捕获；安排亮暗区域的方向与宽窄 | 金属曲率和粗糙区被揭示，不只增加白色高光 |
 | 主体与空间分层 | 有意的轮廓/背景受光及可信来源，连同相邻背景一起安排 | 焦点与背景分开，换侧背视角仍有有用内容 |
 
-核对当前后端能力再移植DCC布光：本页核对的r180 WebGLRenderer中，`RectAreaLight`需初始化LTC并作用于PBR，具有面积光受光响应而没有投影阴影；反光板间接反弹或独立光线可见性也需相应渲染表示。柔和投影、间接光与宽反射分别选支持它们的方法，不能互相冒充。
+核对当前后端能力再移植DCC布光：本页核对的r187 WebGLRenderer中，`RectAreaLight`需初始化LTC并作用于PBR，具有面积光受光响应而没有投影阴影；反光板间接反弹或独立光线可见性也需相应渲染表示。柔和投影、间接光与宽反射分别选支持它们的方法，不能互相冒充。
 
-校准时固定几何、表面材料、相机、曝光和输出，比较少量有明确意图的照明方案；局部变清楚与整幅更接近目标分别判断。记录局部环境捕获是否随新布光刷新。r180 `WebGLRenderer`的内建Standard/Physical材质中，非空`material.envMap`优先于场景环境，使用`material.envMapIntensity`；回退到`scene.environment`时使用`scene.environmentIntensity`。按实际绑定追查，避免无效调参。选定后重看相邻时刻与观看包络，已有相同证据可继承。
+校准时固定几何、表面材料、相机、曝光和输出，比较少量有明确意图的照明方案；局部变清楚与整幅更接近目标分别判断。记录局部环境捕获是否随新布光刷新。r187 `WebGLRenderer`的内建Standard/Physical材质中，非空`material.envMap`优先于场景环境，使用`material.envMapIntensity`；回退到`scene.environment`时使用`scene.environmentIntensity`。按实际绑定追查，避免无效调参。选定后重看相邻时刻与观看包络，已有相同证据可继承。
 
 ## 从目标响应接到实际消费者
 
@@ -99,7 +99,7 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 
 ### 薄层与透射先选一种表示
 
-先依据目标选择：alpha混合适合受控薄层叠加；需要透射及保留反射响应时使用支持该路径的Physical材质。以本页核对的r180为例，`MeshPhysicalMaterial`启用非零`transmission`时保持`opacity: 1`，不要把它同时当作另一个透射强度旋钮；当前官方材质说明亦有该约定。
+先依据目标选择：alpha混合适合受控薄层叠加；需要透射及保留反射响应时使用支持该路径的Physical材质。以本页核对的r187为例，`MeshPhysicalMaterial`启用非零`transmission`时保持`opacity: 1`，不要把它同时当作另一个透射强度旋钮；当前官方材质说明亦有该约定。
 
 使用thickness/attenuation、clearcoat、sheen或anisotropy图时，按[Physical通道与单位](physical-material-channels.md)区分mesh单位、世界单位、薄膜nm与实际采样通道；只为当前材料启用需要的层。
 
@@ -111,7 +111,7 @@ const glass = new THREE.MeshPhysicalMaterial({
 });
 ```
 
-**先设计透视层两侧的颜色关系。** 把表面反射、穿过材料看到的物体，以及材料内部吸收分开指定：反射内容来自环境/捕获和光源；窗后物体先由其材料与受光成立；有色体积再用实际厚度与吸收距离校准。以r180的Physical透射路径为例，`color`参与透射颜色的乘算；把“反射偏蓝”直接填成蓝色底色，也会过滤窗后的暖物体。目标需要保留窗后原色时，从接近中性的透射底色起步，再设计环境反射；目标本来就是有色玻璃、液体或树脂时，保留需要的过滤，并按厚度检查`attenuationColor`/`attenuationDistance`。不要将一种材料的起始色复制给所有透视层。
+**先设计透视层两侧的颜色关系。** 把表面反射、穿过材料看到的物体，以及材料内部吸收分开指定：反射内容来自环境/捕获和光源；窗后物体先由其材料与受光成立；有色体积再用实际厚度与吸收距离校准。以r187的Physical透射路径为例，`color`参与透射颜色的乘算；把“反射偏蓝”直接填成蓝色底色，也会过滤窗后的暖物体。目标需要保留窗后原色时，从接近中性的透射底色起步，再设计环境反射；目标本来就是有色玻璃、液体或树脂时，保留需要的过滤，并按厚度检查`attenuationColor`/`attenuationDistance`。不要将一种材料的起始色复制给所有透视层。
 
 仅为alpha覆盖混合时再开启相应透明路径，明确排序与depthWrite；不能把所有玻璃统一关闭深度写入。以玻璃后的实际物体作代表样件，先固定灯光切换玻璃状态，再固定玻璃比较局部受光；不要同时调整灯强、颜色、透明度和曝光后归因。接收面本身不亮、透视层压平颜色、环境/曝光压平反差是不同问题。多层玻璃和屏幕外信息仍受下表的捕获限制；该配置不保证完整物理透射或最终品质。
 
@@ -171,7 +171,7 @@ window.renderAt = async t => {
 // 必需资产/字体准备好后，再置 window.__ready=true。
 ```
 
-将模块复制到作品源码并调整相对导入；`THREE`由调用者注入，不自带第二份引擎。已验证路径限定为Three 0.180.0的`WebGLRenderer`、默认canvas target、XR关闭、支持float color attachment、单个可见投影灯的内建颜色链；入口拒绝版本/target/其他投影灯不符。它是可选实现，不能为了使用它强制迁移既有项目。Composer、自定义GLSL、WebGPU、透明canvas及复杂多层透射需另适配。末端统一转换可能改变背景或`toneMapped=false`材质的直出语义，不能预设全场景像素等价；必要时保留独立显示空间合成。
+将模块复制到作品源码并调整相对导入；`THREE`由调用者注入，不自带第二份引擎。当前已验证实现锁定Three 0.187.0的`WebGLRenderer`、默认canvas target、XR关闭、支持float color attachment、单个可见投影灯的内建颜色链；入口拒绝不匹配的版本、target及灯光配置。它是可选实现，不能为了使用它强制迁移既有项目。Composer、自定义GLSL、WebGPU、透明canvas及复杂多层透射需另适配。末端统一转换可能改变背景或`toneMapped=false`材质的直出语义，不能预设全场景像素等价；必要时保留独立显示空间合成。
 
 `samples`整数1–256，`angularRadius`弧度0–0.25；N=1取原灯方向，零半径多样本用于管线等价检查。先比原直出与新管线N=1，再比较同一管线N=1与多样本，避免将MSAA/输出差异误记为采样收益。检查投影接触是否保留、半影是否有分层/闪烁、原阴影相机是否仍覆盖扰动方向；不要把64样本或某个角度定为全项目最低品质。
 

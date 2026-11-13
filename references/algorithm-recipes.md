@@ -152,7 +152,7 @@ const slope=Math.atan(Math.hypot(dx,dz)); // 弧度；进入生境/材料规则
 
 Gerstner单波以水平基点`p=(x,z)`计算`theta=k*dot(d,p)-omega*t+phase`，`k=2π/wavelength`，`d`归一。位移为`[Q*A*d.x*cos(theta), A*sin(theta), Q*A*d.z*cos(theta)]`；每个波都从同一个未变形基点求值。总位置加一次基点，总偏导加一次单位基方向，再以`normalize(dP/dz × dP/dx)`求向上法线。深水色、Fresnel、场景反射、岸边/波峰泡沫和透明深度分别接入，不能由白色条纹代替整套关系。
 
-需要落地多波/浮物、FFT或局部池水时，读[本地波面步骤与可执行求值](water-motion-methods.md#多波面与浮物共源)。Three r180 Water和随包平面镜像均不自动提供波浪位移、粗糙反射与岸线反馈；按[效果配方](effect-recipes.md)补所需渲染层，不统一强加全部水效。
+需要落地多波/浮物、FFT或局部池水时，读[本地波面步骤与可执行求值](water-motion-methods.md#多波面与浮物共源)。Three r187 Water和随包平面镜像均不自动提供波浪位移、粗糙反射与岸线反馈；按[效果配方](effect-recipes.md)补所需渲染层，不统一强加全部水效。
 
 ## 运动、导航与规模
 
@@ -168,4 +168,4 @@ Gerstner单波以水平基点`p=(x,z)`计算`theta=k*dot(d,p)-omega*t+phase`，`
 
 实现绳布、群体或IK时，读[本地运动步骤](water-motion-methods.md#距离约束与绳布更新)：预测/投影/速度重建、lambda/compliance、秒制转向与FABRIK均有定义。物理库是需要完整碰撞/动力学时的可选实现，见[库接线](library-integration.md)。预制tetMesh不作几何来源；历史/随机seek按[运行方法](motion-and-scale.md)落实。
 
-导航/镜头的核心步骤读[本地空间方法](world-methods.md#可达性导航与镜头阻挡)，批次/LOD/GPU历史读[运行与规模](motion-and-scale.md)。区分图查询、二维宽相位、三角精查与可见性。当前instanced-mesh要求Three≥0.186且仅WebGLRenderer，不直接接入r180；按实际瓶颈在[库接线](library-integration.md)选择适配路径。
+导航/镜头的核心步骤读[本地空间方法](world-methods.md#可达性导航与镜头阻挡)，批次/LOD/GPU历史读[运行与规模](motion-and-scale.md)。区分图查询、二维宽相位、三角精查与可见性。当前instanced-mesh要求Three≥0.186且仅WebGLRenderer，不直接接入r187；按实际瓶颈在[库接线](library-integration.md)选择适配路径。

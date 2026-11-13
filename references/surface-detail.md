@@ -57,7 +57,7 @@ representativeMesh.material = surface.material;
 
 ### 仅需要高度与粗糙度数据时
 
-需要从物理尺度高度/粗糙度场生成数据图时，使用同模块的`createSurfaceMaps`，注入同一份THREE。模块以Three 0.180.0验证；字段本身由当前材料设计提供。
+需要从物理尺度高度/粗糙度场生成数据图时，使用同模块的`createSurfaceMaps`，注入同一份THREE。模块以Three 0.187.0验证；字段本身由当前材料设计提供。
 
 ```js
 import { createSurfaceMaps } from './surface-fields.mjs';
@@ -82,7 +82,7 @@ const material = new THREE.MeshStandardMaterial({
 |---|---|
 | `heightAt` | 像素中心采样一次，返回与`physicalSize`同单位的有限高度；默认0，不注入随机数 |
 | `roughnessAt` | 返回0–1的数据乘数；默认1。输入因子为`material.roughness * roughnessMap.g`，标量不是被贴图替代；BRDF随后还可施加下限和几何粗糙度 |
-| `physicalSize` | 一个UV tile的正交切线X/Y长度；x沿u、y沿v。直接使用还需实际shader提供单位正交TBN。r180无tangent时，仅正交不够，UV两轴需等物理比例；支持的indexed position/normal/uv几何可先`computeTangents()`并核对方向。曲面度量、非均匀UV/世界缩放和repeat变化由调用方处理 |
+| `physicalSize` | 一个UV tile的正交切线X/Y长度；x沿u、y沿v。直接使用还需实际shader提供单位正交TBN。r187无tangent时，仅正交不够，UV两轴需等物理比例；支持的indexed position/normal/uv几何可先`computeTangents()`并核对方向。曲面度量、非均匀UV/世界缩放和repeat变化由调用方处理 |
 | `normalMap` | 对物理x/y求差分，编码`normalize(-dh/dx,-dh/dy,1)`；TangentSpaceNormalMap、normalScale=(1,1)。不推导几何切线或改变顶点 |
 | 数据存储 | 两图均RGBA8、NoColorSpace、flipY=false，首行是低v；roughness只写G。RGB8法线有量化，平坦XY为128，存在很小的不可避免偏斜 |
 | 边界/过滤 | clamp边缘用单边差分，repeat用周期邻居且要求输入真正周期；默认生成mipmap并使用线性缩小过滤，不补偿微法线方差到粗糙度 |

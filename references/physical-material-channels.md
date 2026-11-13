@@ -1,6 +1,6 @@
-# 原生PBR通道与单位（r180）
+# 原生PBR通道与单位（r187）
 
-选择 Standard/Physical 表达涂层、纤维、金属或体积透射时，先把目标信号落实到下表的实际消费者，再制作程序数据。这里是锁定 r180 WebGLRenderer 的内置约定；Toon 和自写 ShaderMaterial 依自己的接口工作。参数启用、有效 UV/切线、光源/环境及最终景别共同决定效果，存在某个字段不等于相应材料已经成立。
+选择 Standard/Physical 表达涂层、纤维、金属或体积透射时，先把目标信号落实到下表的实际消费者，再制作程序数据。这里是锁定 r187 WebGLRenderer 的内置约定；Toon 和自写 ShaderMaterial 依自己的接口工作。参数启用、有效 UV/切线、光源/环境及最终景别共同决定效果，存在某个字段不等于相应材料已经成立。
 
 ## 基础表面
 
@@ -20,7 +20,7 @@
 |---|---|---|
 | clearcoat | `clearcoatMap.r`调强度；`clearcoatRoughnessMap.g`调粗糙；独立`clearcoatNormalMap.rgb` | 主表面法线变化不自动进入涂层法线，分别设计两层凹凸；强度/粗糙标量仍相乘 |
 | dielectric specular | `specularColorMap.rgb`为颜色；`specularIntensityMap.a`为原始数据 | `reflectivity`与`ior`有关，二者不是互相独立的高光旋钮；metalness为1时介质reflectivity不控制金属反射 |
-| iridescence | `iridescenceMap.r`调强度；`iridescenceThicknessMap.g`在厚度区间两端之间插值 | 薄膜厚度按nm约定，r180相位计算乘`1e-9`；不是下节mesh-space的体积thickness，也不是增加几何薄壳 |
+| iridescence | `iridescenceMap.r`调强度；`iridescenceThicknessMap.g`在厚度区间两端之间插值 | 薄膜厚度按nm约定，r187相位计算乘`1e-9`；不是下节mesh-space的体积thickness，也不是增加几何薄壳 |
 
 ### 纤维与方向性
 
@@ -41,7 +41,7 @@
 
 ## 完整程序数据例：把粗糙度写到A
 
-在项目根执行以下ESM。安装`three@0.180.0`，或令`THREE_MODULE`指向该版本的`build/three.module.js`。例子连接真实Physical材质；CPU检查只证明字段/数据与归属，最终受光仍需在实际场景验证。
+在项目根执行以下ESM。安装`three@0.187.0`，或令`THREE_MODULE`指向该版本的`build/three.module.js`。例子连接真实Physical材质；CPU检查只证明字段/数据与归属，最终受光仍需在实际场景验证。
 
 ```js
 import assert from 'node:assert/strict';

@@ -133,10 +133,10 @@ slot不支持异步builder、worker取消或全世界事务。异步构建需要
 
 ### 准备依赖并启动
 
-以下命令在独立项目根目录执行，`assets/`已从Skill复制；依赖统一锁定为Three `0.180.0`（r180）。已有项目先核对其锁文件，选择完整同版依赖，不能混用不同版本的build和addons。
+以下命令在独立项目根目录执行，`assets/`已从Skill复制；本页S01基础示例以Three `0.187.0`（r187）为当前验证依赖。已有项目跟随自身锁文件；同一次运行必须使用完整同版依赖，不能混用不同版本的build和addons。本页所列表示、表面/端口接力、同步slot和资源scope已针对r187复验，不外推到Skill中仍标明其他版本的材质、渲染或专用工具。
 
 ```sh
-npm install --save-exact three@0.180.0
+npm install --save-exact three@0.187.0
 mkdir -p assets/examples/foundation-lab/vendor
 cp -R node_modules/three/build node_modules/three/examples node_modules/three/LICENSE assets/examples/foundation-lab/vendor/
 python3 -m http.server 8080 --bind 127.0.0.1

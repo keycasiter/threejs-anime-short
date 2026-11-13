@@ -1,6 +1,6 @@
 # 宽线：活动视口、端点与拾取
 
-仅在标注/路径需要可控粗细或宽线拾取时使用；普通语义拾取仍按[相机与输入](camera-interaction.md)的最近遮挡规则。这里用 WebGL 的 Three r180（`three@0.180.0`）及同包 addons；不是实体管道，也不承诺导出为实体网格。
+仅在标注/路径需要可控粗细或宽线拾取时使用；普通语义拾取仍按[相机与输入](camera-interaction.md)的最近遮挡规则。这里用 WebGL 的 Three r187（`three@0.187.0`）及同包 addons；不是实体管道，也不承诺导出为实体网格。
 
 ## 单位与接线
 
@@ -10,13 +10,13 @@
 | 屏幕宽度 | `worldUnits=false` 的 linewidth 是全宽 CSS/逻辑像素。普通 canvas 使用当前 view 的逻辑宽高；不乘 DPR。双视口每次分别设置 resolution。 |
 | 世界宽度 | `worldUnits=true` 的 linewidth 是全宽世界单位；parent/object scale 改变中心线端点，不乘这个标量宽度。CPU 正交射线可测此合同；GPU 世界宽度仅对实测 PerspectiveCamera 条件取得资格。 |
 | 视口生命周期 | 原生 onBeforeRender 从 renderer.getViewport 更新 resolution；首次 render 前、resize 后、隐藏对象的主动查询及切换 view 时均需显式 prepareView。共享材质每次读写当前 view；以下独占材质避免跨 view 状态混淆。RT/XR 必须另定 view 单位合同及更新 hook。 |
-| 宽度模式切换 | worldUnits 改 define 后显式 needsUpdate；r180 setter 不自动触发。 |
+| 宽度模式切换 | worldUnits 改 define 后显式 needsUpdate；r187 setter 不自动触发。 |
 
-偏轴 OrthographicCamera 的原生世界宽线不能承诺精确居中或精确光栅宽度：r180 shader 的挤出方向及片元距离依赖相机原点射线。实测理想中心 279.5px，实际 277.5px，保留为原生限制。正交屏幕宽模式已在 DPR1/2、resize、双视口取得实测资格；世界宽模式实测使用 PerspectiveCamera，并比较相同世界端点的 parent 变换与烘焙结果。CPU 命中不能替代这些渲染证据。
+偏轴 OrthographicCamera 的原生世界宽线不能承诺精确居中或精确光栅宽度：r187 shader 的挤出方向及片元距离依赖相机原点射线。实测理想中心 279.5px，实际 277.5px，保留为原生限制。正交屏幕宽模式已在 DPR1/2、resize、双视口取得实测资格；世界宽模式实测使用 PerspectiveCamera，并比较相同世界端点的 parent 变换与烘焙结果。CPU 命中不能替代这些渲染证据。
 
 ## 可直接执行的 ESM
 
-保存以下完整块为 `wide-lines.mjs`。Node 22 下先安装锁定 `three@0.180.0`，或设置 `THREE_MODULE` 为该包实际 `build/three.module.js` 的绝对路径；addons 从同一包定位，不依赖工作区研究路径。该块不创建 DOM/WebGL，导出的真实对象交给调用方场景与渲染循环。
+保存以下完整块为 `wide-lines.mjs`。Node 22 下先安装锁定 `three@0.187.0`，或设置 `THREE_MODULE` 为该包实际 `build/three.module.js` 的绝对路径；addons 从同一包定位，不依赖工作区研究路径。该块不创建 DOM/WebGL，导出的真实对象交给调用方场景与渲染循环。
 
 ```mjs
 import { pathToFileURL } from 'node:url';
@@ -129,7 +129,7 @@ closeWideLine(example);
 
 整条点列/段数变化用 `replacePositions`：先验证并构造新 geometry，再于旧属性仍附着时 dispose 旧 geometry，切换到新 geometry，首次生成距离。方法保持原连续/独立模式，仅适用于独占 geometry；共享 geometry 必须先由其所有者协调全部消费者，不能逐线释放。实际 render 前完成一次替换，不能在中途使用已释放的旧 geometry。
 
-`pointOnLine` 是变换后中心线锚点，`point` 在拾取射线上；`faceIndex` 是段序号。r180 原生宽线不落实 Raycaster near/far，示例明确按 hit.distance 过滤。`params.Line2.threshold` 加到全宽，单位随宽度模式；它不是普通 Line 的 threshold。世界宽 CPU 命中不证明位于相机视锥内。
+`pointOnLine` 是变换后中心线锚点，`point` 在拾取射线上；`faceIndex` 是段序号。r187 原生宽线不落实 Raycaster near/far，示例明确按 hit.distance 过滤。`params.Line2.threshold` 加到全宽，单位随宽度模式；它不是普通 Line 的 threshold。世界宽 CPU 命中不证明位于相机视锥内。
 
 示例采用**整条标注可选**：即使虚线 gap 也可命中。computeLineDistances 的累计距离是 geometry-local；shader 比较 `(dashScale*dLocal+dashOffset) mod (dashSize+gapSize)`。worldUnits=false 不会把虚线长度转成 CSS 像素，缩放对象也不重算距离。若要世界长度虚线，先烘焙世界端点到 identity 对象；屏幕长度虚线需独立投影适配。可见 dash、alpha 裁边、shader 裁切等逐像素拾取须另做策略，当前方法不是 visible-pixel picker。
 
@@ -141,4 +141,4 @@ closeWideLine 只适用于本例新建且独占 geometry/material 的对象；�
 
 Node 专项验证连续/独立端点、原地更新与 bounds、4/6 CSS 像素正交拾取、距离过滤、世界宽 parent scale 与锚点、gap 反例及局部距离；不证明图像宽度、MSAA 或画质。实际目标 renderer 另验 near-plane 穿越、急转弯、端帽/深度、退化投影方向和 alpha-to-coverage（需多采样目标）。现有实测近裁剪/急转弯仅确认可见覆盖；RT/XR、全部驱动、MSAA 和通用艺术质量仍未取得资格。
 
-来源：[Line2](https://threejs.org/docs/#examples/en/lines/Line2)、[LineMaterial](https://threejs.org/docs/#examples/en/lines/LineMaterial)。以同包 r180 addon 实现为版本核对基准。
+来源：[Line2](https://threejs.org/docs/#examples/en/lines/Line2)、[LineMaterial](https://threejs.org/docs/#examples/en/lines/LineMaterial)。以同包 r187 addon 实现为版本核对基准。

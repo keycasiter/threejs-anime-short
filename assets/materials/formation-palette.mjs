@@ -8,7 +8,7 @@ function keys(value,allowed,label){if(!record(value))fail(label+' requires a pla
 export function createFormationPalette(T,options={}) {
  keys(options,['basePalette','profiles','applyWhen'],'options');
  const {basePalette,profiles={},applyWhen='unmapped'}=options;
- if(String(T?.REVISION)!=='180')fail('requires Three r180');
+ if(String(T?.REVISION)!=='187')fail('requires Three r187');
  if(typeof basePalette?.get!=='function')fail('basePalette requires get');
  if(!['unmapped','all'].includes(applyWhen))fail('invalid applyWhen');
  if(!record(profiles))fail('profiles requires a plain dictionary');

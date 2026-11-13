@@ -88,7 +88,7 @@ function applyLook(palette, bindings) {
 
 | 组合输入或操作 | 实际消费者与边界 |
 |---|---|
-| `renderer / mergeGeometries / MarchingCubes / skyTexture` | 借用同版r180 renderer/addons与无太阳盘天空PMREM。天空必须使用二维 CubeUVReflectionMapping 图集：面边长 N 为不小于 16 的 2 的幂，宽 3×max(N,112)、高 4N，且不超过设备纹理上限；无太阳盘和预过滤内容由调用方保证。每候选独立材料，贴图只在其base palette内共享 |
+| `renderer / mergeGeometries / MarchingCubes / skyTexture` | 借用同版r187 renderer/addons与无太阳盘天空PMREM。天空输入是`CubeReflectionMapping`的六面PMREM cube texture，带`isPMREMTexture`和预过滤mip；r187输出面边长至少256，且不超过设备纹理上限。无太阳盘和预过滤内容由调用方保证。每候选独立材料，贴图只在其base palette内共享 |
 | `configuration / roofLift / seed / resolution / shadowMapSize / time` | 原world结构、稳定role种子、材料及捕获分辨率（64..1024）、原灯影区和源世界解析时间；不修改布局/观察任务 |
 | `look / formationEnabled / environmentMode` | 默认`pbr / true / world`；返回的`setLook`、`setFormationEnabled`、`setEnvironmentMode`选择已解析材料表/灯光/显式反射纹理，保持几何、相机和时钟 |
 | `probePosition` | 可选有限xyz；默认由完整world bounds中心XZ与maxY上方得到；near/far覆盖完整源世界 |
@@ -101,7 +101,7 @@ function applyLook(palette, bindings) {
 
 天空与世界probe共用显式拥有资源的`CubeCamera → PMREM.fromCubemap`路径。天空的私有源Scene只有原Sphere与`capture=1`材料，仍排除太阳盘；可见天空随相机移动，源Sphere保持原点。该路径避开native `fromScene`在渲染异常时无法回收的私有背景网格；天空不再保留闲置generator，每次尝试的cube、generator与内部资源均由临时owner清理。失败保留旧纹理、已应用场景和计数，可继续重试。相较直接`fromScene`，多一次拥有明确归属的cube捕获，天空采样路线与成本可能变化，须以实际GPU画面/资源比较核对，不保证字节相同。
 
-PMREM输出使用锁版r180归属边界：同步调用期间只临时包装当前generator实例的native `_allocateTargets`，native完成LOD、ping-pong与blur初始化后立即登记/校验返回的输出，再继续原`fromCubemap`转换/模糊。成功或失败都还原实例方法，不修改全局原型、不复制PMREM算法。只给fresh generator传显式target会跳过必要初始化；版本/接口不符明确拒绝，升级Three必须重新核对并验证此私有协议。输出释放异常不跳过其它已登记清理。旧shader回调异常延迟到输出归属安全后拒绝候选，回调本身的外部副作用仍不回滚。
+PMREM输出使用锁版r187归属边界：同步调用期间只临时包装当前generator实例的native `_allocateTarget`，该函数返回已标记`isPMREMTexture`、含预过滤mip级的cube render target；立刻登记/校验输出，再继续原`fromCubemap`转换/模糊。成功或失败都还原实例方法，不修改全局原型、不复制PMREM算法。显式传入外部target时不会触发此分配点，因此当前适配器只允许使用fresh generator的原生分配路径。版本/接口不符明确拒绝；Three升级后重新核对该私有协议。输出释放异常不跳过其它已登记清理。旧shader回调异常延迟到输出归属安全后拒绝候选，回调本身的外部副作用仍不回滚。
 
 相机/交互/时钟与最终输出见[main.mjs](../assets/examples/core-lab/main.mjs)。工作台的形成开关和天空/世界反射选择用于固定几何/机位比较；两种迟捕获失败按钮用于资源与保留旧世界检查。主Scene继续保留天空环境供外部物体使用；直接输出只做一次ACES/sRGB转换，PBR/Toon最终曝光仍为1.1/1.05。使用Composer时按其OutputPass契约接线。CPU真实world与显式fake GPU hooks的测试不替代真实WebGL、原参考同景别审图或资源测量。
 
@@ -189,4 +189,4 @@ try {
 
 先登记参考、任务、版本/视口、参数/机位与口径；原视图/失败保留，不删弱项换通过。发现独特关系可增加补充视图，补图不能冒充独立作品。
 
-复制所需assets并保留相对结构；在core-lab/vendor放同一个r180的build/、examples/jsm/与LICENSE，用HTTP打开。源码/包与真实渲染绑定版本，解包实际验证依赖/操作/退出。内核与示例只证明所测范围，完整作品仍按[统一验收](validation.md)交付。
+复制所需assets并保留相对结构；在core-lab/vendor放同一个r187的build/、examples/jsm/与LICENSE，用HTTP打开。源码/包与真实渲染绑定版本，解包实际验证依赖/操作/退出。内核与示例只证明所测范围，完整作品仍按[统一验收](validation.md)交付。

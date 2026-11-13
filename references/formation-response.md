@@ -1,4 +1,4 @@
-# 米制形成响应（Three r180 / WebGLRenderer）
+# 米制形成响应（Three r187 / WebGLRenderer）
 
 `createFormationResponse(T, options)` 为原生、精确类型的 Standard、Physical、Toon 派生独立材质。部署时保持 `assets/materials` 与 `assets/geometry` 的相对目录树；不要只复制本模块而漏掉桥和坐标校验依赖。基础材质、贴图、Mesh 和 geometry 均由调用者持有。返回的 `material` 由 response 持有，`dispose()` 只释放它自身。
 
@@ -21,7 +21,7 @@
 
 一个片元场复用到颜色、PBR 粗糙度和微高度。场在 pattern 坐标上按每层自身频率的导数足迹退向 `.5`；只对未过滤的纹样坐标和视空间位置取一阶屏幕导数。三线性插值噪声同时给出值和解析梯度；由三个弯曲分量的局部 Jacobian 将两条像素轴映射到扰动坐标。逐轴取扰动前后足迹的较大值，再按层过滤。求微高度斜率时固定当前像素的过滤权重，用噪声或相位的解析梯度沿两条扰动轴投影；不对过滤权重或斜率再求屏幕导数。此为有界近似，不是精确像素积分、EWA、法线方差补偿或材质全频谱模型，极端各向异性仍需真实 GPU 检查。
 
-主法线在 native `normal_fragment_begin` 保存基准，在 `normal_fragment_maps` 后把已有 normalMap/bump 结果换成相对基准的表面梯度，再与米制高度梯度合成。使用 `-vViewPosition` 的真实两轴微分，共用一个数值尺度稳定化，同时缩放高度微分；保留两轴物理比例。高度梯度的分母显式乘 r180 `faceDirection`，与已翻面的基准法线配合，使双面材质的背面高度斜率方向也随 native bump 约定翻转；原有 normalMap/bump 的相对梯度保持原生方向。退化微分和近切平面的既有法线保留 native 结果；独立 clearcoat 法线、几何、阴影轮廓不改。保留原生 BRDF 与唯一输出转换。
+主法线在 native `normal_fragment_begin` 保存基准，在 `normal_fragment_maps` 后把已有 normalMap/bump 结果换成相对基准的表面梯度，再与米制高度梯度合成。使用 `-vViewPosition` 的真实两轴微分，共用一个数值尺度稳定化，同时缩放高度微分；保留两轴物理比例。高度梯度的分母显式乘 r187 `faceDirection`，与已翻面的基准法线配合，使双面材质的背面高度斜率方向也随 native bump 约定翻转；原有 normalMap/bump 的相对梯度保持原生方向。退化微分和近切平面的既有法线保留 native 结果；独立 clearcoat 法线、几何、阴影轮廓不改。保留原生 BRDF 与唯一输出转换。
 
 ## 前置校验和生命周期
 
@@ -31,7 +31,7 @@
 
 ## 可直接运行的 ESM
 
-从仓库根运行，设置 `THREE_MODULE` 为实际 Three r180 模块路径；以下代码保存在根目录 `formation-response-example.mjs` 时可原样执行。
+从仓库根运行，设置 `THREE_MODULE` 为实际 Three r187 模块路径；以下代码保存在根目录 `formation-response-example.mjs` 时可原样执行。
 
 ```js
 import {pathToFileURL} from 'node:url';
@@ -64,4 +64,4 @@ geometry.dispose();
 
 - [Mikkelsen 2020, Surface Gradient Based Bump Mapping Framework](https://jcgt.org/published/0009/03/04/paper-lowres.pdf)：公式 4–7 与梯度组合的数学依据。此处独立推导/实现，不复制论文 shader。
 - [PBRT: Solid and Procedural Texturing](https://www.pbr-book.org/3ed-2018/Texture/Solid_and_Procedural_Texturing)：三维程序坐标与采样过滤责任的背景；不复制 C++ 实现。
-- 本地 r180 ShaderLib/ShaderChunk 与 `material-shader-bridge.mjs` 为实际插点、材质和生命周期契约。当前模块不宣称 WebGPU、变形网格、切线/clearcoat 法线全链同步或 GPU 视觉验收已完成。
+- 本地 r187 ShaderLib/ShaderChunk 与 `material-shader-bridge.mjs` 为实际插点、材质和生命周期契约。当前模块不宣称 WebGPU、变形网格、切线/clearcoat 法线全链同步或 GPU 视觉验收已完成。

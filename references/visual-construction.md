@@ -239,4 +239,4 @@ function bindCaptionDistance(controls,elements,{enter,exit}) {
 
 可运行组合入口见[视觉关系样件](../assets/examples/visual-relations/index.html)。该例接通完整轮廓、局部采样、样点遮挡、内部站位和材质单变量切换；区域位移、异步取图恢复、说明折叠按项目另选接入。它不是新题材的造型模板或画质标杆。先解决当前代表关系，再进入扩场；记录“已观察到什么、仍差在哪、该改哪个输入”。最终按[统一验收](validation.md)分别给出观看质量、工程正确性与交付结论。
 
-运行该例：保持`assets/`相对目录，在项目根`vendor/`放锁定Three r180的`build/`和`examples/jsm/`及许可，通过本地HTTP打开`assets/examples/visual-relations/`。本例importmap指向项目根vendor，未随Skill提交运行依赖。已验证后端为WebGLRenderer；新版本/后端另核接口和效果。
+运行该例：保持`assets/`相对目录，在项目根`vendor/`放锁定Three r187的`build/`和`examples/jsm/`及许可，通过本地HTTP打开`assets/examples/visual-relations/`。本例importmap指向项目根vendor，未随Skill提交运行依赖。已验证后端为WebGLRenderer；新版本/后端另核接口和效果。

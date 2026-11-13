@@ -1,4 +1,4 @@
-/** Internal state boundary for synchronous offscreen work in r180. This does
+/** Internal state boundary for synchronous offscreen work in r187. This does
  * not snapshot GPU resources, shader history or arbitrary scene/raw GL edits.
  */
 export function captureRendererState(T,r) {
@@ -28,9 +28,9 @@ export function restoreRendererState(r,s) {
   logical();
   const t=s.target,a=s.active;
   if(t.viewport.equals(a.viewport)&&t.scissor.equals(a.scissor)&&t.scissorTest===a.scissorTest){bind();return;}
-  // r180 setRenderTarget copies the pixel rectangles into its own current
-  // vectors and WebGLState. Replay post-bind overrides *without* a second DPR
-  // multiply, retaining both logical getters and original target properties.
+  // r187 uses a target pixel ratio of 1. Replay the caller's active target-pixel
+  // rectangles through target state without changing the renderer's saved
+  // logical getters or permanently changing the render target's own rectangle.
   const v=t.viewport.clone(),c=t.scissor.clone(),test=t.scissorTest;
   try{t.viewport.copy(a.viewport);t.scissor.copy(a.scissor);t.scissorTest=a.scissorTest;bind();}
   finally{t.viewport.copy(v);t.scissor.copy(c);t.scissorTest=test;}

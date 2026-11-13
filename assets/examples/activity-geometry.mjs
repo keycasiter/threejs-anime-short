@@ -38,7 +38,7 @@ export function validateActivityFinalDraw(T,object,{translated=false}={}){
  return true;
 }
 
-/** r180 TriangleList semantics: scalar materials ignore geometry.groups; arrays
+/** r187 TriangleList semantics: scalar materials ignore geometry.groups; arrays
  * intersect each visible group with drawRange. References stay build-local. */
 export function scanActivityDraws(T,root,{prefix='draw',space='world',budget}={}){
  requireValue(root?.isObject3D,'root required');automaticHierarchy(root);root.updateWorldMatrix(true,true);

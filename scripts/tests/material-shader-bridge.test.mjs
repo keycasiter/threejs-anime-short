@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { createMaterialShaderBridge as bridge } from '../../assets/materials/material-shader-bridge.mjs';
 
 const T = process.env.THREE_MODULE ? await import(pathToFileURL(resolve(process.env.THREE_MODULE)).href) : await import('three');
-// WebGLPrograms.shaderIDs maps both Standard and Physical to ShaderLib.physical in r180.
+// WebGLPrograms.shaderIDs maps both Standard and Physical to ShaderLib.physical in r187.
 const source = (type = 'MeshStandardMaterial') => {
   const id = {MeshStandardMaterial: 'physical', MeshPhysicalMaterial: 'physical', MeshToonMaterial: 'toon'}[type];
   const lib = T.ShaderLib[id];
@@ -100,7 +100,7 @@ test('composition runs upstream first with the clone and renderer; calls the act
 test('unsupported materials, invalid descriptors and ambiguous upstream hooks are refused before allocating a clone', () => {
   class Child extends T.MeshStandardMaterial {}
   for (const [T0, base, extra, error] of [
-    [{...T, REVISION: '181'}, new T.MeshStandardMaterial(), {}, /180/],
+    [{...T, REVISION: '188'}, new T.MeshStandardMaterial(), {}, /187/],
     [T, new T.MeshBasicMaterial(), {}, /material/i], [T, new Child(), {}, /material/i],
     [T, new T.MeshStandardMaterial(), {programKey: ' '}, /programKey/],
     [T, new T.MeshStandardMaterial(), {patches: [{...tint, replace: 'x'}]}, /fragment.*color_fragment/],

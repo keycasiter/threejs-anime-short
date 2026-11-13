@@ -7,7 +7,7 @@
 | 可见目标 / 条件 | 已有工具 | 实际输出与限制 |
 |---|---|---|
 | 木纹、矿物区、涂层/金属露底需要共同控制表面通道 | [程序材质目录](../assets/materials/procedural-palette.mjs) | 三类原创配方，输出真实Standard材质及颜色/roughness/metalness/normal；有限参考配方，需按美术目标扩展 |
-| 自写基色/粗糙度/微法线但保留内置受光 | [材质扩展桥](material-shader-bridge.md) | r180原生Standard/Physical/Toon独立变体、结构cache key与稳定uniform；Toon没有PBR粗糙度锚点，输出转换沿用原链 |
+| 自写基色/粗糙度/微法线但保留内置受光 | [材质扩展桥](material-shader-bridge.md) | r187原生Standard/Physical/Toon独立变体、结构cache key与稳定uniform；Toon没有PBR粗糙度锚点，输出转换沿用原链 |
 | 变换/静态合批后仍需源部件米制坐标 | [形成坐标与装配](formation-coordinates.md) | 实际BufferAttribute和显式不变schema；按同一索引快照，不重复应用pose；不自动建立材料方向/UV/TBN |
 | 无UV曲面或合批部件需要连续层纹、沿向纤维、聚集微表面 | [形成响应](formation-response.md)：`createFormationResponse` | 同一米制场接基色、PBR粗糙度和主层微法线，按屏幕微分退场；保留原生光照，普通静态Mesh先验证，非任意材料/变形/clearcoat同步 |
 | 多个真实材料语义槽共享形成规律 | [形成palette](formation-palette.md)：`createFormationPalette` | 按角色和实际base身份缓存，候选校验后绑定；借用base/贴图，拥有派生响应；默认保留已有UV表面图 |
@@ -18,7 +18,7 @@
 | 需要接触AO、有限高亮扩散与正确输出 | [后期链](../assets/rendering/post-pipeline.mjs) | 半浮点线性HDR→可选GTAO→可选Bloom→一次Output→可选SMAA；不含体积光、自适应曝光、物体运动模糊 |
 | 需要定位质量责任层、复现镜头/时间、切换真实效果 | [场景工作台](../assets/runtime/scene-workbench.mjs) | 相机/target/FOV、绝对时钟、消费者开关、真实统计、可选DOM；历史模拟需额外reset，不能自动保证像素确定 |
 
-注入**同一锁定版本**的 `THREE` 与官方addons，已验证路径为r180/WebGLRenderer。WebGPU、其他版本、XR、多相机rig需要另外验证。适配器不复制标杆的应用shader。新任务需要表中未覆盖的能力时，显式设计扩展并先做小样，不把近似能力命名成完整能力。
+注入**同一锁定版本**的 `THREE` 与官方addons，已验证路径为r187/WebGLRenderer。WebGPU、其他版本、XR、多相机rig需要另外验证。适配器不复制标杆的应用shader。新任务需要表中未覆盖的能力时，显式设计扩展并先做小样，不把近似能力命名成完整能力。
 
 ## 几何与关系工具
 

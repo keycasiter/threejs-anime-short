@@ -16,7 +16,7 @@
 
 ## 可运行技术夹具
 
-下面是可原样运行的 Node ESM 技术夹具，不是对象、数量或外观模板。从本 Skill 根目录运行，复制代码为 `/tmp/surface-candidates-example.mjs`；设置 `THREE_MODULE` 为已安装 **three@0.180.0** 的 `build/three.module.js` 绝对路径后执行 `node /tmp/surface-candidates-example.mjs`。未设置时从当前项目解析 `three`；addon 从同一个包定位。本例只借入既有随机、资格和坐标架 helper，自己创建的演示资源由一个 scope 释放。
+下面是可原样运行的 Node ESM 技术夹具，不是对象、数量或外观模板。从本 Skill 根目录运行，复制代码为 `/tmp/surface-candidates-example.mjs`；设置 `THREE_MODULE` 为已安装 **three@0.187.0** 的 `build/three.module.js` 绝对路径后执行 `node /tmp/surface-candidates-example.mjs`。未设置时从当前项目解析 `three`；addon 从同一个包定位。本例只借入既有随机、资格和坐标架 helper，自己创建的演示资源由一个 scope 释放。
 
 ```mjs
 // surface-candidates-example.mjs
@@ -27,7 +27,7 @@ const requireHere = createRequire(pathToFileURL(resolve('package.json')));
 const threeURL = pathToFileURL(process.env.THREE_MODULE
   ? resolve(process.env.THREE_MODULE) : requireHere.resolve('three'));
 export const THREE = await import(threeURL.href);
-if (THREE.REVISION !== '180') throw new Error('Use three@0.180.0 and its matching addons');
+if (THREE.REVISION !== '187') throw new Error('Use three@0.187.0 and its matching addons');
 const {MeshSurfaceSampler} = await import(new URL('../examples/jsm/math/MeshSurfaceSampler.js', threeURL));
 const helper = name => import(pathToFileURL(resolve('assets', name)).href);
 const {createRandomStreams} = await helper('runtime/random-streams.mjs');

@@ -34,20 +34,20 @@ function profiles(T,look,seed){
 /** Owns one complete candidate, including private base/formed materials and two
  * static world captures. Renderer and skyTexture are borrowed. The detached
  * root can be committed by createAssetSlot only after this factory succeeds.
- * Inject the same Three r180 namespace/addons as the renderer and world.
+ * Inject the same Three r187 namespace/addons as the renderer and world.
  */
 export function buildCorePresentation(T,options={}){
  keys(options,['renderer','mergeGeometries','MarchingCubes','skyTexture','configuration','roofLift','look','formationEnabled','environmentMode','seed','resolution','shadowMapSize','time','probePosition','diagnostics'],'options');
  const {renderer,mergeGeometries,MarchingCubes,skyTexture,configuration='grid',roofLift=0,look='pbr',formationEnabled=true,environmentMode='world',seed=42,resolution=128,shadowMapSize=2048,time=2,probePosition,diagnostics={}}=options;
- if(String(T?.REVISION)!=='180')fail('requires Three r180');
+ if(String(T?.REVISION)!=='187')fail('requires Three r187');
  if(!renderer?.isWebGLRenderer||!renderer.debug||!renderer.shadowMap)fail('WebGLRenderer required');
- // r180 PMREM packs power-of-two faces down to 16, plus six 16px roughness levels.
- const image=skyTexture?.image,faceSize=image?.height/4;
- if(!skyTexture?.isTexture||skyTexture.mapping!==T.CubeUVReflectionMapping||skyTexture.isCubeTexture||
+ // r187 PMREM uses a cube render target with explicit prefiltered mip levels.
+ const images=skyTexture?.image,faceSize=images?.[0]?.width;
+ if(!skyTexture?.isTexture||!skyTexture.isCubeTexture||skyTexture.isPMREMTexture!==true||skyTexture.mapping!==T.CubeReflectionMapping||
     skyTexture.isData3DTexture||skyTexture.isDataArrayTexture||skyTexture.isCompressedArrayTexture||skyTexture.isDepthTexture||
-    !Number.isSafeInteger(image?.height)||!Number.isSafeInteger(image?.width)||faceSize<16||
-    2**Math.floor(Math.log2(faceSize))!==faceSize||image.width!==3*Math.max(faceSize,16*7)||
-    Math.max(image.width,image.height)>(renderer.capabilities?.maxTextureSize??Infinity))fail('skyTexture requires a usable r180 CubeUV PMREM atlas');
+    !Array.isArray(images)||images.length!==6||!Number.isSafeInteger(faceSize)||faceSize<16||
+    images.some(image=>image.width!==faceSize||image.height!==faceSize)||
+    faceSize>(renderer.capabilities?.maxTextureSize??Infinity))fail('skyTexture requires a usable r187 PMREM cube texture');
  if(typeof mergeGeometries!=='function'||typeof MarchingCubes!=='function')fail('matching addons required');
  choice(look,looks,'look');choice(environmentMode,modes,'environmentMode');boolean(formationEnabled,'formationEnabled');choice(configuration,['grid','ring','terraced'],'configuration');
  uint(seed,0xffffffff,'seed');if(!Number.isInteger(resolution)||resolution<64||resolution>1024)fail('resolution must be 64..1024');
@@ -74,7 +74,8 @@ export function buildCorePresentation(T,options={}){
   const texture=current.environmentMode==='world'?captures[mode].texture:skyTexture;
   for(const material of new Set([...unique(tables[mode].base),...unique(tables[mode].formed)]))if('envMap' in material){
    if(!originalIntensities.has(material))originalIntensities.set(material,material.envMapIntensity);
-   // Explicit envMap bypasses Scene.environmentIntensity in Three r180.
+   // The explicit envMap has its own intensity; scene.environmentIntensity is
+   // used only by the fallback path where the material has no envMap.
    const changed=material.envMap!==texture;material.envMap=texture;material.envMapIntensity=originalIntensities.get(material)*environmentIntensity;
    if(changed)material.needsUpdate=true;
   }

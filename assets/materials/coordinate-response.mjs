@@ -1,4 +1,4 @@
-// Bounded coordinate fields and absolute-time bands for native r180 materials.
+// Bounded coordinate fields and absolute-time bands for native r187 materials.
 // A method owns only its derived material; the Mesh, base material and geometry are borrowed.
 import {createMaterialShaderBridge} from './material-shader-bridge.mjs';
 import {invariantArray} from '../geometry/formation-coordinates.mjs';
@@ -43,17 +43,17 @@ function checkedMaterial(mesh,T){
   const material=mesh.material;
   if(!material||Array.isArray(material)||material.onBeforeCompile!==T.Material.prototype.onBeforeCompile||
       material.customProgramCacheKey!==T.Material.prototype.customProgramCacheKey||material.displacementMap)
-    fail('expected one stock r180 material without displacement or custom shader hooks');
+    fail('expected one stock r187 material without displacement or custom shader hooks');
   if(![T.MeshStandardMaterial,T.MeshPhysicalMaterial,T.MeshToonMaterial].some(C=>Object.getPrototypeOf(material)===C.prototype))
     fail('base material must be an exact MeshStandardMaterial, MeshPhysicalMaterial or MeshToonMaterial');
   return material;
 }
 
 export function createCoordinateResponse(T,mesh,options){
-  if(T?.REVISION!=='180')fail('requires Three.js r180');
+  if(T?.REVISION!=='187')fail('requires Three.js r187');
   checkedRecord(options,allowedTop,'options');
   const {space,axis,kind,consumer,range,width,feather=0,power=1,offsets=[0],motion,
-    origin=[0,0,0],low=[1,1,1],high=[1,1,1],programKey='coordinate-response/180/v1'}=options;
+    origin=[0,0,0],low=[1,1,1],high=[1,1,1],programKey='coordinate-response/187/v1'}=options;
   if(!['attached','world'].includes(space)||!['x','y','z','xyRadius'].includes(axis)||
       !['gradient','band'].includes(kind)||!['base','outgoing'].includes(consumer))fail('invalid space, axis, kind or consumer');
   if(kind==='gradient'&&['width','feather','power','offsets','motion'].some(key=>Object.hasOwn(options,key)))

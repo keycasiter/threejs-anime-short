@@ -341,7 +341,7 @@ export function buildCoreWorld(T,{mergeGeometries,MarchingCubes,materialFor,conf
           const sourceIds=new Map();
           for(const {source,part} of bay.profileSources){
             const id=`perimeter/${i}/${side}/frame`,g=source.geometry;sourceIds.set(part,id);
-            bakedBoundarySources.push({id,metadata:structuredClone(source.metadata),sourceGeometryId:g.uuid,sourceSpace:'world-root-local',sourceMatrix:part.matrixWorld.toArray(),semantic:structuredClone(frameSlot),triangleCount:g.index.count/3,disposed:true,sourceRanges:[]});
+            bakedBoundarySources.push({id,metadata:structuredClone(source.metadata),...(source.formationCharts?{formationCharts:structuredClone(source.formationCharts)}:{}),sourceGeometryId:g.uuid,sourceSpace:'world-root-local',sourceMatrix:part.matrixWorld.toArray(),semantic:structuredClone(frameSlot),triangleCount:g.index.count/3,disposed:true,sourceRanges:[]});
           }
           bakeObject(bay.root,new Map(Object.values(bay.parts).map(node=>[node,(Array.isArray(node.material)?node.material:[node.material]).map(()=>node===bay.parts.wall?wallSlot:node===bay.parts.frame?frameSlot:trimSlot)])),sourceIds);
         }finally{bay.dispose();}

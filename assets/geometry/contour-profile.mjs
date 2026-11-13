@@ -172,6 +172,9 @@ export function createContourProfileSource(T,{contour,profile,contourCreases,pro
   return {...sample,contourSegment:i,profileBand:j,materialIndex:materials[j]};
  }
 
- return {geometry,metadata:{kind:'contour-profile',contour:C.p.map(p=>p.slice()),profile:P.p.map(p=>p.slice()),contourArcLengths:C.arcs.slice(),profileArcLengths:P.arcs.slice(),offsetArcLengths:arcs.map(a=>a.slice()),bands,miterRatios:miters.map(m=>Math.hypot(...m)),triangleCount:2*N*M,uvMeters,uvApproximation:'Offset-ring arcs and profile arcs; miter cells may be nonorthogonal'},surfaceAt:querySurface,dispose(){if(!disposed){disposed=true;geometry.dispose();}}};
+ const result={geometry,metadata:{kind:'contour-profile',contour:C.p.map(p=>p.slice()),profile:P.p.map(p=>p.slice()),contourArcLengths:C.arcs.slice(),profileArcLengths:P.arcs.slice(),offsetArcLengths:arcs.map(a=>a.slice()),bands,miterRatios:miters.map(m=>Math.hypot(...m)),triangleCount:2*N*M,uvMeters,uvApproximation:'Offset-ring arcs and profile arcs; miter cells may be nonorthogonal'},surfaceAt:querySurface,dispose(){if(!disposed){disposed=true;geometry.dispose();}}};
+ // Keep the legacy enumerable DTO surface stable while preserving the design recipe for provenance consumers.
+ if(formationCharts!==undefined)Object.defineProperty(result,'formationCharts',{value:{...formationCharts,pieces:formationCharts.pieces.map(piece=>({...piece}))}});
+ return result;
  }catch(error){geometry.dispose();throw error;}
 }

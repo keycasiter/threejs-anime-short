@@ -1,4 +1,4 @@
-/** Owned offline direct-light integrator. THREE injected; tested with r180 WebGLRenderer.
+/** Owned offline direct-light integrator. THREE injected; tested with r187 WebGLRenderer.
  * No GI, denoising, blur, scene edits or light-intensity scaling. Does not drive animation.
  * Caller freezes scene/camera/time and must not render concurrently while awaiting.
  * Only built-in material/color pipeline; XR, Composer and custom material shaders excluded.
@@ -17,7 +17,7 @@ async function gpuComplete(gl) {
 export async function renderSoftDirectional({THREE:T, renderer, scene, camera, light,
   samples=32, angularRadius=0.075, seed=20261109, width, height,
   onSample, yieldEvery=4}={}) {
-  if (!renderer?.isWebGLRenderer || T.REVISION!=='180') throw Error('Verified path: THREE r180 WebGLRenderer only');
+  if (!renderer?.isWebGLRenderer || T.REVISION!=='187') throw Error('Verified path: THREE r187 WebGLRenderer only');
   if(renderer.getRenderTarget()!==null)throw Error('Verified scope: call from the default framebuffer only');
   if (!light?.isDirectionalLight || renderer.xr.enabled) throw Error('Requires DirectionalLight and XR disabled');
   let extraShadowLight=false;scene.traverseVisible(object=>{if(object.isLight&&object!==light&&object.castShadow)extraShadowLight=true;});

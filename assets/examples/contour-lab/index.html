@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>S02 · 连续轮廓截面实验</title>
 <style>*{box-sizing:border-box}body{margin:0;background:#253b49;color:#e2ece9;font:13px/1.55 system-ui,sans-serif}canvas{display:block;touch-action:none}aside{position:fixed;left:14px;top:14px;width:250px;padding:16px;background:#122730ee;border:1px solid #5f787e;border-radius:5px}h1{font-size:19px;margin:0 0 7px}p{font-size:11px;color:#b5c9ca;margin:6px 0 12px}label{display:block;font-size:11px;margin:9px 0 2px}select,input{width:100%}select,button{background:#2e4a50;color:#eff9f3;border:1px solid #73908b;border-radius:3px;padding:6px}button{margin:6px 3px 0 0;cursor:pointer}#status{font:10px/1.5 monospace;white-space:pre-wrap;max-height:18vh;overflow:auto}footer{position:fixed;right:14px;bottom:12px;font-size:11px;pointer-events:none;color:#d1dfdb}body.ui-hidden aside,body.ui-hidden footer{display:none}@media(max-width:650px){aside{width:195px;padding:10px}h1{font-size:16px}}</style>
-<!-- Local r180 dependency layout: vendor/build + vendor/examples/jsm + LICENSE. Never commit vendor. -->
+<!-- Local r187 dependency layout: vendor/build + vendor/examples/jsm + LICENSE. Never commit vendor. -->
 <script type="importmap">{"imports":{"three":"./vendor/build/three.module.js","three/addons/":"./vendor/examples/jsm/"}}</script></head><body>
 <aside><h1>连续轮廓 × 真实接面</h1><p>两种完整构造关系的技术实验。固定材光下比较平截面与台肩截面；拖动环绕，滚轮缩放。</p>
 <label for="relation">构造关系</label><select id="relation"><option value="opening-bearing">B1 贯穿开口 / 有限背承接</option><option value="support-recess">B2 水平边界 / 内凹承托</option></select>
@@ -12,5 +12,5 @@
 <label for="sectionWidth">截面宽度比例 <output id="sectionWidth-value">1.00</output></label><input id="sectionWidth" type="range" min=".6" max="1.6" step=".05" value="1">
 <label for="sectionHeight">截面厚度比例 <output id="sectionHeight-value">1.00</output></label><input id="sectionHeight" type="range" min=".6" max="1.6" step=".05" value="1">
 <label for="roughness">共享边框粗糙度 <output id="roughness-value">0.46</output></label><input id="roughness" type="range" min="0" max="1" step="any" value=".46">
-<button id="reset">全部复位</button><button id="camera-reset">复位镜头</button><button id="invalid">无效候选</button><button id="repeat">重建10次</button><button id="exit">退出并释放</button><pre id="status" aria-live="polite">加载本地 Three r180…</pre>
+<button id="reset">全部复位</button><button id="camera-reset">复位镜头</button><button id="invalid">无效候选</button><button id="repeat">重建10次</button><button id="exit">退出并释放</button><pre id="status" aria-live="polite">加载本地 Three r187…</pre>
 </aside><footer>完整环绕 · 支持底视 · 受控比较候选，视觉资格待审</footer><script type="module" src="./main.mjs"></script></body></html>

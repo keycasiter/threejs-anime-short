@@ -8,7 +8,7 @@
 | 资产共同参考系 | 先 `asset.updateWorldMatrix(true,true)`。asset 是资产根 Object3D，mesh 是它的后代。传入 `asset.matrixWorld.clone().invert().multiply(mesh.matrixWorld)`，要求根变换可逆、资产单位为米。 | 包含嵌套子部件的偏移和旋转；排除资产根在地块上的刚性摆放。已经共享的 geometry 若在不同子节点需要不同值，应先克隆并分配所有者。 |
 | 场景中的固定位置 | 使用实际渲染位置及其世界变换。 | 物体移动后要重新取世界位置；已合并 mesh 的单一 modelMatrix 无法恢复各原型的旧参考系。 |
 
-**可执行例。** 在 skill 根目录用 `node --input-type=module` 从标准输入执行，安装 `three@0.180.0` 或把 `THREE_MODULE` 指向本地 r180 的 `build/three.module.js`（相邻目录保留该发行版的 examples/jsm）。下例两次使用同一份几何，再从真正合并的属性读回两个顶点。
+**可执行例。** 在 skill 根目录用 `node --input-type=module` 从标准输入执行，安装 `three@0.187.0` 或把 `THREE_MODULE` 指向本地 r187 的 `build/three.module.js`（相邻目录保留该发行版的 examples/jsm）。下例两次使用同一份几何，再从真正合并的属性读回两个顶点。
 
 ```js
 import assert from 'node:assert/strict';
@@ -77,4 +77,4 @@ try {
 }
 ```
 
-core 和 context 示例在部件作者给出的局部米制坐标下捕获属性。材质分组单独按原索引展开，语义槽与几何字段一起抵达最终网格。附着坐标不提供材料方向、UV 标尺或切线，也不表示任意源布局可直接上传 GPU。聚焦测试覆盖CPU数据链；真实r180/WebGL诊断另验证三种内置材质中的合批属性读取、就地上传、uniform及重新编译。该诊断不证明最终材料外观、OutputPass、骨骼/实例变形或成片画质。新项目仍须在其真实入口验证。见[坐标与分组测试](../scripts/tests/formation-coordinates.test.mjs)和[装配测试](../scripts/tests/asset-assembly.test.mjs)。
+core 和 context 示例在部件作者给出的局部米制坐标下捕获属性。材质分组单独按原索引展开，语义槽与几何字段一起抵达最终网格。附着坐标不提供材料方向、UV 标尺或切线，也不表示任意源布局可直接上传 GPU。聚焦测试覆盖CPU数据链；真实r187/WebGL诊断另验证三种内置材质中的合批属性读取、就地上传、uniform及重新编译。该诊断不证明最终材料外观、OutputPass、骨骼/实例变形或成片画质。新项目仍须在其真实入口验证。见[坐标与分组测试](../scripts/tests/formation-coordinates.test.mjs)和[装配测试](../scripts/tests/asset-assembly.test.mjs)。

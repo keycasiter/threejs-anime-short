@@ -74,7 +74,7 @@ listen(document.querySelector('#invalid'),'click',()=>{
 });
 listen(document.querySelector('#cycle'),'click',()=>run(()=>{for(let i=0;i<10;i++)for(const entry of entries)rebuild(entry);}));
 listen(document.querySelector('#reset'),'click',()=>{
-  // r180 reset() calls update() with any remaining damping delta. Drain it using
+  // OrbitControls.reset() applies any remaining damping delta. Drain it using
   // public APIs before restoring the saved state, so the view cannot drift again.
   const damping=controls.enableDamping;
   try{controls.enableDamping=false;controls.update();controls.reset();}

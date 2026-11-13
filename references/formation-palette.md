@@ -1,6 +1,6 @@
 # Formation palette
 
-`createFormationPalette(T, {basePalette, profiles={}, applyWhen='unmapped'})` is an r180 role/base identity cache over the actual FormationResponse. It owns only newly created responses. The external owner retains the base palette, all base materials and textures, meshes and geometry; consumers borrow shared returned materials and must not mutate or dispose them individually.
+`createFormationPalette(T, {basePalette, profiles={}, applyWhen='unmapped'})` is an r187 role/base identity cache over the actual FormationResponse. It owns only newly created responses. The external owner retains the base palette, all base materials and textures, meshes and geometry; consumers borrow shared returned materials and must not mutate or dispose them individually.
 
 Profiles are plain dictionaries with at most 32 roles (nonblank strings, at most 128 characters). A value is `null` for passthrough, or `{pattern, space, parameters, programKey?, upstreamProgramKey?}`. Defaults and numeric limits come from FormationResponse. Unknown fields are rejected, including unknown parameter fields. Three-element arrays and Matrix4 numeric elements are copied at construction using fixed indices; caller iterators are not consumed. The fixed profiles cannot be updated. Numeric limits and material-specific compatibility are checked by the actual response on first derived `get`; unused and skipped recipes have not passed that validation. Toon has no roughness consumer, so explicit nonzero `roughnessAmplitude` fails when deriving Toon; reflective metal from LookPalette remains PBR.
 
@@ -12,7 +12,7 @@ Profiles are plain dictionaries with at most 32 roles (nonblank strings, at most
 
 ## Executable ESM method
 
-Install Three r180 in a dependency directory (for example `npm install three@0.180.0` in your project). Save this block as `formation-palette-example.mjs` in the package root. Set `THREE_MODULE` to the installed absolute `three/build/three.module.js` path, then run from the package root:
+Install Three r187 in a dependency directory (for example `npm install three@0.187.0` in your project). Save this block as `formation-palette-example.mjs` in the package root. Set `THREE_MODULE` to the installed absolute `three/build/three.module.js` path, then run from the package root:
 
 ```sh
 THREE_MODULE=/absolute/path/to/node_modules/three/build/three.module.js node formation-palette-example.mjs

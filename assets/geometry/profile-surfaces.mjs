@@ -1,4 +1,4 @@
-/** Small geometry builders. Inject the caller's THREE namespace (verified with r180).
+/** Small geometry builders. Inject the caller's THREE namespace (verified with r187).
  * Coordinates/lengths must use one consistent unit. No renderer or external assets.
  */
 const finite = Number.isFinite;
@@ -157,7 +157,7 @@ function validateLayout(rings) {
     if (i === 0 ? !contains(rings[0], rings[j][0]) : contains(rings[i], rings[j][0]) || contains(rings[j], rings[i][0])) throw new Error('Hole must be strictly inside outline and disjoint from other holes');
   }
 }
-// CCW ring offset, positive distance moves inward. Formula matches r180's
+// CCW ring offset, positive distance moves inward. Formula matches r187's
 // adjacent parallel-line intersection and sqrt(2) spike limit for convex rings.
 function offsetConvex(ring, distance) {
   return ring.map((p, i) => {
@@ -187,7 +187,7 @@ export function createPerforatedPlate(THREE, {
   if (!Array.isArray(holes)) throw new Error('holes must be an array');
   const inputRings = [outline, ...holes]; inputRings.forEach(validateRing);
   validateLayout(inputRings);
-  // Normalize every ring independently: r180 only normalizes hole winding when
+  // Normalize every ring independently: r187 only normalizes hole winding when
   // it also reverses the outline. Caller ring orientation must not change a bore.
   const rings = inputRings.map(r => signedArea(r) < 0 ? [...r].reverse() : [...r]);
   const enabled = bevel.enabled ?? true;

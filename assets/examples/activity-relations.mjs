@@ -52,7 +52,7 @@ export function createActivityLabController({slot,state,providers,clay,depth,bui
 export function buildActivityRelation(T,{
  kind='exchange',mergeGeometries,materialFor,pressFrontOffset=0,pressFootOffset=0,islandHoleExtra=0,failAfterBake=false,measurementLimit=2000000,qualificationLimits
 }={}){
- assert(['exchange','exhibit'].includes(kind),'unknown relation');assert(String(T.REVISION)==='180','requires r180');
+ assert(['exchange','exhibit'].includes(kind),'unknown relation');assert(String(T.REVISION)==='187','requires r187');
  assert(typeof mergeGeometries==='function'&&typeof materialFor==='function','inject matching mergeGeometries and materialFor');
  for(const [k,v]of Object.entries({pressFrontOffset,pressFootOffset,islandHoleExtra}))assert(Number.isFinite(v)&&v>=0&&v<=1.5,`invalid ${k}`);
  const scope=createResourceScope(),sources=createResourceScope(),root=new T.Group(),sourceRanges=[],materialBindings=[],provenance=[],members=[],allRows=[];

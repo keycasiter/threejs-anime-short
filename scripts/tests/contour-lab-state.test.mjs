@@ -19,7 +19,7 @@ function harness(){
  const nodes=new Map(),$=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);};
  const materials=Object.fromEntries(['frame','panelDeck','attachment'].map(k=>[k,new T.MeshStandardMaterial({roughness:k==='frame'?.46:.7})]));
  const rigidDepth=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking});
- const doc=element(),camera=new T.PerspectiveCamera(40,16/9,.05,40),controls=new OrbitControls(camera,{...element(),getRootNode:()=>doc});controls.minPolarAngle=0;controls.maxPolarAngle=Math.PI;
+ const doc=element(),camera=new T.PerspectiveCamera(40,16/9,.05,40),controls=new OrbitControls(camera,{...element(),ownerDocument:doc,getRootNode:()=>doc});controls.minPolarAngle=0;controls.maxPolarAngle=Math.PI;
  const slot=createAssetSlot(new T.Group());slot.replace(s=>s.own(createContourRelation(T,{design,materials})));
  const context=vm.createContext({T,design,materials,rigidDepth,slot,$,camera,controls,listen:(element,event,callback)=>{element.listeners??={};element.listeners[event]=callback;},createContourRelation,document:{createElement:element},console});
  vm.runInContext(`let disposed=false,error=null,replacementStatus='committed',selected={id:'opening-bearing',mode:'profile'},viewName='front';const parameters={spanX:1,spanY:1,sectionWidth:1,sectionHeight:1};const initialRoughness=.46;\n${['status','isFrozen','sync','viewOptions','rebuild','setView'].map(functionSource).join('\n')}\nglobalThis.api={rebuild,read(){return {selected,parameters,viewName,error,replacementStatus,revision:slot.revision,asset:slot.current.readState(),camera:{position:camera.position.toArray(),target:controls.target.toArray()}}}};`,context);
@@ -28,7 +28,7 @@ function harness(){
  return {api:context.api,slot,nodes,$,rigidDepth,materials,close(){controls.dispose();slot.dispose();Object.values(materials).forEach(m=>m.dispose());rigidDepth.dispose();}};
 }
 test('actual Orbit configuration admits every registered camera position and target',()=>{
- const doc=element(),canvas={...element(),getRootNode:()=>doc};const camera=new T.PerspectiveCamera(40,16/9,.05,40),owner={own:x=>x};let controls;
+ const doc=element(),canvas={...element(),ownerDocument:doc,getRootNode:()=>doc};const camera=new T.PerspectiveCamera(40,16/9,.05,40),owner={own:x=>x};let controls;
  const line=main.split('\n').find(x=>x.includes('controls=owner.own(new OrbitControls'));
  controls=new Function('OrbitControls','camera','renderer','owner',`let controls;${line};return controls;`)(OrbitControls,camera,{domElement:canvas},owner);
  for(const example of design.examples)for(const pose of Object.values(example.camera)){camera.position.set(...pose.position);controls.target.set(...pose.target);controls.update();near(camera.position.toArray(),pose.position);near(controls.target.toArray(),pose.target);}

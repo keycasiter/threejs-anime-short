@@ -1,5 +1,5 @@
 /** Bake authored fields into Three.js PBR maps, optionally composing a material.
- * Inject the scene's THREE namespace (verified with r180). createSurfaceMaps
+ * Inject the scene's THREE namespace (verified with r187). createSurfaceMaps
  * creates data maps only; createRegionMaterial also owns a standard material.
  * Neither creates a renderer, geometry, random field or external image.
  */
@@ -18,7 +18,7 @@ export function disposeMaterialResources(children,label) {
  * pixel center; u,v increase along +x,+y. Row 0 stores the LOW-v row, flipY=false.
  * physicalSize describes one UV tile's orthogonal tangent-space X/Y lengths;
  * x=u*physicalSize[0], y=v*physicalSize[1]. A checked unit orthonormal shader tangent frame and the
- * default tangent-space normalMapType/normalScale=(1,1) are assumed. In r180,
+ * default tangent-space normalMapType/normalScale=(1,1) are assumed. In r187,
  * the derivative fallback is not unit in both axes for unequal UV/world scales;
  * supported indexed geometry can computeTangents(), then verify its chart. UV repeats,
  * nonuniform UV/world scaling or complex curved charts need caller-side metric

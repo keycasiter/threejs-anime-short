@@ -11,7 +11,7 @@ const parameters={spanX:1,spanY:1,sectionWidth:1,sectionHeight:1};
 let selected={id:'opening-bearing',mode:'profile'},viewName='front';
 const design=await fetch('../contour-relations-design.json').then(r=>{if(!r.ok)throw Error(`Design HTTP ${r.status}`);return r.json();});
 const contract=design.renderContract;
-if(String(T.REVISION)!=='180')throw Error('Contour lab requires Three/addons r180');
+if(String(T.REVISION)!=='187')throw Error('Contour lab requires Three/addons r187');
 const scene=new T.Scene(),materials={};
 try{
  // Parse the frozen recipes before allocation. Providers are owned before

@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {targetState} from './fixtures/r180-target-state.mjs';
+import {targetState} from './fixtures/r187-target-state.mjs';
 import assert from 'node:assert/strict';
 import {pathToFileURL} from 'node:url';
 import {resolve,dirname} from 'node:path';
@@ -32,14 +32,14 @@ function setup({shaderFailure=false,captureFailure=false,pmremFailure=null,prior
  }}
  class WebGLCubeRenderTarget extends T.WebGLCubeRenderTarget{constructor(...args){super(...args);watch(this,'cube');}}
  class PMREMGenerator extends T.PMREMGenerator{
-  _allocateTargets(){const rt=super._allocateTargets();targets.push(rt);watch(rt,'target');return rt;}
-  _textureToCubeUV(texture,rt){assert.ok(this._lodPlanes.length);assert.ok(this._pingPongRenderTarget);assert.ok(this._blurMaterial);renderer.setRenderTarget(rt,4,1);
+  _allocateTarget(){const rt=super._allocateTarget();targets.push(rt);watch(rt,'target');return rt;}
+  _textureToCubemap(texture){assert.equal(texture.isCubeTexture,true);assert.ok(this._cubeSize>=16);renderer.setRenderTarget(targets.at(-1),4,1);
    if(pmremFailure==='conversion')throw Error('PMREM conversion failure');
    if(pmremFailure==='callback'){renderer.debug.onShaderError(renderer,{}, {}, {});events.push('conversion-finished-after-callback');}}
   _applyPMREM(){if(pmremFailure==='blur')throw Error('PMREM internal blur failure');}
   dispose(){super.dispose();events.push('generator');}
  }
- const sky=new T.WebGLRenderTarget(336,256).texture;sky.mapping=T.CubeUVReflectionMapping;let skyDisposed=0;sky.addEventListener('dispose',()=>skyDisposed++);
+ const sky=new T.WebGLCubeRenderTarget(64).texture;sky.isPMREMTexture=true;let skyDisposed=0;sky.addEventListener('dispose',()=>skyDisposed++);
  function build(options={}){assert.equal(typeof api.buildCorePresentation,'function');return api.buildCorePresentation({...T,CubeCamera,PMREMGenerator,WebGLCubeRenderTarget},{renderer,mergeGeometries,MarchingCubes,skyTexture:sky,resolution:64,shadowMapSize:128,...options});}
  return {build,renderer,snapshot,captures,targets,events,sky,setPMREMFailure(mode,throwPrior=false){pmremFailure=mode;priorCallbackThrows=throwPrior;},get skyDisposed(){return skyDisposed;}};
 }

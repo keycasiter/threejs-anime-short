@@ -12,7 +12,7 @@ const {mergeGeometries}=await import(addon('utils/BufferGeometryUtils.js'));
 const {MarchingCubes}=await import(addon('objects/MarchingCubes.js'));
 const main=await readFile(new URL('../../assets/examples/core-lab/main.mjs',import.meta.url),'utf8');
 function cameraHarness(tasks){
- const dom={style:{},addEventListener(){},removeEventListener(){},getRootNode(){return this;}};
+ const doc={addEventListener(){},removeEventListener(){}},dom={style:{},ownerDocument:doc,addEventListener(){},removeEventListener(){},getRootNode(){return doc;}};
  const camera=new T.PerspectiveCamera(41,16/9,.1,420),controls=new OrbitControls(camera,dom);
  const settings=main.split('\n').find(l=>l.startsWith('controls.minDistance='));
  new Function('controls',settings)(controls);
@@ -21,7 +21,7 @@ function cameraHarness(tasks){
  vm.runInContext(main.slice(start,end)+'\nglobalThis.setView=setView;',context);
  return {camera,controls,state,setView:context.setView};
 }
-test('actual r180 Orbit and production setView preserve every actual registered world pose',()=>{
+test('actual r187 Orbit and production setView preserve every actual registered world pose',()=>{
  const material=new T.MeshStandardMaterial();let count=0;
  try{for(const configuration of ['grid','ring','terraced']){
   const world=buildCoreWorld(T,{configuration,mergeGeometries,MarchingCubes,materialFor:()=>material});
@@ -75,15 +75,15 @@ function checkFinalFrameRanges(world,records=world.bakedBoundarySources){
  for(const record of records){
   assert.equal(Object.hasOwn(record,'formationPreserved'),false);assert.equal(Object.hasOwn(record,'bakedGeometryIds'),false);
   assert.equal(record.sourceSpace,'world-root-local');assert.ok(Array.isArray(record.sourceRanges)&&record.sourceRanges.length>0,'missing actual sourceRanges');
-  const source=createContourProfileSource(T,{contour:record.metadata.contour,profile:record.metadata.profile});
-  try{const p=source.geometry.attributes.position,index=source.geometry.index,matrix=new T.Matrix4().fromArray(record.sourceMatrix);let cursor=0;
+  const source=createContourProfileSource(T,{contour:record.metadata.contour,profile:record.metadata.profile,formationCharts:record.formationCharts});
+  try{const p=source.geometry.attributes.position,authored=source.geometry.attributes.aFormationPosition??p,index=source.geometry.index,matrix=new T.Matrix4().fromArray(record.sourceMatrix);let cursor=0;
    for(const range of record.sourceRanges){
     assert.equal(range.sourceId,record.id);const object=objects.get(range.objectId);assert.ok(object,'range object membership');assert.notEqual(object,world.parts.panel,'dynamic panel is not a frame output');assert.equal(object.geometry.uuid,range.geometryId,'actual geometry identity');
     const g=object.geometry,position=g.attributes.position,formation=g.attributes.aFormationPosition;assert.equal(g.index,null);assert.ok(formation&&formation.itemSize===3);assert.equal(formation.count,position.count);
     assert.ok(Number.isSafeInteger(range.vertexStart)&&range.vertexStart>=0&&range.vertexStart%3===0);assert.ok(Number.isSafeInteger(range.vertexCount)&&range.vertexCount>0&&range.vertexCount%3===0);assert.ok(range.vertexStart+range.vertexCount<=position.count);
     for(let i=0;i<range.vertexCount;i++){
      assert.ok(cursor<index.count,'extraneous output range');const original=index.getX(cursor++),local=new T.Vector3().fromBufferAttribute(p,original),placed=local.clone().applyMatrix4(matrix);
-     for(let c=0;c<3;c++){assert.equal(formation.getComponent(range.vertexStart+i,c),p.getComponent(original,c),`${record.id} aFormationPosition mismatch at ${i}/${c}`);assert.equal(position.getComponent(range.vertexStart+i,c),Math.fround(placed.getComponent(c)),`${record.id} position mismatch at ${i}/${c}`);}vertices++;
+     for(let c=0;c<3;c++){assert.equal(formation.getComponent(range.vertexStart+i,c),authored.getComponent(original,c),`${record.id} aFormationPosition mismatch at ${i}/${c}`);assert.equal(position.getComponent(range.vertexStart+i,c),Math.fround(placed.getComponent(c)),`${record.id} position mismatch at ${i}/${c}`);}vertices++;
     }
    }
    assert.equal(cursor,index.count,'complete indexed source coverage');assert.equal(record.triangleCount,index.count/3);

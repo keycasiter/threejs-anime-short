@@ -1,6 +1,6 @@
 # 材料身份、分段受光与同源灯光
 
-适用：锁定 Three.js r180、米制场景、已有形体和空间结构。材光可读性由真实曲面、光源、反射环境和输出链共同决定；程序纹理不会补出厚度、接点或轮廓。
+适用：锁定 Three.js r187、米制场景、已有形体和空间结构。材光可读性由真实曲面、光源、反射环境和输出链共同决定；程序纹理不会补出厚度、接点或轮廓。
 
 ## 已确认接口与边界
 
@@ -35,7 +35,7 @@
 
 PBR 的木/石/涂层复用已有程序字段，金属通过 `createRegionMaterial` 烘焙连续周期字段，四角色具有不同的颜色、起伏和粗糙度。金属使用高金属度及中等粗糙度；它需要有效 PMREM 才能呈现环境反射。配方中的细小表面变化不是几何破损，也不是各向异性 BRDF。低分辨率 RGB8 法线可能量化掉浅起伏。
 
-Toon 的木/石/涂层实际创建 `MeshToonMaterial`。8×1 的 `RedFormat` DataTexture 储存原始光照乘数，`NearestFilter` 且不生成 mipmap。r180 的渐变坐标为 `NdotL*.5+.5`，没有再乘 `max(NdotL,0)`：前四格设0，后四格为受光四阶，避免背光曲面得到直射光后显露密集自阴影条纹。需要非物理包裹光的风格应另行设计并检查阴影，不能误把整个渐变宽度当成正半球。
+Toon 的木/石/涂层实际创建 `MeshToonMaterial`。8×1 的 `RedFormat` DataTexture 储存原始光照乘数，`NearestFilter` 且不生成 mipmap。r187 的渐变坐标为 `NdotL*.5+.5`，没有再乘 `max(NdotL,0)`：前四格设0，后四格为受光四阶，避免背光曲面得到直射光后显露密集自阴影条纹。需要非物理包裹光的风格应另行设计并检查阴影，不能误把整个渐变宽度当成正半球。
 
 暗部由间接亮度/补光单独设计；把负半球直射清零只修正光照归属，不保证暗面已经可读。它仍使用 Three 的灯光和阴影路径；不会烘焙一张固定明暗贴图。环境光和多个直射灯叠加会软化分段对比，需要按画面调节。金属继续使用 `MeshStandardMaterial` 响应 PMREM，因此此模式是分段漫反射与 PBR 金属反射的混合风格。
 
@@ -133,9 +133,9 @@ function disposeLook() {
 
 palette 拥有所返材质、共享程序贴图及渐变；借用者不应修改或单独 dispose。PBR 的内部基础材质与输出克隆共享贴图，由统一所有者一次释放；Toon 不使用的原始粗糙度/金属度图也随基础配方释放。`inspect()` 返回脱离内部状态的参数与 UUID，dispose 幂等，销毁后的 get 抛错。
 
-灯架只拥有灯（包括 hemisphere）、target 和灯的阴影存储。它不持有 renderer，不释放借用的几何、材质、环境；`dispose()` 将 root 从场景移除并释放影图，每盏灯只调用一次 dispose。r180 的无阴影 Light.dispose 为空方法，无额外 GPU 存储或 dispose 事件；清理仍会使其脱离 root。`readState()` 可在销毁后读取状态。外部修改 key、target、root 变换或 shadow camera 会破坏冻结拟合；不要把灯架挂到非单位缩放父节点。bounds 只有物体包围盒时，长投影可能超出范围；扩大到所需受影区域，而不是仅把 shadow far 调大。
+灯架只拥有灯（包括 hemisphere）、target 和灯的阴影存储。它不持有 renderer，不释放借用的几何、材质、环境；`dispose()` 将 root 从场景移除并释放影图，每盏灯只调用一次 dispose。r187 的无阴影 Light.dispose 为空方法，无额外 GPU 存储或 dispose 事件；清理仍会使其脱离 root。`readState()` 可在销毁后读取状态。外部修改 key、target、root 变换或 shadow camera 会破坏冻结拟合；不要把灯架挂到非单位缩放父节点。bounds 只有物体包围盒时，长投影可能超出范围；扩大到所需受影区域，而不是仅把 shadow far 调大。
 
-[材光行为测试](../scripts/tests/look-development.test.mjs) 使用真实 r180，覆盖角色通道、参数与缓存、颜色空间、渐变过滤、无贴图模式与独立浅色基色、角色 BRDF 保留、共享释放、异常输入、不同方向的完整 bounds 投影、光线在受影平面的同 UV/递增深度，以及半球灯真实参数、状态和归属清理。[分区行为测试](../scripts/tests/material-regions.test.mjs) 检查真实三角法线/面积、原槽来源、连续 groups、buffer 保持、退化面与错误时原子性。运行：
+[材光行为测试](../scripts/tests/look-development.test.mjs) 使用真实 r187，覆盖角色通道、参数与缓存、颜色空间、渐变过滤、无贴图模式与独立浅色基色、角色 BRDF 保留、共享释放、异常输入、不同方向的完整 bounds 投影、光线在受影平面的同 UV/递增深度，以及半球灯真实参数、状态和归属清理。[分区行为测试](../scripts/tests/material-regions.test.mjs) 检查真实三角法线/面积、原槽来源、连续 groups、buffer 保持、退化面与错误时原子性。运行：
 
 ```sh
 THREE_MODULE=/path/to/three/build/three.module.js node --test scripts/tests/look-development.test.mjs scripts/tests/material-regions.test.mjs

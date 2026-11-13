@@ -20,7 +20,7 @@
  * shaders, rebuild deformed geometry, or refresh stale instance/geometry bounds.
  *
  * Ordinary-depth WebGL PerspectiveCamera and OrthographicCamera only. WebGPU
- * coordinates and camera.reversedDepth are rejected. In r180 WebGLRenderer can
+ * coordinates and camera.reversedDepth are rejected. In r187 WebGLRenderer can
  * enable reversedDepth while coordinateSystem remains WebGL; reversed projection
  * uses near NDC z=1 and far z=0, incompatible with this function's near z=-1 and
  * [-w,w] depth clip interval. Custom projection matrices must also retain the

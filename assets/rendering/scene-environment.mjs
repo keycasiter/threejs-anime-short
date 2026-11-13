@@ -15,34 +15,31 @@ export function snapshotProbePosition(v) {
 }
 function positive(n, label) { if (!Number.isFinite(n) || n <= 0) throw Error(`${label} must be positive`); }
 
-// Pinned r180 ownership boundary for sky/world native cubemap conversion. The
-// allocator initializes LOD/ping-pong/blur state and returns BEFORE any output
-// rendering. Register that return immediately, without duplicating PMREM code or
-// changing a global prototype. An explicit target alone skips fresh-generator
-// initialization. Sky also uses the owned cube path, avoiding fromScene's
-// private transient background mesh, whose cleanup is skipped on renderer errors.
+// Pinned r187 ownership boundary for sky/world native cubemap conversion. The
+// allocator returns its PMREM cube target before conversion/filtering begins.
+// Register it immediately, without duplicating PMREM code or changing a global
+// prototype. Sky uses this owned cube path rather than fromScene's transient
+// background mesh, whose cleanup is skipped on renderer errors.
 function ownedPMREM(T,generator,owner,resolution,render){
-  if(String(T?.REVISION)!=='180')throw Error('PMREM ownership requires Three r180');
-  if(typeof generator._setSize!=='function'||typeof generator._allocateTargets!=='function')throw Error('Unsupported r180 PMREM ownership protocol');
-  const descriptor=Object.getOwnPropertyDescriptor(generator,'_allocateTargets'),allocate=generator._allocateTargets;
-  if(descriptor&&!descriptor.configurable)throw Error('Unsupported r180 PMREM allocator descriptor');
+  if(String(T?.REVISION)!=='187')throw Error('PMREM ownership requires Three r187');
+  if(typeof generator._setSize!=='function'||typeof generator._allocateTarget!=='function')throw Error('Unsupported r187 PMREM ownership protocol');
+  const descriptor=Object.getOwnPropertyDescriptor(generator,'_allocateTarget'),allocate=generator._allocateTarget;
+  if(descriptor&&!descriptor.configurable)throw Error('Unsupported r187 PMREM allocator descriptor');
   let allocated=null;
-  Object.defineProperty(generator,'_allocateTargets',{configurable:true,writable:true,value:function(...args){
+  Object.defineProperty(generator,'_allocateTarget',{configurable:true,writable:true,value:function(...args){
     const target=owner.own(allocate.apply(this,args));allocated=target;
-    const cubeSize=2**Math.floor(Math.log2(resolution)),width=3*Math.max(cubeSize,16*7),height=4*cubeSize,texture=target.texture;
-    const validOutput=target.isRenderTarget&&target.width===width&&target.height===height&&target.depthBuffer===false&&
-      texture?.mapping===T.CubeUVReflectionMapping&&texture.type===T.HalfFloatType&&texture.format===T.RGBAFormat&&texture.colorSpace===T.LinearSRGBColorSpace&&
-      texture.minFilter===T.LinearFilter&&texture.magFilter===T.LinearFilter&&texture.generateMipmaps===false;
-    const initialized=this._cubeSize===cubeSize&&this._lodMax===Math.floor(Math.log2(resolution))&&this._lodPlanes?.length&&this._sizeLods?.length&&this._sigmas?.length&&
-      this._blurMaterial?.isShaderMaterial&&this._pingPongRenderTarget?.isRenderTarget&&this._pingPongRenderTarget.width===width&&this._pingPongRenderTarget.height===height;
-    if(!validOutput||!initialized)throw Error('Unsupported r180 PMREM allocation protocol');
+    const cubeSize=Math.max(256,2**Math.floor(Math.log2(resolution))),texture=target.texture;
+    const validOutput=target.isWebGLCubeRenderTarget&&target.width===cubeSize&&target.height===cubeSize&&target.depthBuffer===false&&
+      texture?.isCubeTexture&&texture.isPMREMTexture===true&&texture.mapping===T.CubeReflectionMapping&&texture.type===T.HalfFloatType&&
+      texture.colorSpace===T.LinearSRGBColorSpace&&texture.minFilter===T.LinearMipmapLinearFilter&&texture.generateMipmaps===false&&texture.mipmaps?.length>0;
+    if(!validOutput||this._cubeSize!==cubeSize)throw Error('Unsupported r187 PMREM allocation protocol');
     return target;
   }});
   try{
     const result=render();
-    if(result!==allocated||!allocated){if(result?.dispose)owner.own(result);throw Error('Unsupported r180 PMREM output identity');}
+    if(result!==allocated||!allocated){if(result?.dispose)owner.own(result);throw Error('Unsupported r187 PMREM output identity');}
     return result;
-  }finally{if(descriptor)Object.defineProperty(generator,'_allocateTargets',descriptor);else delete generator._allocateTargets;}
+  }finally{if(descriptor)Object.defineProperty(generator,'_allocateTarget',descriptor);else delete generator._allocateTarget;}
 }
 
 export function createSkyEnvironment(T, {renderer, radius=180, resolution=128,
@@ -105,7 +102,7 @@ export function createSkyEnvironment(T, {renderer, radius=180, resolution=128,
  */
 export function captureEnvironmentProbe(T,{renderer,scene,position=[0,1,0],resolution=128,
   near=.1,far=150,exclude=[]}={}) {
-  if(String(T?.REVISION)!=='180')throw Error('Probe PMREM ownership requires Three r180');
+  if(String(T?.REVISION)!=='187')throw Error('Probe PMREM ownership requires Three r187');
   if(!renderer?.isWebGLRenderer||!scene?.isScene)throw Error('renderer and scene required');
   const xyz=snapshotProbePosition(position);
   if(!Number.isInteger(resolution)||resolution<16||resolution>1024)throw Error('resolution must be 16..1024');

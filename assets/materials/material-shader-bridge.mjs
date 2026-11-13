@@ -1,7 +1,7 @@
-// Three.js r180 WebGLRenderer only. See references/material-shader-bridge.md.
+// Three.js r187 WebGLRenderer only. See references/material-shader-bridge.md.
 const stages = ['vertex', 'fragment'];
 const types = ['MeshStandardMaterial', 'MeshPhysicalMaterial', 'MeshToonMaterial'];
-// r180 WebGLRenderer.setProgram, WebGLMorphtargets.update and the batched multi-draw fallback
+// r187 WebGLRenderer.setProgram, WebGLMorphtargets.update and the batched multi-draw fallback
 // upload these independently of ShaderLib.uniforms. Clipping is attached after onBeforeCompile.
 const rendererUniforms = new Set([
   'toneMappingExposure', 'projectionMatrix', 'viewMatrix', 'cameraPosition', 'logDepthBufFC', 'isOrthographic',
@@ -83,10 +83,10 @@ function editStage(stage, source, patches) {
 }
 
 export function createMaterialShaderBridge(T, options = {}) {
-  if (T?.REVISION !== '180') fail('requires Three.js REVISION 180');
+  if (T?.REVISION !== '187') fail('requires Three.js REVISION 187');
   const {baseMaterial: base, programKey, upstreamProgramKey = null} = options;
   const type = types.find(name => base && Object.getPrototypeOf(base) === T[name]?.prototype && base.type === name);
-  if (!type) fail('baseMaterial must be an exact r180 MeshStandardMaterial, MeshPhysicalMaterial or MeshToonMaterial');
+  if (!type) fail('baseMaterial must be an exact r187 MeshStandardMaterial, MeshPhysicalMaterial or MeshToonMaterial');
   identity(programKey, 'programKey');
   const hook = base.onBeforeCompile, upstreamCache = base.customProgramCacheKey;
   if (typeof hook !== 'function' || typeof upstreamCache !== 'function') fail('base material compile/cache hooks must be functions');
@@ -100,7 +100,7 @@ export function createMaterialShaderBridge(T, options = {}) {
   const defines = table({...table(base.defines ?? {}, 'base defines', validDefine),
     ...table(options.defines ?? {}, 'defines', validDefine)}, 'merged defines', validDefine);
   const patches = compilePatches(options.patches);
-  const structuralKey = JSON.stringify(['material-shader-bridge/180/v1', type, programKey, upstreamProgramKey, patches, defines, uniformNames]);
+  const structuralKey = JSON.stringify(['material-shader-bridge/187/v1', type, programKey, upstreamProgramKey, patches, defines, uniformNames]);
   // Material.clone() allocates then calls copy(). Keep the new object reachable if copy throws.
   const material = new T[type]();
   let disposed = false;
@@ -123,7 +123,7 @@ export function createMaterialShaderBridge(T, options = {}) {
       for (const name of uniformNames)
         if (name in target || rendererUniforms.has(name)) fail('shader.uniforms collision: ' + name);
       if (uniformNames.length && !Object.isExtensible(target)) fail('shader.uniforms is not extensible');
-      // r180 passes plain parameters with own writable data fields; upstream may have changed them.
+      // r187 passes plain parameters with own writable data fields; upstream may have changed them.
       for (const field of ['vertexShader', 'fragmentShader'])
         if (!Object.getOwnPropertyDescriptor(shader, field)?.writable) fail(field + ' must be writable');
       Object.assign(target, uniforms);

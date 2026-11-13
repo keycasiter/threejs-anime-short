@@ -1,7 +1,7 @@
 import {clipConvexPolygon} from '../geometry/bounded-profile.mjs';
 
 const finite=Number.isFinite;
-const FLOAT_GPU_TYPE=1015; // THREE.FloatType in the pinned r180 attribute contract.
+const FLOAT_GPU_TYPE=1015; // THREE.FloatType in the pinned r187 attribute contract.
 const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
 const area=r=>r.slice(1,-1).reduce((s,p,i)=>s+cross(r[0],p,r[i+2]),0)/2;
 const distance=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
@@ -31,7 +31,7 @@ function gridTerrain(g,epsilon,maxTriangles){
  if(Object.values(g.morphAttributes??{}).some(v=>v.length))throw new Error('morphed/deformed terrain is unsupported');
  const p=g.getAttribute('position'),idx=g.getIndex();
  if(!idx||idx.itemSize!==1||idx.normalized||idx.isInterleavedBufferAttribute||idx.isInstancedBufferAttribute||!(idx.array instanceof Uint8Array||idx.array instanceof Uint16Array||idx.array instanceof Uint32Array))throw new Error('terrain index requires a scalar unsigned element BufferAttribute');
- // Deliberately narrow: this geometry's CPU samples and r180 WebGL positions
+ // Deliberately narrow: this geometry's CPU samples and r187 WebGL positions
  // must represent the same values, without normalization or integer shader inputs.
  if(!p?.isBufferAttribute||p.itemSize!==3||p.normalized||p.gpuType!==FLOAT_GPU_TYPE||p.isInstancedBufferAttribute||!(p.array instanceof Float32Array))throw new Error('terrain position requires a nonnormalized, noninterleaved Float32 xyz BufferAttribute with float GPU binding');
  if(idx.count%3||idx.count/3>maxTriangles||p.count>maxTriangles*2+4)throw new Error('indexed regular grid terrain required within maxTerrainTriangles');

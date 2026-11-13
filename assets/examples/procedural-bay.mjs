@@ -4,7 +4,7 @@ import {FORMATION_ATTRIBUTE,writeFormationCoordinates} from '../geometry/formati
 import {createResourceScope} from '../runtime/resource-scope.mjs';
 import {frameStockCharts} from './boundary-profile-design.mjs';
 
-/** Original, renderer-independent architectural midstructure. Inject THREE r180.
+/** Original, renderer-independent architectural midstructure. Inject THREE r187.
  * Metres; local +Y is up, floor y=0, x=0 is the centerline; facade faces +Z.
  * Wall spans z=-depth/2..depth/2. Opening is centered in x, with its bottom at
  * sillHeight and top at sillHeight+openingHeight. No backing plane is generated.

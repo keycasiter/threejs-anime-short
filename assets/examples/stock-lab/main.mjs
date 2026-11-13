@@ -12,7 +12,7 @@ const contract=design.renderConditions,common=design.cameraCommon,ownedpalettes=
 let renderer,camera,controls,sky,controller,depth,disposed=false,renderCount=0,view='near',error=null,activeRig=null,replacementStatus='committed';
 const alive=()=>{if(disposed)throw new Error('Stock lab is disposed');};
 try{
- if(String(T.REVISION)!=='180')throw new Error('Stock lab requires the same Three/addons r180');
+ if(String(T.REVISION)!=='187')throw new Error('Stock lab requires the same Three/addons r187');
  // Renderer is the longest-lived provider and is released last by the LIFO owner.
  renderer=owner.own(new T.WebGLRenderer({antialias:true}));renderer.setPixelRatio(common.DPR);renderer.setSize(...common.viewport,false);renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;document.body.prepend(renderer.domElement);owner.defer(()=>renderer.domElement.remove());
  sky=owner.own(createSkyEnvironment(T,{renderer,...contract.sky}));scene.add(sky.root);sky.apply(scene);scene.environmentIntensity=contract.environmentIntensity;scene.fog=null;

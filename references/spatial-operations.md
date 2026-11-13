@@ -21,13 +21,13 @@
 
 ## 可运行ESM
 
-将下面完整代码保存为`spatial-example.mjs`。已有项目安装并锁定`three@0.180.0`后运行`node spatial-example.mjs`；无裸包解析时，可指定同版本地模块URL：`THREE_MODULE=file:///absolute/path/three/build/three.module.js node spatial-example.mjs`。显式路径优先，不自动改用其他版本；完整build依赖与LICENSE随所选Three包保留。示例仅需Node，不创建WebGL上下文。
+将下面完整代码保存为`spatial-example.mjs`。已有项目安装并锁定`three@0.187.0`后运行`node spatial-example.mjs`；无裸包解析时，可指定同版本地模块URL：`THREE_MODULE=file:///absolute/path/three/build/three.module.js node spatial-example.mjs`。显式路径优先，不自动改用其他版本；完整build依赖与LICENSE随所选Three包保留。示例仅需Node，不创建WebGL上下文。
 
 数值约定：输入与中间结果须有限；方向长度/平方长度须可表示且非零。父变换须仿射且可可靠求逆；移动对象由position/quaternion/scale管理，祖先可用手写剪切矩阵，但世界矩阵由Three更新。判定的cos容差为`1e-12`；扇区半径闭边界容差为`1e-10`世界单位，同点按XZ重合处理并纳入扇区（包括半径0）。非法heading即使同点也拒绝。全角允许[0,2π]；0角仅含前射线的数值容差，2π含整个圆盘。
 
 ```js
 const T = await import(process.env.THREE_MODULE || 'three');
-if (T.REVISION !== '180') throw Error('Use the complete three@0.180.0 package');
+if (T.REVISION !== '187') throw Error('Use the complete three@0.187.0 package');
 const COS_EPS = 1e-12, DIST_EPS = 1e-10;
 function vector(v) {
   if (!v?.isVector3 || !v.toArray().every(Number.isFinite)) throw Error('finite Vector3 required');

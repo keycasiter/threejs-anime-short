@@ -1,6 +1,6 @@
 /** Raycast actual support meshes and construct world-space attachment frames.
  * Inject the scene's THREE namespace. Y-up/+Z-forward is the asset convention,
- * not a restriction on the support surface. Verified with Three r180.
+ * not a restriction on the support surface. Verified with Three r187.
  * Point sampling, finite patch qualification and attachment frames are separate
  * operations. None establishes continuous footprint support, collision or IK.
  */

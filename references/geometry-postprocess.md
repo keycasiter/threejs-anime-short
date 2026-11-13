@@ -6,11 +6,11 @@
 |---|---|---|
 | `mergeVertices` | 返回新 indexed clone；按所有普通属性的量化桶合并，不是欧氏距离测试；morph 不参与哈希，只复制首个值 | 同一 tolerance 影响 position、UV、normal、语义属性；不得删掉接缝属性来强行焊接。限制哈希数值范围以避免 signed-32-bit 回绕 |
 | `toCreasedNormals` | indexed 输入返回新 nonindexed 对象；nonindexed 原地返回；严格 `dot > cos(angle)` 累加单位面法线 | 固定约 0.01 **局部单位**的位置桶，无拓扑、group、UV 隔离，也不按面积加权。断开近面仍可能混合；调用者必须先检查尺度/分壳并明确接受桶行为 |
-| `computeMikkTSpaceTangents` | `await MikkTSpace.ready` 后修改并返回同一对象；indexed 数据会去索引，产生 tangent4 | xyz 切线与 w 符号都需核对；r180 的副切线为 `cross(normal,tangent.xyz)*w`。`negateSign` 由烘焙器/贴图约定决定 |
+| `computeMikkTSpaceTangents` | `await MikkTSpace.ready` 后修改并返回同一对象；indexed 数据会去索引，产生 tangent4 | xyz 切线与 w 符号都需核对；r187 的副切线为 `cross(normal,tangent.xyz)*w`。`negateSign` 由烘焙器/贴图约定决定 |
 
-下面是唯一完整 ESM。Three.js 与 addons 固定同一 `three@0.180.0` 包。独立项目安装该版本；Node 可将 `THREE_MODULE` 设置为该包实际 `build/three.module.js` 文件 URL 或绝对路径。浏览器使用支持包导入的构建器；此示例的路径解析入口面向 Node。
+下面是唯一完整 ESM。Three.js 与 addons 固定同一 `three@0.187.0` 包。独立项目安装该版本；Node 可将 `THREE_MODULE` 设置为该包实际 `build/three.module.js` 文件 URL 或绝对路径。浏览器使用支持包导入的构建器；此示例的路径解析入口面向 Node。
 
-方法只接受完整 drawRange 的普通静态三角 geometry；partial range 先在调用方提取成独立完整几何，否则拒绝。支持普通 `BufferAttribute` 的 1–4 分量及 normalized 整数属性；所有操作在私有 plain `BufferGeometry` 上处理，避免 PlaneGeometry 等 primitive 的构造配方覆盖实际处理结果。幸存源属性的 `gpuType` 在复制、去索引或焊接后恢复；crease 的新 normal、Mikk 的新 tangent 保留生成属性自己的 GPU 类型。已验证 normalized Uint8 color 在本夹具中保留 raw/logical 值。焊接通过 logical getter/setter 复制，不能保证整数原始编码逐字节保留：已验证 normalized Int8 的 -128 会规范化为 -127，两者 logical 值均为 -1。若原始整数编码另有语义，调用方须另外设计无损映射，不能依赖此焊接路径；本方法不适配 interleaved、instanced、GL、Float16、morph 或特殊子类布局，尽管个别 native 操作可能支持其中一部分。几何前置条件/UV 退化由代码检查；近面混合仍需资产层检查。输入必须是调用者拥有的程序网格，不提供导入资产许可。
+方法只接受完整 drawRange 的普通静态三角 geometry；partial range 先在调用方提取成独立完整几何，否则拒绝。支持普通 `BufferAttribute` 的 1–4 分量及 normalized 整数属性；所有操作在私有 plain `BufferGeometry` 上处理，避免 PlaneGeometry 等 primitive 的构造配方覆盖实际处理结果。幸存源属性的 `gpuType` 在复制、去索引或焊接后恢复；crease 的新 normal、Mikk 的新 tangent 保留生成属性自己的 GPU 类型。已验证 normalized Uint8 color 在本夹具中保留 raw/logical 值。r187 的 `mergeVertices` 对 normalized Int8 的 -128 保留 raw 编码（逻辑值仍为 -1）；不要把 r180 的边界值重编码结果视为跨版本保证。r187 的 `BufferAttribute.toJSON()` 将 `gpuType` 写入 JSON，`ObjectLoader` 往返保留整数绑定类型；迁移旧版缓存时仍需确认旧 JSON 是否含该字段。若原始整数编码另有语义，调用方须另外设计无损映射，不能依赖此焊接路径；本方法不适配 interleaved、instanced、GL、Float16、morph 或特殊子类布局，尽管个别 native 操作可能支持其中一部分。几何前置条件/UV 退化由代码检查；近面混合仍需资产层检查。输入必须是调用者拥有的程序网格，不提供导入资产许可。
 
 ```js
 import { pathToFileURL } from 'node:url';
@@ -18,7 +18,7 @@ const moduleURL = process.env.THREE_MODULE
   ? (process.env.THREE_MODULE.startsWith('file:') ? process.env.THREE_MODULE : pathToFileURL(process.env.THREE_MODULE).href)
   : import.meta.resolve('three');
 export const THREE = await import(moduleURL);
-if (THREE.REVISION !== '180') throw new Error('requires three@0.180.0');
+if (THREE.REVISION !== '187') throw new Error('requires three@0.187.0');
 export const utils = await import(new URL('../examples/jsm/utils/BufferGeometryUtils.js', moduleURL));
 export const MikkTSpace = await import(new URL('../examples/jsm/libs/mikktspace.module.js', moduleURL));
 
@@ -122,10 +122,10 @@ try {
 
 焊接后重新检查实际输出三角形的有限面积与非退化条件；量化使薄面塌缩时抛出带操作和面序号的错误，释放私有准备件，保留源与 groups，不删面或宣称修复。
 
-plain `BufferGeometry` 的 Mesh/ObjectLoader JSON 往返保留实际 attribute/index/tangent、尺寸、name/groups/userData；这不包含全部 GPU 合同：r180 原生 attribute JSON 不写 `gpuType`。非默认整数 shader 绑定跨 JSON 传输时，调用方须随属性名另存并恢复实际标记；内存中保留标记不能证明传输后仍保留。
+plain `BufferGeometry` 的 Mesh/ObjectLoader JSON 往返保留实际 attribute/index/tangent、尺寸、name/groups/userData；这不包含全部 GPU 合同：r187 原生 attribute JSON 不写 `gpuType`。非默认整数 shader 绑定跨 JSON 传输时，调用方须随属性名另存并恢复实际标记；内存中保留标记不能证明传输后仍保留。
 
 调用者在成功返回后才替换 mesh.geometry；失败时源仍归调用者，准备件释放。结果、源的释放分别由所有者负责。重建基于 index/顶点编号的查询、采样器、BVH 和稳定 ID 映射；`geometryQueries` 是显式失效标记，不是自动重建器。焊接或重算法线后如需 Mikk，可把返回件显式传给第二次调用，再释放中间件。没有需要就不执行这一步。
 
 CPU 数值检查只能证明此方法的几何、所有权和 provider 接线；实际 normal-map 坡向、镜像接缝、硬边与完整镜头观感仍需同贴图/相机/灯光的真实渲染对照。Mikk 内部 solver/WASM 仍由 provider 委托，未声称深读或证明其全部算法。
 
-来源：[r180 BufferGeometryUtils](https://github.com/mrdoob/three.js/blob/r180/examples/jsm/utils/BufferGeometryUtils.js)、[Mikk provider](https://github.com/mrdoob/three.js/blob/r180/examples/jsm/libs/mikktspace.module.js)。
+来源：[r187 BufferGeometryUtils](https://github.com/mrdoob/three.js/blob/r187/examples/jsm/utils/BufferGeometryUtils.js)、[Mikk provider](https://github.com/mrdoob/three.js/blob/r187/examples/jsm/libs/mikktspace.module.js)。

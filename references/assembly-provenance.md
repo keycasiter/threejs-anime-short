@@ -12,7 +12,7 @@
 
 ## 完整可执行ESM
 
-复制`assets/`保持目录树；依赖为同一Three r180。以下可从项目根目录执行，已安装`three`时无需环境变量；也可设置`THREE_MODULE`为该版本的实际`build/three.module.js`。它以两个真实位置合批同一个代码源，退休源后仍可射线识别来源，并逐分量读取实际成品字段；不需要模型、图片或WebGL上下文。
+复制`assets/`保持目录树；依赖为同一Three r187。以下可从项目根目录执行，已安装`three`时无需环境变量；也可设置`THREE_MODULE`为该版本的实际`build/three.module.js`。它以两个真实位置合批同一个代码源，退休源后仍可射线识别来源，并逐分量读取实际成品字段；不需要模型、图片或WebGL上下文。
 
 ```js
 import {pathToFileURL} from 'node:url';

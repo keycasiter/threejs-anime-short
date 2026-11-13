@@ -31,7 +31,7 @@ function chartsFor(shape){const {referenceOutsetM,depthDatumM,closedSeam,pieces}
  * owns neighbor geometry exactly once. Materials are borrowed and never mutated.
  * Legacy and stock build the same source path, differing only in material metres. */
 export function buildStockRelation(T,{kind='B1',materialFor,coordinateMode='stock'}={}){
- if(String(T?.REVISION)!=='180')throw new TypeError('Stock relations require Three r180');
+ if(String(T?.REVISION)!=='187')throw new TypeError('Stock relations require Three r187');
  if(!['B1','B2'].includes(kind))throw new RangeError('Unknown stock relation kind');
  if(!['stock','legacy'].includes(coordinateMode))throw new RangeError('coordinateMode must be stock or legacy');
  if(typeof materialFor!=='function')throw new TypeError('Borrowed materialFor required');

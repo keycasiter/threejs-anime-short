@@ -1,4 +1,4 @@
-// Independent procedural response; native r180 lighting/output remain in the bridge.
+// Independent procedural response; native r187 lighting/output remain in the bridge.
 import {createMaterialShaderBridge} from './material-shader-bridge.mjs';
 import {invariantArray} from '../geometry/formation-coordinates.mjs';
 const fail=m=>{throw new RangeError('FormationResponse: '+m);};
@@ -74,7 +74,7 @@ export function createFormationResponse(T,options={}) {
  if(!record(options))fail('options require a plain record');
  const allowed=['baseMaterial','pattern','space','programKey','upstreamProgramKey','parameters'];
  for(const key of Reflect.ownKeys(options))if(!allowed.includes(key))fail('unknown option '+String(key));
- const {baseMaterial,pattern='bands',space='attached',programKey='formation-response/180/v1',upstreamProgramKey}=options;
+ const {baseMaterial,pattern='bands',space='attached',programKey='formation-response/187/v1',upstreamProgramKey}=options;
  if(!['bands','fibres','aggregate'].includes(pattern)||!['attached','world'].includes(space))fail('invalid pattern or space');
  const toon=baseMaterial?.type==='MeshToonMaterial';
  function checked(input,previous) {
