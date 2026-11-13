@@ -1,5 +1,7 @@
 # 保留内置光照的材质扩展
 
+需要把形成坐标接成有界渐变、有限空间窗或绝对时间扫带时，使用[坐标响应配方](coordinate-response.md)。该配方使用本页的桥；它不能替代该桥，也不等同于任何特定艺术风格的扫光。
+
 需要改变基色、粗糙度或受光法线，同时保留 Three.js 自带光照时，用 [material-shader-bridge.mjs](../assets/materials/material-shader-bridge.mjs) 为材质生成独立变体。只支持 Three.js **r180 WebGLRenderer** 的原生 MeshStandardMaterial、MeshPhysicalMaterial 和 MeshToonMaterial；不接受子类、其他版本或 WebGPU 节点材质。
 
 | 想改变什么 | 在片元着色器插在哪里 | 实际消费者 |

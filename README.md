@@ -16,7 +16,7 @@
 | 区域用途与真实构造 | [区域程序](references/region-programs.md)、[同源工厂](assets/examples/region-programs.mjs)；真实足迹、到达面、材料语义与互补观察随同一设计接力 |
 | 空间、相机构图与世界规则 | [空间搭建](references/scene-layout.md)、[相机操作](references/camera-interaction.md) |
 | 形体与真实关系 | [构造](references/procedural-construction.md)、[几何配方](references/geometry-recipes.md)、[分布](references/detail-distribution.md) |
-| 表面与表现 | [表面](references/surface-detail.md)、[渲染](references/rendering-choices.md)、[效果代码](references/effect-recipes.md) |
+| 表面与表现 | [表面](references/surface-detail.md)、[渲染](references/rendering-choices.md)、[效果代码](references/effect-recipes.md)、[坐标响应](references/coordinate-response.md) |
 | 实际工具与运行 | [工具目录](references/production-toolkit.md)、[运行/规模](references/motion-and-scale.md)、[条件库接线](references/library-integration.md) |
 | 从设计到可执行代码 | [代码接力](references/code-guidance.md)、[完整构造工厂](assets/examples/guided-assembly.mjs)、[全场接线入口](assets/examples/guided-world/index.html) |
 | 算法与参数接力 | [算法配方](references/algorithm-recipes.md)、[参数设计](references/parameter-design.md)；连接图/地块、椭圆放样与共享梯度提供可调用源码 |
@@ -38,6 +38,7 @@ README记录维护范围与验证，不作为普通制作的历史指令加载�
 
 | 日期 / 版本 | 内容与依据 | 验证结果及边界 |
 |---|---|---|
+| 2026-11-13 / S07 坐标场与有限空间响应 | 沿用 S01 表示/数据/所有权接力和 r180 材质桥，新增单一通用配方：attached/world坐标、有界渐变/有限带/XY径向带、基色/出射光消费者、绝对时间seek；提供可运行 Three.js 接线与像素实验，不写入题材专用规则 | 6个专项行为组及相关依赖共63/63通过；skill四份相关文档70处本地链接无误，离线HTML检查通过；Chromium WebGL2原生像素实验13/13、GL error为0。范围限r180普通Mesh及所列像素关系，不证明跨GPU兼容、场景完整性、整场画质或Skill泛化提升 |
 | 2026-11-13 / S01本地空间运算 | 将六条教程的坐标/方向、dot与XZ扇区、静态世界面积、线/段距离及非交换旋转顺序吸收为一个条件页和完整原创ESM；复用Three数学与既有分区消费者，显式度量空间和输入/副作用边界，不增加题材规则或虚构工具API | 指南原文在显式模块/仅已安装r180两路独立执行，23个行为检查每路23/23，覆盖非均匀/剪切/反射父架、边界/退化、Uint8/16/32索引与非索引、普通交错正例/实例排除、大原点平移不变性、已知面积与geometry只读性；这是CPU方法资格，不包含WebGL/GPU、完整作品画质或Agent A/B提升结论 |
 | 2026-11-13 / S02闭合截面与真实装配来源 | 新增闭合凸轮廓×可设计截面、实际三角接点、两种完整关系/运行入口；进入区域开口、实体边缘与开放容器。装配器可选sourceId返回真实输出顶点范围，保留原分桶/所有权，指南含完整可执行ESM；登记机位按实际控制器读回，刚性深度材质在捕获前归属明确 | 整批冻结单次596/596、0跳过，165文件测试前后哈希不变；终审命名单元半开区间、连续粗糙度UI与仅安装依赖修复后，受影响三测试文件两依赖路径各43/43、0跳过，实际浏览器576接面查询和三个原生控件值全部通过。任务级独立源码复审关闭来源与假保留报告问题。B12图及实际交互、C72图/原24主图、31实际控制/资源检查、20替换与当前8路径预热后的20+20切换通过，程序161/161、缓冲68485/68485释放；39应用源码/46载荷实际解包验证，指南两依赖路径原文执行。三配置/两look匿名新旧均9/15，24主配对6局部偏好/18持平，未证明全场提高；近框形成碎纹仍待材光校准。完整目标NOT_MET，非SOTA或跨题材Agent效果证明 |
 | 2026-11-13 / 资源依赖释放顺序 | 在[实现基础](references/implementation-foundations.md)补明确提供者先登记、依赖者先释放；renderer原生记录有效时释放材质，退出先停循环/监听；借用renderer仍归外部所有者。由实际WebGL释放失败定位，不新增资源框架或题材规则 | 原指南ESM不变，20/20基础行为测试及独立源码复审通过；相关刚性实验入口20次替换稳定，退出原生Program由6创建/4删除修为6/6，12张同机位图逐字节不变。该原生计数只覆盖所测入口，不追认所有既有场景或整场画质 |

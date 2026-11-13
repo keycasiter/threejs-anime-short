@@ -36,7 +36,7 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 | 构图、白模、完整世界与多尺度 | [空间搭建](references/scene-layout.md)；生成图/街区/房间时读[算法配方](references/algorithm-recipes.md#世界连接图与局部语法) | 共享布局/表面、可调用连接图/地块、区域与近中远规则 |
 | 主形、中层、厚度/开口、连接与资产工厂 | [构造方法](references/procedural-construction.md)；[几何配方](references/geometry-recipes.md) | [截面工具](references/profile-geometry.md)、[开间样件](assets/examples/procedural-bay.mjs)、端口/静态装配 |
 | 群体与具体资产细节 | [分布方法](references/detail-distribution.md)；[表面方法](references/surface-detail.md) | 原型/实例、实际宿主/完整足迹、区域与米制通道 |
-| 材光、反射、后期与自写效果 | [渲染选择](references/rendering-choices.md)；[效果配方](references/effect-recipes.md) | 自定义多遍时再读[渲染契约](references/render-contracts.md) |
+| 材光、反射、后期与自写效果 | [渲染选择](references/rendering-choices.md)；[效果配方](references/effect-recipes.md)；部件/世界坐标驱动的渐变、有限扫带或径向响应读[坐标响应](references/coordinate-response.md) | 自定义多遍时再读[渲染契约](references/render-contracts.md) |
 | 动作、资源、预算与交互 | [运行与规模](references/motion-and-scale.md)；[相机方法](references/camera-interaction.md) | 绝对时间/历史重建、真实接触、交互与观看范围 |
 | 复用现有模块或补算法 | [工具目录](references/production-toolkit.md)；[算法配方](references/algorithm-recipes.md)；[条件库接线](references/library-integration.md) | 随包实现与需适配方法分明，按结构、场、运动与规模选择 |
 | 最终检查与交付 | [统一验收](references/validation.md)；影片再读[导出方法](references/video-export.md) | HTML依赖、真实操作、接触粗检、视频导出与独立后验 |
