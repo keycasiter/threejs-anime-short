@@ -38,19 +38,25 @@ export function createFormationPalette(T,options={}) {
   }
   fixed.set(role,profile);
  }
- const entries=new Map(),returned=new Map();let disposed=false;
+ const entries=new Map(),returned=new Map(),bases=new Map();let disposed=false;
  const alive=()=>{if(disposed)fail('disposed palette');};
- function dto(entry){return {role:entry.role,baseMaterialUuid:entry.base.uuid,materialUuid:entry.material.uuid,passthrough:!entry.response,response:entry.response?.inspect()??null};}
+ function dto(entry){return {role:entry.role,profileKey:entry.profileKey,baseMaterialUuid:entry.base.uuid,materialUuid:entry.material.uuid,passthrough:!entry.response,response:entry.response?.inspect()??null};}
  return {
-  get(role,options={}){
-   alive();const base=basePalette.get(role,options);
+  get(role,options={},profileKey){
+   alive();
+   if(profileKey!==undefined&&(typeof profileKey!=='string'||!profileKey.trim()||profileKey.length>128||!fixed.has(profileKey)))fail('profileKey requires a registered 1–128 character name');
+   const effectiveProfileKey=profileKey===undefined?role:profileKey;
+   const base=basePalette.get(role,options);
    if(!base?.isMaterial||typeof base.uuid!=='string')fail('basePalette returned invalid Material');
-   const profile=fixed.get(role);let byBase=entries.get(role);const existing=byBase?.get(base.uuid);
-   if(existing){if(existing.base!==base)fail('base uuid collision');return existing.material;}
+   if(bases.has(base.uuid)&&bases.get(base.uuid)!==base)fail('base uuid collision');
+   const profile=fixed.get(effectiveProfileKey);let byBase=entries.get(role),byProfile=byBase?.get(base.uuid);const existing=byProfile?.get(effectiveProfileKey);
+   if(existing)return existing.material;
    let response=null;
    if(profile&&!(applyWhen==='unmapped'&&surfaceMaps.some(key=>base[key]!=null)))response=createFormationResponse(T,{...profile,baseMaterial:base});
-   const entry={role,base,response,material:response?.material??base};
-   if(!byBase){byBase=new Map();entries.set(role,byBase);}byBase.set(base.uuid,entry);
+   const entry={role,profileKey:effectiveProfileKey,base,response,material:response?.material??base};
+   // Publish identity only after a complete response (or borrowed passthrough) exists.
+   if(!byBase){byBase=new Map();entries.set(role,byBase);}
+   if(!byProfile){byProfile=new Map();byBase.set(base.uuid,byProfile);}byProfile.set(effectiveProfileKey,entry);bases.set(base.uuid,base);
    // A shared passthrough material can be returned by several roles; its qualification is identical.
    returned.set(entry.material,entry);return entry.material;
   },
@@ -62,11 +68,11 @@ export function createFormationPalette(T,options={}) {
    for(const entry of candidates)if(entry.response)responses.push({materialUuid:entry.material.uuid,...entry.response.validateMesh(mesh)});else passthroughMaterialCount++;
    return {responses,passthroughMaterialCount};
   },
-  inspect(){return {disposed,applyWhen,profiles:[...fixed].map(([role,profile])=>({role,enabled:profile!==null,pattern:profile?.pattern??'bands',space:profile?.space??'attached',validation:'numeric/base compatibility checked on first derived get'})),entries:[...entries.values()].flatMap(group=>[...group.values()].map(dto))};},
+  inspect(){return {disposed,applyWhen,profiles:[...fixed].map(([role,profile])=>({role,enabled:profile!==null,pattern:profile?.pattern??'bands',space:profile?.space??'attached',validation:'numeric/base compatibility checked on first derived get'})),entries:[...entries.values()].flatMap(group=>[...group.values()].flatMap(profiles=>[...profiles.values()].map(dto)))};},
   dispose(){
    if(disposed)return;disposed=true;const errors=[];
-   try{for(const group of entries.values())for(const entry of group.values())if(entry.response)try{entry.response.dispose();}catch(error){errors.push(error);}}
-   finally{entries.clear();returned.clear();fixed.clear();}
+   try{for(const group of entries.values())for(const profiles of group.values())for(const entry of profiles.values())if(entry.response)try{entry.response.dispose();}catch(error){errors.push(error);}}
+   finally{entries.clear();returned.clear();bases.clear();fixed.clear();}
    if(errors.length)throw new AggregateError(errors,'FormationPalette: response disposal failed');
   }
  };
