@@ -11,10 +11,37 @@ const allFinite=p=>p.every(Number.isFinite);
 const copyEdge=x=>x.map(p=>({...p}));
 const same=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
 
+// Manual matrices are authoritative in Three. This consumer rejects that mode
+// before any update can overwrite them; automatic TRS is inspected on a copy.
+function automaticLocal(object){
+ requireValue(object.matrixAutoUpdate&&object.matrixWorldAutoUpdate,'unsupported manual transform frame');
+ return object.matrix.clone().compose(object.position,object.quaternion,object.scale);
+}
+function automaticHierarchy(root){
+ root.traverse(o=>automaticLocal(o));for(let p=root.parent;p;p=p.parent)automaticLocal(p);
+}
+function rigidMatrix(matrix){
+ const e=matrix.elements;requireValue(e.every(Number.isFinite)&&e[3]===0&&e[7]===0&&e[11]===0&&e[15]===1,'finite affine rigid matrix required');
+ const axes=[[e[0],e[1],e[2]],[e[4],e[5],e[6]],[e[8],e[9],e[10]]],dot=(a,b)=>a.reduce((n,v,i)=>n+v*b[i],0);
+ requireValue(axes.every(a=>Math.abs(dot(a,a)-1)<1e-10)&&Math.abs(dot(axes[0],axes[1]))<1e-10&&Math.abs(dot(axes[0],axes[2]))<1e-10&&Math.abs(dot(axes[1],axes[2]))<1e-10&&Math.abs(matrix.determinant()-1)<1e-10,'rigid orthonormal unit basis required');
+}
+/** The current final product uses ordinary full scalar draws on unit carriers.
+ * Validate every site/member carrier before facts are read, not just its buffer. */
+export function validateActivityFinalDraw(T,object,{translated=false}={}){
+ requireValue(object?.isMesh&&!object.isInstancedMesh&&!object.isSkinnedMesh,'final draw mesh identity');
+ const g=object.geometry,p=g?.getAttribute('position'),material=object.material;
+ requireValue(g?.isBufferGeometry&&!g.isInstancedBufferGeometry&&!g.index&&!Object.keys(g.morphAttributes).length&&p?.array instanceof Float32Array&&p.itemSize===3&&!p.normalized&&(p.gpuType===undefined||p.gpuType===T.FloatType)&&p.count>0&&p.count%3===0&&g.drawRange.start===0&&(g.drawRange.count===Infinity||g.drawRange.count===p.count)&&g.groups.length===0,'final full draw identity');
+ requireValue(!Array.isArray(material)&&material?.isMaterial&&material.visible&&!material.displacementMap&&object.layers.mask===1,'final visible scalar draw identity');
+ const local=automaticLocal(object),e=local.elements;
+ requireValue(e.every((v,i)=>translated&&[12,13,14].includes(i)?Number.isFinite(v):v===(i%5===0?1:0)),'final carrier unit transform');
+ for(let p=object;p;p=p.parent){requireValue(p.visible,'final ancestor visibility');if(p!==object)requireValue(identityMatrix(automaticLocal(p)),'final parent unit frame');}
+ return true;
+}
+
 /** r180 TriangleList semantics: scalar materials ignore geometry.groups; arrays
  * intersect each visible group with drawRange. References stay build-local. */
 export function scanActivityDraws(T,root,{prefix='draw',space='world',budget}={}){
- requireValue(root?.isObject3D,'root required');root.updateWorldMatrix(true,true);
+ requireValue(root?.isObject3D,'root required');automaticHierarchy(root);root.updateWorldMatrix(true,true);
  const inverse=space==='local'?root.matrixWorld.clone().invert():new T.Matrix4(),rows=[];
  root.traverseVisible(object=>{
   if(!object.isMesh){requireValue(!object.isLine&&!object.isPoints,'unsupported non-mesh draw');return;}
@@ -27,7 +54,7 @@ export function scanActivityDraws(T,root,{prefix='draw',space='world',budget}={}
   requireValue(slots.every(m=>m?.isMaterial&&!m.displacementMap),'actual static materials required');
   const spans=Array.isArray(object.material)?g.groups.map((r,i)=>({...r,group:i})).filter(r=>slots[r.materialIndex]?.visible):slots[0].visible?[{start:0,count,materialIndex:0,group:null}]:[];
   const matrix=new T.Matrix4().multiplyMatrices(inverse,object.matrixWorld),seen=new Set(),triangles=[];
-  requireValue(Math.abs(matrix.determinant()-1)<1e-10,'rigid positive unit matrix required');
+  rigidMatrix(automaticLocal(object));rigidMatrix(object.matrixWorld);rigidMatrix(matrix);
   for(const span of spans){
    const lo=Math.max(0,dr.start,span.start),hi=Math.min(count,dr.start+dr.count,span.start+span.count);
    if(hi<=lo)continue;requireValue(lo%3===0&&(hi-lo)%3===0,'partial triangle draw range');budget?.take((hi-lo)*3+1);
@@ -68,16 +95,26 @@ export function buildActivityPrototype(T,{id,materialFor,pressFrontOffset=0,pres
  function service(object){const anchor=[...design.prototypes[id].port];if(id==='coveredPress')anchor[2]+=pressFrontOffset;portBinding={object,plane:'front',surface:'top',width:design.prototypes[id].aperture,anchor};}
  try{
   if(id==='feedCradle'){
+   const trestleObjects=[];
    for(const x of [-1.5,1.5]){
     box(`sole/${x}`,[.48,.10,1.28],[x,.05,0],'metal',undefined,true);
     // Open triangular trestle in YZ, extruded .20 along X.
     const yz=[[-.59,.10],[.59,.10],[.43,1.10],[-.39,.73]],rings=[x-.10,x+.10].map(X=>yz.map(([z,y])=>[X,y,z]));
-    mesh(`trestle/${x}`,loftGeometry(T,rings),'wood');
+    trestleObjects.push(mesh(`trestle/${x}`,loftGeometry(T,rings),'wood'));
    }
    service(box('receiving-rail',[3.84,.18,.20],[0,.62,-.65]));box('rear-rail',[3.84,.18,.20],[0,.99,.53]);
    for(let i=0;i<3;i++)box(`bound-stock/${i}`,[3.60,.20,.21],[0,.91+i*.14,-.29+i*.23]);
    for(const x of [-1.20,1.20]){box(`strap/${x}`,[.035,.43,.76],[x,1.07,.02],'metal');box(`strap-pin/${x}`,[.07,.05,.08],[x,1.29,-.31],'metal');}
    box('rear-stop',[4,.11,.12],[0,1.465,.69],'wood');for(const x of [-1.5,1.5])box(`stop-post/${x}`,[.09,.45,.09],[x,1.24,.65]);
+   // Keep all original units/IDs in order. Two closed seats span the measured
+   // rail-to-trestle gap and overlap both real solids at an interior height.
+   const actual=scanActivityDraws(T,root,{space:'local'}),rail=actual.find(r=>r.object===portBinding.object),height=(rail.box[4]-rail.box[1])/2,y0=rail.box[1]+height/2,y1=y0+height;
+   for(const object of trestleObjects){const row=actual.find(r=>r.object===object),cross=[];
+    for(const t of row.triangles)for(let j=0;j<3;j++){const a=t.p[j],b=t.p[(j+1)%3];if(a[1]===y1)cross.push(a[2]);if(a[1]<y1&&b[1]>y1||a[1]>y1&&b[1]<y1)cross.push(a[2]+(y1-a[1])/(b[1]-a[1])*(b[2]-a[2]));}
+    requireValue(cross.length,'trestle seat section');const width=row.box[3]-row.box[0],overlap=Math.min(width,rail.box[5]-rail.box[2])/4,z0=rail.box[5]-overlap,z1=Math.min(...cross)+overlap,x=(row.box[0]+row.box[3])/2;
+    requireValue(z1>z0,'rail seat solid span');box(`rail-seat/${x}`,[width*.8,height,z1-z0],[x,(y0+y1)/2,(z0+z1)/2],'metal');
+   }
+
   }else if(id==='partsRack'){
    for(const x of [-1.05,1.05]){
     box(`foot/${x}`,[.20,.10,.90],[x,.05,0],'metal',undefined,true);
@@ -140,8 +177,8 @@ export function buildActivityPrototype(T,{id,materialFor,pressFrontOffset=0,pres
   const serviceRow=scanActivityDraws(T,root,{space:'local'}).find(r=>r.object===portBinding.object),top=serviceRow.box[4],front=serviceRow.box[2];
   const edgePoints=[];
   for(const t of serviceRow.triangles)if(triangleNormalY(t.p)>0)for(let corner=0;corner<3;corner++){const p=t.p[corner];if(p[1]===top&&p[2]===front&&!edgePoints.some(q=>same(q.p,p)))edgePoints.push({element:t.e,corner,p});}
-  edgePoints.sort((a,b)=>a.p[0]-b.p[0]);requireValue(edgePoints.length===2,'physical service edge registration');
-  portBinding.geometry=serviceRow.geometry;portBinding.edge=edgePoints.map(({element,corner})=>({element,corner}));
+  edgePoints.sort((a,b)=>a.p[0]-b.p[0]);requireValue(edgePoints.length>=2,'physical service edge registration');
+  portBinding.geometry=serviceRow.geometry;portBinding.edge=[edgePoints[0],edgePoints.at(-1)].map(({element,corner})=>({element,corner}));
   return {root,id,units,bearingBindings,portBinding,materialBindings,get disposed(){return disposed;},dispose(){if(disposed)return;disposed=true;try{scope.dispose();}finally{root.removeFromParent();root.clear();}}};
  }catch(e){scope.dispose();root.clear();throw e;}
 }
@@ -164,8 +201,27 @@ export function measureActivitySection(faces,{axis='z',value,lo,hi}={}){
 
 export function captureActivityTop(row){return row.triangles.filter(t=>triangleNormalY(t.p)>0).map(t=>({id:`${row.id}/e${t.e}`,p:t.p.map(p=>[...p])}));}
 
+/** A service rail is a continuous common boundary of real top/front faces.
+ * Exact interval union preserves real gaps and accepts conforming subdivisions. */
+export function measureActivityServiceEdge(row,{witness,center,width,budget}={}){
+ budget?.take(row.triangles.length*9+1);
+ const height=witness[0][1],plane=witness[0][2],top=[],front=[];
+ requireValue(witness.every(p=>p[1]===height&&p[2]===plane),'service edge level front');
+ for(const t of row.triangles){const [a,b,c]=t.p,n=[(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1]),triangleNormalY(t.p),(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])];
+  const isTop=n[1]>0&&t.p.every(p=>p[1]===height),isFront=n[2]<0&&t.p.every(p=>p[2]===plane);if(!isTop&&!isFront)continue;
+  const edge=t.p.filter(p=>p[1]===height&&p[2]===plane);if(edge.length<2)continue;const lo=Math.min(...edge.map(p=>p[0])),hi=Math.max(...edge.map(p=>p[0]));if(hi>lo)(isTop?top:front).push({lo,hi,element:t.e});
+ }
+ const merged=intervals=>{const sorted=intervals.slice().sort((a,b)=>a.lo-b.lo||a.hi-b.hi),out=[];for(const p of sorted){const last=out.at(-1);if(last&&p.lo<=last[1])last[1]=Math.max(last[1],p.hi);else out.push([p.lo,p.hi]);}return out;};
+ const tops=merged(top),fronts=merged(front),common=[];let i=0,j=0;
+ while(i<tops.length&&j<fronts.length){const a=tops[i],b=fronts[j],lo=Math.max(a[0],b[0]),hi=Math.min(a[1],b[1]);if(hi>lo)common.push([lo,hi]);if(a[1]<b[1])i++;else j++;}
+ const lo=center[0]-width/2,hi=center[0]+width/2;let end=lo;
+ for(const [a,b]of common){if(b<=end)continue;requireValue(a<=end,'service adjoining edge continuity gap');end=Math.max(end,b);if(end>=hi)break;}
+ requireValue(end>=hi,'service adjoining edge coverage gap');
+ return {basis:'canonical-front',height,plane,span:[lo,hi],topIntervals:top,frontIntervals:front,commonIntervals:common};
+}
+
 /** Optional rows are a final-range remeasurement, in prototype coordinates. */
-export function measureActivityPrototype(T,asset,{rows=scanActivityDraws(T,asset.root,{space:'local'}),prototypeOwner=Object.freeze({})}={}){
+export function measureActivityPrototype(T,asset,{rows=scanActivityDraws(T,asset.root,{space:'local'}),prototypeOwner=Object.freeze({}),budget}={}){
  requireValue(!asset.disposed,'disposed prototype');
  requireValue(rows.length===asset.units.length&&asset.units.length<=96,'unit coverage mismatch');
  const refs=new Set(asset.units.map(u=>u.object));requireValue(refs.size===rows.length&&rows.every(r=>refs.has(r.object)),'unit coverage mismatch');
@@ -189,7 +245,8 @@ export function measureActivityPrototype(T,asset,{rows=scanActivityDraws(T,asset
  const center=witness[0].map((v,k)=>k===0?binding.anchor[0]:v+parameter*(witness[1][k]-v)),z=center[2],top=center[1],width=binding.width;
  requireValue(Math.abs(z-binding.anchor[2])<=2e-5&&Math.abs(center[0]-binding.anchor[0])<=2e-5,'service face does not match declared front');
  requireValue(2*Math.min(center[0]-witness[0][0],witness[1][0]-center[0])>=width,'service edge aperture too narrow');
- const section={witness,edge:copyEdge(binding.edge)};
+ const adjacency=measureActivityServiceEdge(front,{witness,center,width,budget});
+ const section={witness,edge:copyEdge(binding.edge),adjacency};
  const parts=rows.map((r,i)=>({id:asset.units.find(u=>u.object===r.object).id,box:[...r.box],prototypeOwner}));
  const facePartId=asset.units.find(u=>u.object===binding.object).id;
  const facts={id:asset.id,prototypeOwner,envelope,parts,bearings:bottoms.map(({ring,bottomY})=>({ring,bottomY,prototypeOwner})),ports:[{id:'front',kind:'serve',prototypeOwner,position:[center[0],0,z],servicePosition:center,normal:[0,0,-1],width,facePartId,witness:section.witness}]};
@@ -215,9 +272,10 @@ export function addActivityDraws(T,{rows,assemblyFor,slotsFor}){
  return records;
 }
 
-export function verifyActivityRanges(T,records,ranges){
+export function verifyActivityRanges(T,records,ranges,{budget}={}){
+ budget?.take(ranges.length*17);const carriers=new Set(ranges.map(r=>r.object));for(const object of carriers)validateActivityFinalDraw(T,object);
  requireValue(ranges.length===records.length,'final source range coverage');const used=new Set(),rows=new Map(),proof=[],bySource=new Map(ranges.map(r=>[r.sourceId,r]));requireValue(bySource.size===ranges.length,'final source range identity');
- for(const record of records){const range=bySource.get(record.id);requireValue(range&&!used.has(range),'final source range identity');used.add(range);
+ for(const record of records){const range=bySource.get(record.id);requireValue(range&&!used.has(range),'final source range identity');used.add(range);requireValue(range.geometry===range.object.geometry,'final source geometry identity');
   const p=range.geometry.getAttribute('position'),f=range.geometry.getAttribute(FORMATION_ATTRIBUTE),start=range.vertexStart,count=range.vertexCount;
   requireValue(count*3===record.expectedPositions.length,'final source triangle count');
   for(let i=0;i<count*3;i++)requireValue(p.array[start*3+i]===record.expectedPositions[i],'final source pose or position mismatch');
@@ -259,7 +317,7 @@ export function measureActivityFinalMember(T,{asset,rows,memberId,authorPose,fra
    return {...t,p:t.p.map(p=>{const u=p.map((v,i)=>v-translation[i]);requireValue(u[0]+translation[0]===p[0]&&u[2]+translation[2]===p[2],'unrepresentable final XZ frame');return unrotate(u);})};});
   return {...row,triangles,box:bounds(triangles)};
  });
- const measured=measureActivityPrototype(T,asset,{rows:reduced}),dimBox=b=>bounds([{p:[rotate(b.slice(0,3)),rotate(b.slice(3))]}]);
+ const measured=measureActivityPrototype(T,asset,{rows:reduced,budget}),dimBox=b=>bounds([{p:[rotate(b.slice(0,3)),rotate(b.slice(3))]}]);
  const ring=r=>r.map(v=>{const q=rotate([v[0],0,v[1]]);return [q[0],q[2]];});
  const facts={...measured,envelope:dimBox(measured.envelope),parts:measured.parts.map(p=>({...p,box:dimBox(p.box)})),bearings:measured.bearings.map(b=>({...b,ring:ring(b.ring)})),ports:measured.ports.map(p=>({...p,position:rotate(p.position),servicePosition:rotate(p.servicePosition),normal:rotate(p.normal),witness:p.witness.map(rotate)}))};
  const binding=asset.portBinding,front=byObject.get(binding.object),port=facts.ports[0];
@@ -295,9 +353,9 @@ export function measureActivityFinalMember(T,{asset,rows,memberId,authorPose,fra
 
 const identityMatrix=m=>m.elements.every((v,i)=>v===(i%5===0?1:0));
 function requireUnitParents(root,carrier){
- let p=carrier.parent;while(p){p.updateMatrix();requireValue(identityMatrix(p.matrix),'unsupported parent unit frame');if(p===root)break;p=p.parent;}
+ let p=carrier.parent;while(p){requireValue(identityMatrix(automaticLocal(p)),'unsupported parent unit frame');if(p===root)break;p=p.parent;}
  requireValue(p===root,'carrier outside submission root');
- for(p=root.parent;p;p=p.parent){p.updateMatrix();requireValue(identityMatrix(p.matrix),'unsupported ancestor unit frame');}
+ for(p=root.parent;p;p=p.parent)requireValue(identityMatrix(automaticLocal(p)),'unsupported ancestor unit frame');
 }
 
 /** One linear source/range/carrier ownership index. It keeps only final handles
@@ -337,11 +395,11 @@ function requireSubmission(index,owner,revision){requireValue(!index?.disposed,'
 export function submitActivityQualification(T,{root,index,qualification,owner,revision}={}){
  requireSubmission(index,owner,revision);requireValue(!index.submitted,'qualification already submitted');
  requireValue(qualification?.status==='complete'&&qualification.snapshot.members.length===index.members.size,'complete qualification required');
- const plans=[];
+ const plans=[];automaticHierarchy(root);
  for(const q of qualification.snapshot.members){const m=index.members.get(q.id);requireValue(m&&q.prototypeId===m.facts.id&&q.rotationY===0,'qualification member frame');
   const M=m.evidence.translation;requireValue(q.position[0]===M[0]&&q.position[2]===M[2],'qualification changed author XZ');
   const delta=q.position.map((v,i)=>v-M[i]);
-  for(const object of m.carriers){requireUnitParents(root,object);object.updateMatrix();requireValue(identityMatrix(object.matrix),'unsupported original carrier unit frame');plans.push({object,delta});}
+  for(const object of m.carriers){requireUnitParents(root,object);requireValue(identityMatrix(automaticLocal(object)),'unsupported original carrier unit frame');plans.push({object,delta});}
   m.qualificationPose={position:[...q.position],rotationY:q.rotationY};m.submittedCarrierDelta=delta;
  }
  index.budget?.take(plans.length);
@@ -355,7 +413,7 @@ export function submitActivityQualification(T,{root,index,qualification,owner,re
 export function verifyActivitySubmission(T,{root,index,qualification,owner,revision}={}){
  requireSubmission(index,owner,revision);requireValue(index.submitted,'qualification not submitted');
  const qualified=new Map(qualification.snapshot.members.map(m=>[m.id,m])),proof=[];
- index.budget?.take([...index.members.values()].reduce((n,m)=>n+m.ranges.reduce((s,r)=>s+r.range.vertexCount*9,0),0));root.updateWorldMatrix(true,true);
+ index.budget?.take([...index.members.values()].reduce((n,m)=>n+m.ranges.reduce((s,r)=>s+r.range.vertexCount*9,0),0));automaticHierarchy(root);for(const {object}of index.byCarrier.values())validateActivityFinalDraw(T,object,{translated:true});root.updateWorldMatrix(true,true);
  for(const m of index.members.values()){
   const q=qualified.get(m.id),Q=q.position,worldRows=new Map(),worldElements=new Map();let components=0;
   for(const {range,rowId,first}of m.ranges){const {object,geometry,vertexStart,vertexCount}=range;requireUnitParents(root,object);

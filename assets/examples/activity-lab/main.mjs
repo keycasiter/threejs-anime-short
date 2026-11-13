@@ -2,7 +2,7 @@ import * as T from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import design from '../activity-design.json' with {type:'json'};
-import {buildActivityRelation} from '../activity-relations.mjs';
+import {buildActivityRelation,createActivityLabController} from '../activity-relations.mjs';
 import {createResourceScope} from '../../runtime/resource-scope.mjs';
 import {createAssetSlot} from '../../runtime/asset-slot.mjs';
 import {createLookPalette} from '../../materials/look-palette.mjs';
@@ -23,20 +23,12 @@ const providers={};for(const mode of ['pbr','toon']){
 const clay=owner.own(new T.MeshStandardMaterial({color:D.looks.clay.material.color,roughness:D.looks.clay.material.roughness,metalness:D.looks.clay.material.metalness}));
 const depth=owner.own(new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking})),slot=owner.own(createAssetSlot(scene));
 const state={kind:'exchange',look:'pbr',view:'overview',pressFrontOffset:0,islandHoleExtra:0,error:null,ready:false},el=id=>document.getElementById(id);
+const controller=createActivityLabController({slot,state,providers,clay,depth,build:next=>buildActivityRelation(T,{...next,mergeGeometries,materialFor:(role,options)=>providers.pbr.get(role,options)})});
 function alive(){if(disposed)throw new Error('Activity lab disposed');}
 function lighting(mode){const data=D.looks[mode==='clay'?'pbr':mode];renderer.toneMappingExposure=D.looks[mode].exposure;rig.key.intensity=data.key;rig.fill.intensity=data.fill;rig.ambient.intensity=data.ambient;rig.hemisphere.intensity=data.hemisphere;rig.hemisphere.color.set(data.skyColor);rig.hemisphere.groundColor.set(data.groundColor);}
-function assignLook(mode){
- const changes=slot.current.materialBindings.map(b=>({object:b.object,materials:b.slots.map(s=>mode==='clay'?clay:providers[mode].get(s.role,s.options))}));
- for(const c of changes){if(mode!=='clay')providers[mode].validateMesh(c.object,c.materials);c.object.material=c.materials.length===1?c.materials[0]:c.materials;}
- state.look=mode;el('look').value=mode;lighting(mode);
-}
+function assignLook(mode){controller.assignLook(mode);el('look').value=mode;lighting(mode);}
 function syncUI(){el('relation').value=state.kind;el('structureLabel').textContent=state.kind==='exchange'?'工作台前缘偏移 / m':'岛内低填面扩宽 / m';el('structure').max=state.kind==='exchange'?'.3':'1.5';el('structure').value=state.kind==='exchange'?state.pressFrontOffset:state.islandHoleExtra;}
-function rebuild(patch={}){
- alive();const next={kind:state.kind,pressFrontOffset:state.pressFrontOffset,islandHoleExtra:state.islandHoleExtra,...patch};
- slot.replace(scope=>scope.own(buildActivityRelation(T,{...next,mergeGeometries,materialFor:(role,options)=>providers.pbr.get(role,options)})));
- Object.assign(state,slot.current.readState().designPatch,{kind:slot.current.kind});
- slot.current.root.traverse(o=>{if(o.isMesh&&o.castShadow)o.customDepthMaterial=depth;});assignLook(state.look);syncUI();return readState();
-}
+function rebuild(patch={}){alive();controller.rebuild(patch);syncUI();return readState();}
 function clearInertia(){const damping=controls.enableDamping;controls.enableDamping=false;controls.update();controls.enableDamping=damping;}
 function setView(id){alive();const view=slot.current.viewTasks.find(v=>v.id===id);if(!view)throw new Error('Unknown activity view');clearInertia();camera.position.set(...view.position);controls.target.set(...view.target);controls.update();controls.saveState();state.view=id;el('view').value=id;}
 function readState(){
@@ -49,8 +41,8 @@ function run(action){try{action();state.error=null;}catch(error){state.error=err
 function listen(target,type,callback){target.addEventListener(type,callback);owner.defer(()=>target.removeEventListener(type,callback));}
 function dispose(){if(disposed)return;disposed=true;owner.dispose();el('status').textContent='已退出，几何和渲染资源已释放';}
 // Frozen rig uses the complete fixture bounds, with no new light or world probe.
-const initial=buildActivityRelation(T,{kind:state.kind,mergeGeometries,materialFor:(role,options)=>providers.pbr.get(role,options)});
-rig=owner.own(createLightingRig(T,{bounds:initial.shadowBounds,keyDirection:D.keyDirection,keyIntensity:D.looks.pbr.key,fillIntensity:D.looks.pbr.fill,ambientIntensity:D.looks.pbr.ambient,hemisphereIntensity:D.looks.pbr.hemisphere,skyColor:D.looks.pbr.skyColor,groundColor:D.looks.pbr.groundColor,shadowMapSize:D.shadowMapSize}));scene.add(rig.root);slot.replace(s=>s.own(initial));initial.root.traverse(o=>{if(o.isMesh&&o.castShadow)o.customDepthMaterial=depth;});assignLook('pbr');setView('overview');syncUI();
+const initial=controller.rebuild();
+rig=owner.own(createLightingRig(T,{bounds:initial.shadowBounds,keyDirection:D.keyDirection,keyIntensity:D.looks.pbr.key,fillIntensity:D.looks.pbr.fill,ambientIntensity:D.looks.pbr.ambient,hemisphereIntensity:D.looks.pbr.hemisphere,skyColor:D.looks.pbr.skyColor,groundColor:D.looks.pbr.groundColor,shadowMapSize:D.shadowMapSize}));scene.add(rig.root);assignLook('pbr');setView('overview');syncUI();
 listen(el('relation'),'change',e=>run(()=>rebuild({kind:e.target.value,pressFrontOffset:0,islandHoleExtra:0})));
 listen(el('look'),'change',e=>run(()=>assignLook(e.target.value)));
 listen(el('view'),'change',e=>run(()=>setView(e.target.value)));

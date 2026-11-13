@@ -15,6 +15,37 @@ const plainFacts=x=>JSON.parse(JSON.stringify(x,(k,v)=>['prototypeOwner','owner'
 const assert=(ok,message)=>{if(!ok)throw new Error('Activity relation: '+message);};
 const yRange=faces=>[Math.min(...faces.flatMap(f=>f.p.map(p=>p[1]))),Math.max(...faces.flatMap(f=>f.p.map(p=>p[1])))];
 
+/** Actual final entry draws and the source-created binding share one identity.
+ * Nominal door width never substitutes for the two physical reveal surfaces. */
+export function measureActivityEntrance(T,{rows,binding,sourceRoot}={}){
+ const byObject=new Map(rows.map(r=>[r.object,r])),deck=byObject.get(binding.deck),jambs=binding.reveals.map(o=>byObject.get(o)).sort((a,b)=>a.box[0]-b.box[0]),header=byObject.get(binding.header),lintel=byObject.get(binding.lintel);
+ assert(deck&&jambs.length===2&&jambs.every(Boolean)&&header&&lintel,'actual entry references');
+ for(const row of [deck,...jambs,header,lintel])assert(row.geometry===row.object.geometry,'entry source geometry mismatch');
+ const width=jambs[1].box[0]-jambs[0].box[3],doorZ=Math.fround(sourceRoot.localToWorld(new T.Vector3(...binding.port.position)).z),deckZ=deck.box[5],deckTop=deck.box[4],headroom=Math.min(header.box[1],lintel.box[1])-deckTop;
+ if(!(width>=binding.port.width-2e-5&&width<=binding.port.width+2e-5)){const error=new Error('Activity relation: source aperture metadata/actual mismatch');error.code='ACTIVITY_APERTURE_MISMATCH';error.actualWidth=width;error.declaredWidth=binding.port.width;throw error;}
+ assert(headroom>2.1,'source actual headroom');
+ return {deck,sourceDoor:{width,headroom,doorZ,deckZ,deckTop,declaredWidth:binding.port.width,sourceIds:{deck:deck.id,jambs:jambs.map(r=>r.id),header:header.id,lintel:lintel.id}}};
+}
+
+/** Prepare every borrowed material and validate every binding before changing
+ * any live object. Failed candidate preparation remains inside slot ownership. */
+function applyActivityLook(asset,mode,providers,clay){
+ assert(['pbr','toon','clay'].includes(mode),'unknown activity look');
+ const changes=asset.materialBindings.map(b=>({object:b.object,materials:b.slots.map(s=>mode==='clay'?clay:providers[mode].get(s.role,s.options))}));
+ for(const c of changes){assert(c.materials.every(m=>m?.isMaterial),'look material required');if(mode!=='clay')providers[mode].validateMesh(c.object,c.materials);}
+ for(const c of changes)c.object.material=c.materials.length===1?c.materials[0]:c.materials;
+}
+export function createActivityLabController({slot,state,providers,clay,depth,build}={}){
+ return {
+  assignLook(mode){applyActivityLook(slot.current,mode,providers,clay);state.look=mode;},
+  rebuild(patch={}){
+   const next={kind:state.kind,pressFrontOffset:state.pressFrontOffset,islandHoleExtra:state.islandHoleExtra,...patch};let accepted;
+   const candidate=slot.replace(scope=>{const asset=scope.own(build(next));applyActivityLook(asset,state.look,providers,clay);if(depth)asset.root.traverse(o=>{if(o.isMesh&&o.castShadow)o.customDepthMaterial=depth;});accepted=asset.readState();return asset;});
+   Object.assign(state,accepted.designPatch,{kind:candidate.kind});return candidate;
+  }
+ };
+}
+
 /** Complete authored example, with the same pure court kernel and native
  * source/assembly/scope chain. All materialFor results remain caller-owned.
  * Changes construct real geometry before qualification; failure owns no slot. */
@@ -38,7 +69,7 @@ export function buildActivityRelation(T,{
   function assemblyFor(slot){const key=JSON.stringify(slot);if(!buckets.has(key))buckets.set(key,{slot,assembly:scope.own(createAssetAssembly(T,{mergeGeometries,invariantAttributes:{[FORMATION_ATTRIBUTE]:3}}))});return buckets.get(key).assembly;}
   const records=addActivityDraws(T,{rows,assemblyFor,slotsFor:(object,slot)=>slotMap.get(object)[slot]});const ranges=[];
   for(const {slot,assembly}of buckets.values()){const out=assembly.finish();root.add(out.root);for(const object of out.root.children)materialBindings.push({object,slots:[copy(slot)]});sourceRanges.push(...out.sourceRanges);ranges.push(...out.sourceRanges);}
-  const verified=verifyActivityRanges(T,records,ranges);provenance.push(...verified.proof);allRows.push(...verified.rows);return verified.rows;
+  const verified=verifyActivityRanges(T,records,ranges,{budget:measurementBudget});provenance.push(...verified.proof);allRows.push(...verified.rows);return verified.rows;
  }
  try{
   const source=register(sources.own(buildRegionalArchitecture(T,{program:F.sourceBuilding[kind],width:F.sourceBuilding.width,depth:F.sourceBuilding.depth,height:F.sourceBuilding.height,materialFor})));
@@ -47,10 +78,8 @@ export function buildActivityRelation(T,{
   const neighborhood=compileFrontageNeighborhood({layout,level:'street',prototypes:[{id:'source',footprint:source.footprint,entrance:source.entrances[0]}],familiesByRole:{building:['source']},endClearance:(24-source.footprint.width)/2,setback:F.sourceBuilding.setback,gap:1.4});
   assert(neighborhood.lots.length===1,'one actual source lot required');const lot=neighborhood.lots[0];source.root.position.set(...lot.pose.position);source.root.rotation.y=lot.pose.rotationY;
   const buildingRows=bake(scanActivityDraws(T,source.root,{prefix:'building',budget:measurementBudget}));
-  const byObject=o=>buildingRows.find(r=>r.object===o),binding=source.entryBinding,deck=byObject(binding.deck),jambs=binding.reveals.map(byObject).sort((a,b)=>a.box[0]-b.box[0]),header=byObject(binding.header),lintel=byObject(binding.lintel);
-  assert(deck&&jambs.every(Boolean)&&header&&lintel,'actual entry references');const width=jambs[1].box[0]-jambs[0].box[3],doorZ=Math.fround(source.root.localToWorld(new T.Vector3(...binding.port.position)).z),deckZ=deck.box[5],deckTop=deck.box[4],headroom=Math.min(header.box[1],lintel.box[1])-deckTop;
-  assert(width>=binding.port.width-2e-5&&width<=binding.port.width+2e-5,'source aperture metadata/actual mismatch');assert(headroom>2.1,'source actual headroom');
-  const deckFaces=captureActivityTop(deck),sourceDoor={width,headroom,doorZ,deckZ,deckTop,declaredWidth:binding.port.width,sourceIds:{deck:deck.id,jambs:jambs.map(r=>r.id),header:header.id,lintel:lintel.id}};
+  const {deck,sourceDoor}=measureActivityEntrance(T,{rows:buildingRows,binding:source.entryBinding,sourceRoot:source.root});
+  const {width,doorZ,deckZ,deckTop}=sourceDoor,deckFaces=captureActivityTop(deck);
   const ground=sources.own(createHeightFieldGeometry(T,{sample:()=>({height:F.terrain.baseHeight,dx:0,dz:0})},{sizeX:F.terrain.size[0],sizeZ:F.terrain.size[1],segmentsX:F.terrain.segments[0],segmentsZ:F.terrain.segments[1]}));
   const terrainSupport=sources.own(prepareTerrainRoadSupport({terrainGeometry:ground}));
   bake(scanActivityDraws(T,sourceMesh(ground,earthSlot,'terrain'),{prefix:'terrain',budget:measurementBudget}));
@@ -65,7 +94,7 @@ export function buildActivityRelation(T,{
   const prototypes=[];
   for(const [memberId,prototypeId,x,z,deg]of D.members){
    const asset=register(sources.own(buildActivityPrototype(T,{id:prototypeId,materialFor,pressFrontOffset,pressFootOffset})));
-   const initial=measureActivityPrototype(T,asset),host=kind==='exhibit'&&memberId==='object'?'fill':'pad',baseY=(host==='fill'?fillTop:padTop)-initial.envelope[1];
+   const initial=measureActivityPrototype(T,asset,{budget:measurementBudget}),host=kind==='exhibit'&&memberId==='object'?'fill':'pad',baseY=(host==='fill'?fillTop:padTop)-initial.envelope[1];
    asset.root.position.set(x,baseY,z);asset.root.rotation.y=deg*Math.PI/180;
    const finalWorld=bake(scanActivityDraws(T,asset.root,{prefix:`member/${memberId}`,budget:measurementBudget}));
    const authorPose={position:[x,baseY,z],rotationY:deg*Math.PI/180};

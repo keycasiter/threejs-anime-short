@@ -166,3 +166,102 @@ test('both qualified relations retire final handles once and borrow the shared m
   assert.throws(()=>geometry.verifyActivitySubmission(T,{root:a.root,index:rt.submission,qualification:rt.qualification,owner:rt.owner,revision:1}),/disposed/);
  }assert.equal(materials,0);}finally{material.removeEventListener('dispose',disposed);}
 });
+
+// Task3 fix round 1: real source/draw/material counterexamples, not source-text assertions.
+const attrDigest=async g=>{const {createHash}=await import('node:crypto'),a=g.attributes.position.array;return createHash('sha256').update(Buffer.from(a.buffer,a.byteOffset,a.byteLength)).digest('hex');};
+test('I1 all final site carriers must retain their actual visible full draws',async()=>{
+ const base=build('exhibit'),targets=new Map();try{
+  const s=base.readState();for(const id of ['deck','connector','street','pad','fill']){const source=id==='deck'?s.sourceDoor.sourceIds.deck:id+'/0';const r=base.sourceRanges.find(r=>r.sourceId.startsWith(source+'@'));assert.ok(r,id);targets.set(id,await attrDigest(r.geometry));}
+ }finally{base.dispose();}
+ const {createHash}=await import('node:crypto');
+ for(const [id,digest]of targets){let cut=0;const merged=(...args)=>{const g=mergeGeometries(...args),a=g.attributes.position.array,h=createHash('sha256').update(Buffer.from(a.buffer,a.byteOffset,a.byteLength)).digest('hex');if(h===digest){cut++;g.setDrawRange(0,0);}return g;};
+  assert.throws(()=>build('exhibit',{mergeGeometries:merged}),/final.*draw|draw.*identity/,'missing final '+id+' draw was accepted');assert.equal(cut,1,id);
+ }
+});
+class ActualSplitRail extends T.BoxGeometry{
+ constructor(w,h,d,...rest){super(w,h,d,...rest);if(w!==3.84||h!==.18||d!==.20)return;this.dispose();const ends=[-1,1].map(sign=>{const b=new T.BoxGeometry(.2,h,d),g=b.toNonIndexed();b.dispose();const p=g.attributes.position;for(let i=0;i<p.count;i++)if(p.getY(i)>0&&p.getX(i)*sign<0)p.setY(i,p.getY(i)-.02);g.translate(sign*1.82,0,0);g.computeVertexNormals();return g;});const out=mergeGeometries(ends,false);ends.forEach(g=>g.dispose());return out;}
+}
+test('I2 an actual split receiving rail cannot certify a service span through air',()=>{
+ let a;try{assert.throws(()=>{a=api.buildActivityRelation({...T,BoxGeometry:ActualSplitRail},{kind:'exchange',mergeGeometries,materialFor:()=>material});},/service.*(gap|continu|edge)|adjoining/);}finally{a?.dispose();}
+});
+function clippedRailGap(triangles,beam){const zs=[];for(const t of triangles)for(let j=0;j<3;j++){const p=t.p[j],q=t.p[(j+1)%3];if(p[1]>=beam[1]&&p[1]<=beam[4])zs.push(p[2]);for(const y of [beam[1],beam[4]])if(p[1]<y&&q[1]>y||p[1]>y&&q[1]<y)zs.push(p[2]+(y-p[1])/(q[1]-p[1])*(q[2]-p[2]));}return Math.min(...zs)-beam[5];}
+function convexSectionArea(row,y,rectangle){
+ let poly=rectangle.map(p=>[p[0],y,p[1]]);const pts=row.triangles.flatMap(t=>t.p),centre=[0,1,2].map(k=>pts.reduce((n,p)=>n+p[k],0)/pts.length);
+ for(const t of row.triangles){const [a,b,c]=t.p,n=new T.Vector3().subVectors(new T.Vector3(...b),new T.Vector3(...a)).cross(new T.Vector3().subVectors(new T.Vector3(...c),new T.Vector3(...a))).toArray();if(n.every(v=>v===0))continue;let side=p=>n.reduce((s,v,k)=>s+v*(p[k]-a[k]),0);if(side(centre)>0){const old=side;side=p=>-old(p);}const out=[];
+  for(let j=0;j<poly.length;j++){const p=poly[j],q=poly[(j+1)%poly.length],dp=side(p),dq=side(q);if(dp<=0)out.push(p);if(dp<0&&dq>0||dp>0&&dq<0){const u=dp/(dp-dq);out.push(p.map((v,k)=>v+u*(q[k]-v)));}}poly=out;if(!poly.length)return 0;
+ }return Math.abs(poly.reduce((n,p,j)=>{const q=poly[(j+1)%poly.length];return n+p[0]*q[2]-q[0]*p[2];},0))/2;
+}
+test('I3 receiving rail has two actual finite-area relays into the original trestles',()=>{
+ const p=geometry.buildActivityPrototype(T,{id:'feedCradle',materialFor:()=>material});try{
+  const rows=geometry.scanActivityDraws(T,p.root,{space:'local'}),row=id=>rows.find(r=>r.object===p.units.find(u=>u.id===id)?.object),rail=row('receiving-rail'),trestles=[row('trestle/-1.5'),row('trestle/1.5')],links=p.units.filter(u=>u.id.startsWith('rail-seat/')).map(u=>rows.find(r=>r.object===u.object));
+  assert.ok(trestles.every(r=>clippedRailGap(r.triangles,rail.box)>.096),'original floating gap must remain detectable');assert.equal(links.length,2,'no physical relay crosses the measured original rail/trestle gap');
+  links.forEach((link,j)=>{const b=link.box,y=(b[1]+b[4])/2,rect=[[b[0],b[2]],[b[3],b[2]],[b[3],b[5]],[b[0],b[5]]];assert.ok(convexSectionArea(rail,y,rect)>0,'no finite rail contact');assert.ok(convexSectionArea(trestles[j],y,rect)>0,'no finite trestle contact');});
+  assert.equal(geometry.measureActivityPrototype(T,p).bearings.length,4);
+ }finally{p.dispose();}
+});
+test('I4 determinant-one source scale is rejected as non-rigid',()=>{
+ const g=new T.BoxGeometry(),m=new T.Mesh(g,material);m.scale.set(2,.5,1);try{assert.throws(()=>geometry.scanActivityDraws(T,m),/rigid|basis|unit/);}finally{g.dispose();}
+});
+test('I4 manual parent rejection preserves every original matrix before submission',()=>{
+ const a=build('exhibit');let idx;try{const rt=a.getRuntime();idx=geometry.createActivitySubmissionIndex(T,{root:a.root,ranges:a.sourceRanges,members:[...rt.submission.members.values()],owner:rt.owner,revision:1});const parent=idx.members.values().next().value.carriers.values().next().value.parent;parent.matrixAutoUpdate=false;parent.matrix.makeTranslation(1,0,0);a.root.updateWorldMatrix(true,true);const objects=[];a.root.traverse(o=>objects.push(o));const before=objects.map(o=>[o.matrix.toArray(),o.matrixWorld.toArray()]);let error;
+  try{geometry.submitActivityQualification(T,{root:a.root,index:idx,qualification:rt.qualification,owner:rt.owner,revision:1});}catch(e){error=e;}
+  assert.deepEqual(objects.map(o=>[o.matrix.toArray(),o.matrixWorld.toArray()]),before,'validation overwrote an unsupported manual transform');assert.match(error?.message??'',/manual|unit frame/);
+ }finally{idx?.dispose();a.dispose();}
+});
+async function labControllerForTest(args){
+ if(api.createActivityLabController)return api.createActivityLabController(args);
+ // Execute the legacy page's actual functions until the shared consumer exists.
+ const {readFile}=await import('node:fs/promises'),source=await readFile(new URL('../../assets/examples/activity-lab/main.mjs',import.meta.url),'utf8');
+ const assign=source.slice(source.indexOf('function assignLook('),source.indexOf('function syncUI(')),rebuild=source.slice(source.indexOf('function rebuild('),source.indexOf('function clearInertia('));
+ return new Function('slot','state','providers','clay','buildActivityRelation','T','mergeGeometries','depth','alive','syncUI','readState','el','lighting',assign+rebuild+';return {assignLook,rebuild};')(args.slot,args.state,args.providers,args.clay,api.buildActivityRelation,T,mergeGeometries,args.depth,()=>{},()=>{},()=>{},()=>({value:''}),()=>{});
+}
+for(const operation of ['rebuild-get','rebuild-validate','switch-get','switch-validate'])test('I5 '+operation+' preserves old relation and materials',async()=>{
+ const {createAssetSlot}=await import('../../assets/runtime/asset-slot.mjs');
+ {
+  const parent=new T.Group(),slot=createAssetSlot(parent),toon=new T.MeshStandardMaterial(),state={kind:'exchange',look:operation.startsWith('switch')?'pbr':'toon',pressFrontOffset:0,islandHoleExtra:0},controls={target:[1,2,3],position:[4,5,6],saved:[7,8,9]};let armed=false,calls=0;
+  const provider={get(){if(armed&&operation.endsWith('get')&&++calls===2)throw new Error('actual look getter failure');return toon;},validateMesh(){if(armed&&operation.endsWith('validate')&&++calls===2)throw new Error('actual look validation failure');}};
+  const providers={pbr:{get:()=>material,validateMesh(){}},toon:provider};
+  try{const first=slot.replace(s=>s.own(build('exchange')));for(const b of first.materialBindings)b.object.material=operation.startsWith('switch')?material:toon;const oldObjects=first.materialBindings.map(b=>b.object),before={root:first.root,revision:slot.revision,materials:oldObjects.map(o=>o.material),state:structuredClone(state),controls:structuredClone(controls)};
+   const controller=await labControllerForTest({slot,state,providers,clay:toon,depth:null,build:next=>build(next.kind,next)});armed=true;assert.throws(()=>operation.startsWith('rebuild')?controller.rebuild({kind:'exhibit'}):controller.assignLook('toon'),/actual look/);
+   assert.ok(slot.current.root===before.root,'failed look retired old root');assert.equal(slot.revision,before.revision);assert.deepEqual(oldObjects.map(o=>o.material),before.materials);assert.deepEqual(state,before.state);assert.deepEqual(controls,before.controls);assert.deepEqual(parent.children,[before.root]);
+  }finally{slot.dispose();toon.dispose();}
+ }
+});
+test('I6 actual narrowed building reveals return a specific aperture mismatch',()=>{
+ class NarrowReveal extends T.BoxGeometry{constructor(w,h,d,...rest){super(w===.065&&h>2?w+.04:w,h,d,...rest);}}
+ let caught;try{const a=api.buildActivityRelation({...T,BoxGeometry:NarrowReveal},{kind:'exchange',mergeGeometries,materialFor:()=>material});a.dispose();}catch(e){caught=e;}
+ assert.match(caught?.message??'',/aperture.*mismatch/);assert.equal(caught?.code,'ACTIVITY_APERTURE_MISMATCH','actual aperture rejection must identify the contract failure');assert.ok(caught.actualWidth<caught.declaredWidth);
+});
+
+test('I2 continuous subdivided real edges pass; absent top or front faces reject',()=>{
+ for(const damage of ['subdivide','top','front']){
+  class RailFaces extends T.BoxGeometry{constructor(w,h,d,...rest){super(w,h,d,...(w===3.84&&h===.18&&d===.20&&damage==='subdivide'?[4,1,1]:rest));if(w!==3.84||h!==.18||d!==.20||damage==='subdivide')return;const skip=this.groups[damage==='top'?2:5],idx=Array.from(this.index.array).filter((_,i)=>i<skip.start||i>=skip.start+skip.count);this.setIndex(idx);}}
+  let a;try{if(damage==='subdivide'){a=api.buildActivityRelation({...T,BoxGeometry:RailFaces},{kind:'exchange',mergeGeometries,materialFor:()=>material});assert.equal(a.readState().qualification.status,'complete');const adj=a.readState().members.find(m=>m.id==='feed').measurement.portSection.adjacency;assert.ok(adj.topIntervals.length>1);assert.equal(adj.commonIntervals.length,1);}else assert.throws(()=>{a=api.buildActivityRelation({...T,BoxGeometry:RailFaces},{kind:'exchange',mergeGeometries,materialFor:()=>material});},/service.*(registration|gap|coverage)/);}finally{a?.dispose();}
+ }
+});
+test('I1 hidden final host and later missing host draw never pass actual submission replay',async()=>{
+ const base=build('exchange'),range=base.sourceRanges.find(r=>r.sourceId.startsWith('pad/')),digest=await attrDigest(range.geometry);base.dispose();const {createHash}=await import('node:crypto');
+ class HiddenFinal extends T.Mesh{constructor(g,m){super(g,m);if(g.userData.hiddenFinal)this.visible=false;}}
+ const merge=(...args)=>{const g=mergeGeometries(...args),a=g.attributes.position.array;if(createHash('sha256').update(Buffer.from(a.buffer,a.byteOffset,a.byteLength)).digest('hex')===digest)g.userData.hiddenFinal=true;return g;};
+ assert.throws(()=>api.buildActivityRelation({...T,Mesh:HiddenFinal},{kind:'exchange',mergeGeometries:merge,materialFor:()=>material}),/final.*visibility/);
+ const a=build('exhibit');try{const rt=a.getRuntime(),pad=a.sourceRanges.find(r=>r.sourceId.startsWith('pad/'));pad.geometry.setDrawRange(0,0);assert.throws(()=>geometry.verifyActivitySubmission(T,{root:a.root,index:rt.submission,qualification:rt.qualification,owner:rt.owner,revision:rt.revision}),/final.*draw/);}finally{a.dispose();}
+});
+test('I5 successful look and relation changes borrow materials and preserve controls',async()=>{
+ const {createAssetSlot}=await import('../../assets/runtime/asset-slot.mjs'),slot=createAssetSlot(new T.Group()),toon=new T.MeshStandardMaterial(),clay=new T.MeshStandardMaterial(),state={kind:'exchange',look:'pbr',pressFrontOffset:0,islandHoleExtra:0},controls=new T.Vector3(1,2,3),saved=controls.clone();let borrowed=0;toon.addEventListener('dispose',()=>borrowed++);clay.addEventListener('dispose',()=>borrowed++);
+ const providers={pbr:{get:()=>material,validateMesh(){}},toon:{get:()=>toon,validateMesh(){}}},controller=api.createActivityLabController({slot,state,providers,clay,build:next=>build(next.kind,next)});
+ try{controller.rebuild();controller.assignLook('toon');assert.ok(slot.current.materialBindings.every(b=>b.object.material===toon));const before=slot.revision;controller.rebuild({kind:'exhibit'});assert.equal(slot.revision,before+1);assert.equal(state.kind,'exhibit');assert.ok(slot.current.materialBindings.every(b=>b.object.material===toon));controller.assignLook('clay');assert.ok(slot.current.materialBindings.every(b=>b.object.material===clay));assert.deepEqual(controls,saved);slot.dispose();assert.equal(borrowed,0);}finally{slot.dispose();toon.dispose();clay.dispose();}
+});
+test('I6 false declared door width and source-double/final-float seam are actual failures',async()=>{
+ const {buildRegionalArchitecture}=await import('../../assets/examples/region-programs.mjs'),a=build('exchange'),source=buildRegionalArchitecture(T,{program:'workshop',width:7,depth:4.8,height:3.4,materialFor:()=>material});try{
+  const s=a.readState(),rt=a.getRuntime();source.root.position.set(...s.lot.pose.position);source.root.rotation.y=s.lot.pose.rotationY;const rows=geometry.scanActivityDraws(T,source.root,{prefix:'old-source'});source.entryBinding.port.width-=.04;
+  assert.throws(()=>api.measureActivityEntrance(T,{rows,binding:source.entryBinding,sourceRoot:source.root}),e=>e.code==='ACTIVITY_APERTURE_MISMATCH'&&e.actualWidth>e.declaredWidth);
+  const deck=rows.find(r=>r.object===source.entryBinding.deck),faces=geometry.captureActivityTop(deck),{qualifyActivityCourt}=await import('../../assets/scene/activity-court.mjs'),i=rt.qualificationInput;
+  assert.notEqual(deck.box[5],s.sourceDoor.deckZ);const wrong={...i,site:{...i.site,hostFaces:i.site.hostFaces.map(h=>h.id==='deck'?{...h,faces}:h)}},q=qualifyActivityCourt(wrong);
+  assert.equal(q.status,'unsatisfied');assert.ok(q.diagnostics.reasons.some(r=>r.code==='walk-gap'),'mixed double/F32 deck seam must not qualify');
+ }finally{source.dispose();a.dispose();}
+});
+
+test('I1 a byte-equal foreign geometry cannot supply facts for another final carrier',async()=>{
+ const {createAssetAssembly}=await import('../../assets/scene/asset-assembly.mjs'),asset=geometry.buildActivityPrototype(T,{id:'partsRack',materialFor:()=>material}),assembly=createAssetAssembly(T,{mergeGeometries,invariantAttributes:{aFormationPosition:3}});let clone;
+ try{const rows=geometry.scanActivityDraws(T,asset.root),records=geometry.addActivityDraws(T,{rows,assemblyFor:()=>assembly,slotsFor:()=>({role:'wood',options:{maps:false}})}),out=assembly.finish(),ranges=out.sourceRanges.map(r=>({...r}));clone=ranges[0].geometry.clone();ranges[0].geometry=clone;assert.throws(()=>geometry.verifyActivityRanges(T,records,ranges),/source.*geometry.*identity/);}finally{clone?.dispose();asset.dispose();assembly.dispose();}
+});
