@@ -507,11 +507,29 @@ function registeredExemption(obstacle,ports,budget,owner){
  }
  return null;
 }
+function registeredServeOutside(request,obstacle,port,budget,owner){
+ // Sufficient source proof only: the measured finite face must span an
+ // actual support edge, and the whole original request must stay outside it.
+ if(port.witness.length!==2)return false;
+ budget.take(3,owner);
+ const [first,last]=port.witness.map(p=>[p[0],p[2]]);
+ for(let i=0;i<obstacle.polygon.length;i++){
+  budget.take(1,owner);
+  const a=obstacle.polygon[i],b=obstacle.polygon[(i+1)%obstacle.polygon.length];
+  if(!((samePoint(a,first)&&samePoint(b,last))||(samePoint(a,last)&&samePoint(b,first))))continue;
+  for(const point of request){budget.take(1,owner);if(orientSign(a,b,point)>0)return false;}
+  return true;
+ }
+ return false;
+}
 function obstruct(poly,proof,obstacles,hostIds,headroom,owner,budget,exemptions=[]){
  let minHeadroom=headroom;
  for(const obstacle of obstacles){
   budget.take(1,owner);const exemption=registeredExemption(obstacle,exemptions,budget,owner);
   const padded=expanded(obstacle.polygon,CLEAR,exemption,budget,owner);if(!boxesMeet(bounds(poly),bounds(padded)))continue;
+  // Rounded host clips cannot establish intrusion when the original request
+  // is separated by its registered source face AND the actual padded solid.
+  if(exemption?.kind==='serve'&&registeredServeOutside(poly,obstacle,exemption,budget,owner)&&!hasPositiveIntersection(poly,padded,budget,owner))continue;
   for(const piece of proof.pieces){
    const r=clip(piece.ring,padded,budget,owner);if(!r.length)continue;
    const ys=r.map(piece.face.y),low=Math.min(...ys),high=Math.max(...ys);
@@ -729,7 +747,14 @@ function solveMembers(n,index,frameTransform,budget){
 function makeWalkCandidate(n,members,frameTransform,budget){
  const nodes=n.nodes.map(node=>{
   if(node.uv){budget.take(1,node.id);return {id:node.id,uv:node.uv,xz:frameTransform(node.uv),ports:[]};}
-  const m=members.find(m=>m.id===node.memberId),p=m.worldPorts.find(p=>p.id===node.portId);return {id:node.id,xz:[p.anchorPosition[0],p.anchorPosition[2]],ports:[p]};
+  budget.take(members.length+n.members.length,node.id);
+  const m=members.find(m=>m.id===node.memberId),source=n.members.find(m=>m.id===node.memberId);
+  budget.take(m.worldPorts.length+source.prototype.ports.length+4,node.id);
+  const p=m.worldPorts.find(p=>p.id===node.portId),local=source.prototype.ports.find(p=>p.id===node.portId);
+  // Preserve the validated recipe-local source alongside the actual world
+  // anchor and registered port. Arrival world measurements have no such UV.
+  const uv=rigid(source.uv,source.yawRadians)([local.position[0],local.position[2]]);
+  return {id:node.id,uv,xz:[p.anchorPosition[0],p.anchorPosition[2]],ports:[p]};
  });
  const gate=nodes.find(x=>x.id===n.gateId);if(distance(gate.xz,[n.gatePort.position[0],n.gatePort.position[2]])>2e-5)invalid('arrival gate and recipe gate XZ mismatch');
  gate.ports.push({...n.gatePort,anchorPosition:n.gatePort.position,declaredY:n.gatePort.position[1]});

@@ -728,3 +728,128 @@ test('R5 N3 the outer corner between rotated strips still requires full turn cle
  const reason=reject(f,'blocked-clearance').diagnostics.reasons[0];
  assert.equal(reason.ownerId,'l');assert.equal(reason.peerId,'corner-post');
 });
+
+// The original R5 mixed-node counterexample: retain its actual box, foot,
+// aperture, +X normal, host and frame; only remove the redundant UV endpoint.
+function mixedPortTurnFixture(yaw){
+ const f=authoredTurnFixture(yaw),p=f.prototypes[0],m=f.recipe.members[0];
+ p.parts[0].box=[-2.25,0,-.625,-1.75,1,.625];p.envelope=[...p.parts[0].box];
+ p.bearings=[{prototypeOwner:p.prototypeOwner,bottomY:0,ring:rect(-2.25,-.625,-1.75,.625)}];
+ Object.assign(p.ports[0],{normal:[1,0,0],position:[-1.75,0,0],servicePosition:[-1.75,.8,0],witness:[[-1.75,.8,-.625],[-1.75,.8,.625]]});
+ m.uv=[1.75,1.75];f.recipe.nodes=f.recipe.nodes.filter(n=>n.id!=='o');
+ f.recipe.nodes.find(n=>n.id==='j').uv[1]=.25;f.recipe.nodes.find(n=>n.id==='k').uv[1]=.25;
+ f.recipe.edges=f.recipe.edges.filter(e=>e.a!=='o');f.recipe.edges.find(e=>e.b==='o').b='end';
+ return f;
+}
+
+for(const degrees of [0,45,60])test(`Task2 N3 mixed UV and measured-port ${degrees===60?'authored right angle rejects actual world overlap at':'right angle survives'} ${degrees} degree frame`,()=>{
+ const yaw=degrees*Math.PI/180,f=mixedPortTurnFixture(yaw),before=JSON.stringify(f),r=qualify(f);
+ // Independent authored endpoint: (1.75,1.75)+(-1.75,0)=(0,1.75).
+ assert.deepEqual([f.recipe.members[0].uv[0]+f.prototypes[0].ports[0].position[0],
+  f.recipe.members[0].uv[1]+f.prototypes[0].ports[0].position[2]],[0,1.75]);
+ const K=f.recipe.nodes.find(n=>n.id==='k').uv,L=f.recipe.nodes.find(n=>n.id==='l').uv;
+ assert.deepEqual(K,[2,.25]);assert.deepEqual(L,[2,1.75]);
+ assert.ok((K[0]-L[0])*(0-L[0])+(K[1]-L[1])*(1.75-L[1])===0);
+ if(degrees===60){
+  // Independent dyadic determinant on the literal fixture's ACTUAL world
+  // face and cap. At these coordinates 2**50 scales every binary64 exactly
+  // to an integer; opposite signs prove the full cap crosses the real face.
+  const c=Math.cos(yaw),s=Math.sin(yaw),mx=5+c*1.75+s*1.75,mz=6-s*1.75+c*1.75;
+  const a=[mx+c*-1.75+s*-.625,mz-s*-1.75+c*-.625];
+  const b=[mx+c*-1.75+s*.625,mz-s*-1.75+c*.625];
+  const E=[mx+c*-1.75,mz-s*-1.75];
+  const cap=[[E[0]-s*.6,E[1]-c*.6],[E[0]+s*.6,E[1]+c*.6]];
+  const integer=p=>p.map(v=>{const scaled=v*2**50;assert.ok(Number.isInteger(scaled));return BigInt(scaled);});
+  const [ax,az]=integer(a),[bx,bz]=integer(b);
+  const signs=cap.map(integer).map(([x,z])=>(bx-ax)*(z-az)-(bz-az)*(x-ax));
+  assert.ok(signs[0]*signs[1]<0n,'actual finite cap straddles the measured source face');
+  assert.equal(r.status,'unsatisfied');assert.equal(r.snapshot,null);
+  assert.ok(['precision','blocked-clearance'].includes(r.diagnostics.reasons[0].code));
+  assert.equal(r.diagnostics.reasons[0].ownerId,key('end','l'));
+  assert.equal(JSON.stringify(f),before);return;
+ }
+ assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+ assert.equal(JSON.stringify(f),before);
+ const c=Math.cos(yaw),s=Math.sin(yaw),world=(x,y,z)=>[5+c*x+s*z,y,6-s*x+c*z];
+ const m=r.snapshot.members[0],port=m.worldPorts[0];
+ vector(m.position,world(1.75,0,1.75));assert.equal(m.rotationY,yaw);
+ vector(port.anchorPosition,world(0,0,1.75));vector(port.servicePosition,world(0,.8,1.75));
+ vector(port.standingPosition,world(0,0,1.75));vector(port.normal,[c,0,-s]);
+ vector(port.witness[0],world(0,.8,1.125));vector(port.witness[1],world(0,.8,2.375));
+ assert.equal(port.width,1.25);assert.equal(port.kind,'serve');
+ const route=r.snapshot.routes.find(e=>key(e.a,e.b)===key('l','end'));
+ assert.equal(route.width,1.2);approx(area(route.polygon),2.4);
+ for(const [x,z] of [[0,1.15],[0,2.35],[2,1.15],[2,2.35]]){
+  const p=world(x,0,z);assert.ok(route.polygon.some(q=>Math.hypot(q[0]-p[0],q[1]-p[2])<1e-13));
+ }
+ assert.deepEqual(Object.keys(port).sort(),['anchorPosition','id','kind','normal','servicePosition','standingPosition','width','witness'].sort());
+ const visit=value=>{assert.notEqual(typeof value,'bigint');assert.notEqual(typeof value,'function');
+  if(value&&typeof value==='object')for(const [k,v] of Object.entries(value)){
+   assert.ok(!['uv','prototypeOwner','owner','prototype','uvAxis','sourceMember','sourcePort'].includes(k),k);visit(v);
+  }
+ };visit(r.snapshot);
+ assert.ok(Object.isFrozen(port.witness));assert.throws(()=>{port.anchorPosition[0]=123;},TypeError);
+ f.prototypes[0].ports[0].witness[0][1]=.9;vector(port.witness[0],world(0,.8,1.125));
+});
+
+test('Task2 N3 mixed-node turn still checks the physical outer corner',()=>{
+ const f=mixedPortTurnFixture(Math.PI/4),c=Math.SQRT1_2;
+ f.site.blocks.push({owner:f.site.owner,id:'mixed-corner-post',
+  polygon:rect(2.35,2.07,2.48,2.2).map(([x,z])=>[5+c*x+c*z,6-c*x+c*z]),yMin:0,yMax:1});
+ const reason=reject(f,'blocked-clearance').diagnostics.reasons[0];
+ assert.equal(reason.ownerId,'l');assert.equal(reason.peerId,'mixed-corner-post');
+});
+
+test('Task2 source handoff preserves a real offset and the measured port registration',()=>{
+ const offset=mixedPortTurnFixture(Math.PI/4);offset.recipe.members[0].uv[1]+=.00025;
+ assert.equal(reject(offset,'port-face').diagnostics.reasons[0].ownerId,'end');
+ const narrow=mixedPortTurnFixture(Math.PI/4);narrow.prototypes[0].ports[0].width=1.1;
+ assert.equal(reject(narrow,'port-width').diagnostics.reasons[0].ownerId,'end');
+});
+
+test('Task2 local source lookup keeps member, port and prototype owner validation',()=>{
+ for(const mutate of [f=>f.recipe.nodes.find(n=>n.id==='end').memberId='unknown',
+  f=>f.recipe.nodes.find(n=>n.id==='end').portId='unknown',
+  f=>f.prototypes[0].ports[0].prototypeOwner=Object.freeze({})]){
+  const f=mixedPortTurnFixture(Math.PI/4);mutate(f);assert.throws(()=>qualify(f),e=>e.code==='invalid-input');
+ }
+});
+
+test('Task2 world-only arrival keeps its actual offset instead of receiving recipe coordinates',()=>{
+ for(const [degrees,offset,want] of [[0,0,'complete'],[0,.00025,'walk-gap'],[60,0,'walk-gap'],[60,.00025,'walk-gap']]){
+  const f=fixture();f.site.hostFaces[0].faces=[{id:'flat',p:[[-40,0,-40],[0,0,40],[40,0,-40]]}];
+  for(const port of [f.site.arrival.sourcePort,f.site.arrival.gatePort]){
+   port.width=1.25;const z=port.position[2];port.witness=[[-.625,0,z],[.625,0,z]];
+  }
+  f.prototypes[0].ports[0].width=1.25;f.prototypes[0].ports[0].witness=[[-.625,.8,-.5],[.625,.8,-.5]];
+  f.site.arrival.sourcePort.position[2]=-3;f.site.arrival.sourcePort.servicePosition[2]=-3;
+  f.site.arrival.sourcePort.witness.forEach(p=>p[2]=-3);
+  f.site.arrival.nodes=[{id:'wa',position:[0,0,-2]},{id:'wb',position:[offset,0,-1.5]},{id:'wc',position:[0,0,-1]}];
+  f.site.arrival.edges=[['source','wa'],['wa','wb'],['wb','wc'],['wc','gate']]
+   .map(([a,b])=>({a,b,width:1.2,headroom:2.1,hostIds:['floor']}));
+  const yaw=degrees*Math.PI/180,c=Math.cos(yaw),s=Math.sin(yaw);transformFixture(f,[5,6],yaw);
+  // Arrival middle points are already world values; transform only at this fixture boundary.
+  for(const node of f.site.arrival.nodes){const [x,y,z]=node.position;node.position=[5+c*x+s*z,y,6-s*x+c*z];}
+  const r=qualify(f);
+  if(want==='complete')assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+  else{assert.equal(r.status,'unsatisfied');assert.equal(r.diagnostics.reasons[0].code,want,`${degrees}/${offset}: ${JSON.stringify(r.diagnostics)}`);assert.equal(r.diagnostics.reasons[0].ownerId,'wa');}
+ }
+});
+
+test('Task2 mixed-source qualification remains bounded at its measured work limit',()=>{
+ const f=mixedPortTurnFixture(Math.PI/4),r=qualify(f);assert.equal(r.status,'complete',JSON.stringify(r.diagnostics));
+ f.limits={maxPairs:r.diagnostics.spentPairs};assert.equal(qualify(f).status,'complete');
+ f.limits.maxPairs--;reject(f,'budget');
+});
+
+test('Task2 registered source separation never exempts an independent positive micro obstacle',()=>{
+ const f=mixedPortTurnFixture(0),near=8.35+.04-1e-14;
+ // This separate solid intentionally shares the member-part diagnostic ID.
+ // Its actual .04m shoulder expansion still enters the requested full width.
+ f.site.blocks.push({owner:f.site.owner,id:JSON.stringify(['m','body']),
+  polygon:rect(5.8,near,6,8.6),yMin:0,yMax:1});
+ assert.ok(near-.04<8.35,'positive physical intrusion after clearance expansion');
+ const r=qualify(f);assert.equal(r.status,'unsatisfied');assert.equal(r.snapshot,null);
+ assert.ok(['precision','blocked-clearance'].includes(r.diagnostics.reasons[0].code));
+ assert.equal(r.diagnostics.reasons[0].ownerId,key('end','l'));
+});
