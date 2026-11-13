@@ -15,6 +15,8 @@ This is a bounded mesh refiner, not a terrain designer or general triangulator. 
 
 `constraints` insert boundaries and split triangles; they do not limit where `heightAt` runs. The callback is evaluated over every terrain vertex and generated split point. To make an edit local, return `baseHeight` outside the intended edit footprint. `protectedRegions` take priority and retain the source piecewise-linear surface there, including where a constraint overlaps them. Use a road corridor wide enough to include all road support that must not move.
 
+The producer carries XZ positions as `Float32`. Its per-source-triangle area-conservation guard allows a relative error of `2e-6` to cover intersection quantization at world coordinates; it does not expand or move a constraint. The emitted mesh must still pass `prepareTerrainRoadSupport`'s strict triangulated-surface validation. The producer's area check alone is not evidence that roads, pads or other consumers are supported.
+
 ## Runnable ESM example
 
 ```js
@@ -70,6 +72,7 @@ This example shows the handoff, not a universal pad profile. Fit constraint poly
 ## Checks before passing the result on
 
 - Let `prepareTerrainRoadSupport({terrainGeometry: refined.geometry, topology: 'triangulated'})` validate the exact output; do not weaken the validator to make a producer pass.
+- For translated or large-world layouts, include at least one constrained test near the largest expected XZ coordinates; compare target heights and protected road surfaces from the emitted mesh.
 - Sample source and output at points outside protected/edited domains to ensure the original piecewise-linear surface is retained. Check the edited profile and road corridor separately.
 - Build the roads from the final terrain support, not from the source or a separately reconstructed height function. Confirm road top height against the emitted terrain at the road's actual vertices.
 - Record `sourceTriangles`, `outputTriangles`, `outputVertices`, `splitSourceTriangles` and `workUnits`. Refuse before rendering when any configured budget is exceeded.

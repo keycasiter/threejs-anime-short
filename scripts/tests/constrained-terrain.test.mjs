@@ -34,6 +34,12 @@ test('multiple oblique convex constraints remain a manifold and preserve source 
  const support=prepareTerrainRoadSupport({terrainGeometry:result.geometry,topology:'triangulated'});assert.ok(result.stats.outputTriangles>result.stats.sourceTriangles);support.dispose();result.geometry.dispose();source.dispose();
 });
 
+test('translated world-space constraints preserve source coverage at Float32 terrain coordinates',()=>{
+ const source=make(),position=source.getAttribute('position');for(let i=0;i<position.count;i++){position.setX(i,position.getX(i)+60);position.setZ(i,position.getZ(i)+10);}position.needsUpdate=true;
+ const result=api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints:[rect(57,10.5,59,12.5)]});
+ const support=prepareTerrainRoadSupport({terrainGeometry:result.geometry,topology:'triangulated'});assert.ok(result.stats.outputTriangles>result.stats.sourceTriangles);support.dispose();result.geometry.dispose();source.dispose();
+});
+
 test('the production path hands a refined noisy terrain to the road consumer without moving a protected corridor',()=>{
  const source=createHeightFieldGeometry(T,{sample:(x,z)=>({height:.08*x+.04*z+.2*Math.sin(x*.17)*Math.cos(z*.13),dx:.08+.034*Math.cos(x*.17)*Math.cos(z*.13),dz:.04-.026*Math.sin(x*.17)*Math.sin(z*.13)})},{sizeX:40,sizeZ:40,segmentsX:40,segmentsZ:40});
  const roadFootprint=rect(-15,-2.5,15,2.5),oldRoad=createTerrainRoadSource(T,{terrainGeometry:source,surfaces:[{outer:roadFootprint,holes:[]}],thickness:.15});

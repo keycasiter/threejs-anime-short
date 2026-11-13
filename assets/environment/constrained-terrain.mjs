@@ -2,7 +2,7 @@ import {prepareTerrainRoadSupport} from './terrain-roads.mjs';
 
 const finite=Number.isFinite,EPS=1e-10;
 const cross=(a,b,p)=>(b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]);
-const signedArea=poly=>poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+p[0]*q[1]-q[0]*p[1];},0)/2;
+const signedArea=poly=>{if(poly.length<3)return 0;const origin=poly[0];let twiceArea=0;for(let i=1;i<poly.length-1;i++)twiceArea+=cross(origin,poly[i],poly[i+1]);return twiceArea/2;};
 const same=(a,b)=>a[0]===b[0]&&a[1]===b[1];
 const cmpPoint=(a,b)=>a[0]-b[0]||a[1]-b[1];
 function positiveLimit(v,name,max){if(!Number.isSafeInteger(v)||v<1||v>max)throw new Error(`${name} must be an integer in 1..${max}`);return v;}
@@ -145,7 +145,7 @@ export function createConstrainedTerrainGeometry(T,{
    const ids=[index.getX(i),index.getX(i+1),index.getX(i+2)],tri=ids.map(id=>[position.getX(id),position.getY(id),position.getZ(id),id]),minX=Math.min(...tri.map(p=>p[0])),maxX=Math.max(...tri.map(p=>p[0])),minZ=Math.min(...tri.map(p=>p[2])),maxZ=Math.max(...tri.map(p=>p[2])),cx=Math.min(nx-1,lowerBound(xs,minX)),cz=Math.min(nz-1,lowerBound(zs,minZ)),candidateIds=ringBins[cz*nx+cx].filter(r=>{spend();const b=ringBounds[r];return b.maxX>=minX&&b.minX<=maxX&&b.maxZ>=minZ&&b.minZ<=maxZ;}),localRings=candidateIds.map(r=>splitRings[r]),ring=splitSourceTriangleAtConstraints(tri,localRings,spend);let pieces=[ring];
    for(const r of candidateIds){const constraint=splitRings[r],next=[];for(const piece of pieces){spend();next.push(...partitionByConvex(piece,constraint,spend));if(next.length>maxOutputTriangles)throw new Error('maxOutputTriangles exceeded during constraint partition');}pieces=next;}
    if(pieces.length>1)splitSourceTriangles++;
-   const expected=Math.abs(signedArea(ring)),actual=pieces.reduce((sum,p)=>sum+Math.abs(signedArea(p)),0),tol=Math.max(1e-8,expected*1e-7);if(Math.abs(actual-expected)>tol)throw new Error('constraint partition failed source-triangle coverage');
+   const expected=Math.abs(signedArea(ring)),actual=pieces.reduce((sum,p)=>sum+Math.abs(signedArea(p)),0),tol=Math.max(1e-8,expected*2e-6);if(Math.abs(actual-expected)>tol)throw new Error(`constraint partition failed source-triangle coverage at face ${i/3}: expected ${expected}, got ${actual}, tolerance ${tol}`);
    for(const piece of pieces){const idsOut=piece.map(p=>vertexFor(p,tri)),orientation=Math.sign(signedArea(ring));
     const emit=(a,b,c)=>{const area=cross([positions[a*3],positions[a*3+2]],[positions[b*3],positions[b*3+2]],[positions[c*3],positions[c*3+2]]);if(Math.abs(area)<=1e-12)throw new Error('constraint triangulation collapsed at Float32 precision');if(Math.sign(area)!==orientation)throw new Error('constraint split changed source triangle winding');if(++outputTriangles>maxOutputTriangles)throw new Error(`maxOutputTriangles exceeded (${outputTriangles} > ${maxOutputTriangles})`);outputIndex.push(a,b,c);};
     if(idsOut.length===3)emit(idsOut[0],idsOut[1],idsOut[2]);
