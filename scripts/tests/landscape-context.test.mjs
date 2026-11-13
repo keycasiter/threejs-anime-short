@@ -22,11 +22,19 @@ test('context is compiled from connected road regions and measured real architec
    assert.deepEqual(new Set(a.sites.map(s=>s.tier)),new Set(['near','regional','distant']));
    assert.deepEqual(new Set(a.sites.map(s=>s.program)),new Set(['gallery','workshop','courtyard']));
    assert.ok(new Set(a.sites.map(s=>s.prototypeId)).size>=9,'measured compact and long programs must reach real consumers');
+   const apronIds=new Set(a.design.regions.filter(r=>r.role==='activity-apron').map(r=>r.id));
+   assert.equal(apronIds.size,10);assert.equal(a.layout.regions.filter(r=>r.role==='activity-apron').length,10);
+   assert.equal(a.neighborhood.diagnostics.skippedRegions.filter(r=>r.role==='activity-apron').length,10,'activity aprons are spatial hosts, never accidental residential prototype families');
+   assert.equal(a.neighborhood.lots.filter(l=>apronIds.has(l.regionId)).length,0,'adding activity hosts must not reassign any accepted building lot');
    const groupSizes=new Map();for(const s of a.sites)groupSizes.set(s.groupId,(groupSizes.get(s.groupId)??0)+1);
    assert.ok([...groupSizes.values()].filter(n=>n>=2).length>=4,'accepted buildings must form actual repeated groups');
    const ray=new T.Raycaster();a.root.updateMatrixWorld(true);
    for(const prototype of a.prototypes){const asset=buildRegionalArchitecture(T,{...prototype.spec,materialFor:()=>c.material});try{assert.deepEqual(asset.footprint,prototype.footprint);assert.equal(new T.Box3().setFromObject(asset.root).min.y,prototype.measuredBounds.minY);}finally{asset.dispose();}}
    for(const site of a.sites){
+    const district=a.design.districts.find(d=>d.id===site.regionId);assert.ok(district,'every accepted lot retains its authored district');
+    assert.equal(site.activityRole,district.activityRole,'the accepted architectural site carries its complete-group role');
+    assert.equal(site.activityMode,district.activityMode,'the accepted architectural site carries its authored frontage strategy');
+    assert.equal(site.activityRegionId,district.activityRegionId??district.id,'the accepted site hands the correct existing or opposed activity region to the next stage');
     const lot=a.neighborhood.lots.find(l=>l.id===site.id),prototype=a.prototypes.find(p=>p.id===lot.prototypeId);
     assert.deepEqual(site.footprint,lot.footprint);assert.equal(site.program,prototype.spec.program);
     assert.equal(a.layout.footprintAllowed({level:'context',regionId:lot.regionId,polygon:lot.footprint,clearance:.1}),true);
@@ -43,6 +51,43 @@ test('context is compiled from connected road regions and measured real architec
    assert.ok(a.roads.stats.outputTriangles>0);assert.equal(a.gateways.length,2);
    for(const g of a.gateways)for(const f of [-.49,0,.49]){const hit=a.roads.query(g.center[0]+g.normal[0]*.01,g.center[2]+f*g.width);assert.ok(hit);assert.ok(Math.abs(hit.topHeight-(g.center[1]+.16))<1e-6);}
   }finally{c.dispose();}
+ }
+});
+test('authored district data carries the frozen activity role and placement mode without changing the road graph',()=>{
+ const expected={west:['exchange','opposed-frontage'],north:['exhibit','opposed-frontage'],east:['exhibit','opposed-frontage'],south:['garden','same-side-free-frontage']};
+ for(const configuration of ['grid','ring','terraced']){
+  const design=api.createLandscapeContextDesign({configuration}),byId=new Map(design.districts.map(d=>[d.id,d]));
+  assert.equal(byId.size,12,'all three tiers retain all twelve authored district identities');
+  for(const tier of ['near','regional','distant'])for(const [side,[activityRole]]of Object.entries(expected)){
+   const id=`${tier}/${side}`,district=byId.get(id),region=design.regions.find(r=>r.id===id);
+   const activityMode=tier==='near'&&['north','south'].includes(side)?'same-side-free-frontage':'opposed-frontage';
+   assert.ok(district&&region,`the existing district and region ${id} remain authored`);
+   assert.equal(district.activityRole,activityRole,`${id} carries its authored complete-group role`);
+   assert.equal(district.activityMode,activityMode,`${id} declares the frozen frontage strategy`);
+   assert.equal(region.activityRole,activityRole,`${id} passes its activity role with the spatial region`);
+  }
+  assert.equal(design.levels[0].edges.length,configuration==='ring'?32:26,'adding activity metadata must not mutate the existing street graph');
+ }
+});
+test('ten opposed districts receive non-family apron regions measured from their actual perimeter-street datum',()=>{
+ for(const configuration of ['grid','ring','terraced']){
+  const design=api.createLandscapeContextDesign({configuration}),aprons=design.regions.filter(r=>r.role==='activity-apron');
+  const level=design.levels[0],nodes=new Map(level.nodes.map(n=>[n.id,n])),districtRegions=new Map(design.regions.filter(r=>r.role!=='activity-apron').map(r=>[r.id,r]));
+  assert.equal(aprons.length,10,'only the ten frozen opposed-frontage districts receive new spatial eligibility regions');
+   assert.equal(design.districts.length,12,'aprons do not invent extra architectural districts');
+  assert.equal(design.levels[0].edges.length,configuration==='ring'?32:26,'aprons do not add or reroute streets');
+  for(const apron of aprons){
+   const [,tierId,side]=apron.id.split('/'),sourceRegion=districtRegions.get(`${tierId}/${side}`),edgeIndex={west:7,east:3,north:1,south:5}[side],edge=level.edges.find(e=>e.id===`${tierId}/street/${edgeIndex}`),a=nodes.get(edge.from),halfRoad=edge.width/2;
+   const sourceXs=sourceRegion.outline.map(p=>p[0]),sourceZs=sourceRegion.outline.map(p=>p[1]),axisLength=side==='west'||side==='east'?Math.max(...sourceZs)-Math.min(...sourceZs):Math.max(...sourceXs)-Math.min(...sourceXs);
+   const xs=apron.outline.map(p=>p[0]),zs=apron.outline.map(p=>p[1]),width=Math.max(...xs)-Math.min(...xs),depth=Math.max(...zs)-Math.min(...zs);
+   assert.equal(apron.sourceRegionId,`${tierId}/${side}`);
+   assert.equal(apron.activityMode,'opposed-frontage');
+   if(side==='west'){assert.ok(Math.abs(Math.min(...xs)-(a.x+halfRoad))<1e-9);assert.ok(Math.abs(width-7.6)<1e-9);}
+   if(side==='east'){assert.ok(Math.abs(Math.max(...xs)-(a.x-halfRoad))<1e-9);assert.ok(Math.abs(width-7.6)<1e-9);}
+   if(side==='north'){assert.ok(Math.abs(Math.min(...zs)-(a.z+halfRoad))<1e-9);assert.ok(Math.abs(depth-7.6)<1e-9);}
+   if(side==='south'){assert.ok(Math.abs(Math.max(...zs)-(a.z-halfRoad))<1e-9);assert.ok(Math.abs(depth-7.6)<1e-9);}
+   assert.ok(Math.abs((side==='west'||side==='east'?depth:width)-(axisLength+.12))<1e-9,'tangent length retains the authored district axis plus 6cm end allowance');
+  }
  }
 });
 test('context topology changes spatial organization and owns geometry while borrowing material semantics',()=>{
@@ -67,7 +112,9 @@ async function trackedFactory(){
    if(value?.terrainTriangles&&typeof value.dispose==='function'){supports.push(value);return inner.own(value,v=>{released.push(v);v.dispose();});}
    if(value?.geometry&&typeof value.query==='function'){roads.push(value);return inner.own(value,v=>{released.push(v);v.dispose();});}
    if(isSource(value)){record.sources++;value.root.traverse(o=>{if(o.geometry&&!sourceGeometry.has(o.geometry)){sourceGeometry.set(o.geometry,0);o.geometry.addEventListener('dispose',()=>sourceGeometry.set(o.geometry,sourceGeometry.get(o.geometry)+1));}});}return inner.own(value,...args);}};}};
- let text=await readFile(url,'utf8');text=text.replace("import {createResourceScope} from '../runtime/resource-scope.mjs';",`const {createResourceScope,Map}=globalThis[${JSON.stringify(key)}];`);
+ let text=await readFile(url,'utf8');const activityContextDesign=JSON.stringify(JSON.parse(await readFile(new URL('../../assets/examples/activity-context-design.json',import.meta.url),'utf8')));
+ text=text.replace("import activityContextDesign from './activity-context-design.json' with {type:'json'};",`const activityContextDesign=${activityContextDesign};`);
+ text=text.replace("import {createResourceScope} from '../runtime/resource-scope.mjs';",`const {createResourceScope,Map}=globalThis[${JSON.stringify(key)}];`);
  text=text.replace(/from '([^']+)'/g,(match,path)=>path.startsWith('.')?`from '${new URL(path,url).href}'`:match);
  const module=await import(`data:text/javascript;base64,${Buffer.from(text).toString('base64')}`);
  return {build:module.buildLandscapeContext,scopes,maps,supports,roads,released,sourceGeometry,close(){delete globalThis[key];}};
@@ -155,7 +202,9 @@ test('one complete terrain position scan serves the street and every actual entr
   }
  };
  globalThis[key]=hooks;
- const source=(await readFile(url,'utf8')).replace(/import \{([^}]+)\} from '([^']+)';/g,(_,list,path)=>{
+ let source=await readFile(url,'utf8');const activityContextDesign=JSON.stringify(JSON.parse(await readFile(new URL('../../assets/examples/activity-context-design.json',import.meta.url),'utf8')));
+ source=source.replace("import activityContextDesign from './activity-context-design.json' with {type:'json'};",`const activityContextDesign=${activityContextDesign};`);
+ source=source.replace(/import \{([^}]+)\} from '([^']+)';/g,(_,list,path)=>{
   const names=list.split(',').map(s=>s.trim()),wrapped=names.filter(n=>Object.hasOwn(hooks,n)),other=names.filter(n=>!wrapped.includes(n));
   return (other.length?'import {'+other.join(',')+'} from '+JSON.stringify(new URL(path,url).href)+';':'')+
     (wrapped.length?'const {'+wrapped.join(',')+'}=globalThis['+JSON.stringify(key)+'];':'');

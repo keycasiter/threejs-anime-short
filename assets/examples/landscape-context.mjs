@@ -8,6 +8,7 @@ import {compileWorldLayout} from '../scene/world-layout.mjs';
 import {compileFrontageNeighborhood} from '../scene/frontage-neighborhood.mjs';
 import {createAssetAssembly} from '../scene/asset-assembly.mjs';
 import {createResourceScope} from '../runtime/resource-scope.mjs';
+import activityContextDesign from './activity-context-design.json' with {type:'json'};
 
 const rectangle=(a,b,c,d)=>[[a,b],[c,b],[c,d],[a,d]];
 const MOUTH_LENGTH=4,TERRAIN_SIZE=240,TERRAIN_SEGMENTS=160;
@@ -25,6 +26,7 @@ export function createLandscapeContextDesign({configuration='grid',gateways}={})
   for(const g of gateways){
     if(!vec3(g?.center)||g.center[1]!==0||!vec3(g.normal)||g.normal[1]!==0||Math.abs(Math.hypot(...g.normal)-1)>1e-10||!Number.isFinite(g.width)||g.width<1e-5)throw Error('Gateway requires a finite ground-level center, horizontal unit normal and positive representable width');
   }
+  const activityBySide=new Map(activityContextDesign.distribution.map(([side,,activityRole])=>[side,activityRole]));
   const nodes=[],edges=[],regions=[],districts=[],openEnds=[];
   const add=(id,from,to,width=3)=>edges.push({id,from,to,width});
   for(const tier of TIERS){
@@ -35,9 +37,27 @@ export function createLandscapeContextDesign({configuration='grid',gateways}={})
     const specs=[['west','workshop',[-x-13,-length/2,-x-halfRoad,length/2],[-x,0]],['east','courtyard',[x+halfRoad,-length/2,x+15,length/2],[x,0]],['north','gallery',[-length/2,-z-13,length/2,-z-halfRoad],[0,-z]],['south','courtyard',[-length/2,z+halfRoad,length/2,z+15],[0,z]]];
     for(const [side,program,bounds,center]of specs){
       const regionId=`${id}/${side}`,role=`${id}/${program}`;
-      regions.push({id:regionId,level:'context',outline:rectangle(...bounds),role});
+      const activityRole=activityBySide.get(side),activityMode=activityContextDesign.modes[`${id}/${side}`]??activityContextDesign.modes.default;
+      if(!activityRole||!activityMode)throw Error(`Missing authored activity assignment for ${regionId}`);
+      regions.push({id:regionId,level:'context',outline:rectangle(...bounds),role,activityRole,activityMode});
       const pad=[Math.min(bounds[0],center[0]-2),Math.min(bounds[1],center[1]-2),Math.max(bounds[2],center[0]+2),Math.max(bounds[3],center[1]+2)];
-      districts.push({id:regionId,tier:id,program,bounds:pad,center});
+      const district={id:regionId,tier:id,program,activityRole,activityMode,bounds:pad,center};
+      if(activityMode==='opposed-frontage'){
+        const roadIndex={west:7,east:3,north:1,south:5}[side],road=edges.find(e=>e.id===`${id}/street/${roadIndex}`),start=nodes.find(n=>n.id===road?.from),end=nodes.find(n=>n.id===road?.to);
+        if(!road||!start||!end)throw Error(`Missing real perimeter street for opposed district ${regionId}`);
+        const inward={west:[1,0],east:[-1,0],north:[0,1],south:[0,-1]}[side],vertical=side==='west'||side==='east',centerline=vertical?start.x:start.z;
+        const boundary=centerline+inward[vertical?0:1]*road.width/2,axis=vertical?1:0,axisValues=[bounds[axis],bounds[axis+2]],extension=activityContextDesign.opposedApron.tangentEndExtension,depth=activityContextDesign.opposedApron.inwardDepth;
+        const lo=Math.min(...axisValues)-extension,hi=Math.max(...axisValues)+extension;
+        let apron;
+        if(side==='west')apron=[boundary,lo,boundary+depth,hi];
+        else if(side==='east')apron=[boundary-depth,lo,boundary,hi];
+        else if(side==='north')apron=[lo,boundary,hi,boundary+depth];
+        else apron=[lo,boundary-depth,hi,boundary];
+        const activityRegionId=`activity-apron/${regionId}`;
+        regions.push({id:activityRegionId,level:'context',outline:rectangle(...apron),role:'activity-apron',sourceRegionId:regionId,activityRole,activityMode});
+        district.activityRegionId=activityRegionId;
+      }
+      districts.push(district);
     }
   }
   for(let i=1;i<TIERS.length;i++)for(const side of [3,7])add(`radial/${i}/${side}`,`${TIERS[i-1].id}/${side}`,`${TIERS[i].id}/${side}`,3.4);
@@ -139,7 +159,8 @@ export function buildLandscapeContext(T,{mergeGeometries,materialFor,siteBounds=
       writeFormationCoordinates(T,connector.geometry);
       const connectorMesh=new T.Mesh(connector.geometry,materialFor(roadSlot.role,roadSlot.options));connectorMesh.name=`${lot.id}/arrival`;connectorMesh.receiveShadow=true;root.add(connectorMesh);materialBindings.push({object:connectorMesh,slots:[roadSlot,roadSlot,roadSlot]});
       bake(asset,lot);
-      sites.push({id:lot.id,prototypeId:lot.prototypeId,regionId:lot.regionId,edgeId:lot.edgeId,groupId:lot.groupId,tier:lot.regionId.split('/')[0],program:asset.spec.program,footprint:lot.footprint,groundY,baseY,position:asset.root.position.toArray(),rotation:lot.pose.rotationY,spec:asset.spec,measuredBounds:prototype.measuredBounds,entrance:{position:asset.root.localToWorld(new T.Vector3(...prototype.entrance.position)).toArray(),normal:normal.toArray(),width:prototype.entrance.width},partCounts:Object.fromEntries(Object.entries(asset.parts).map(([k,v])=>[k,v.length])),route:{surface,roadCenter,start:start.toArray(),end:leftEnd.clone().add(rightEnd).multiplyScalar(.5).toArray(),width,mesh:connectorMesh}});
+      const district=design.districts.find(d=>d.id===lot.regionId);if(!district)throw Error(`Accepted lot references an unknown authored district: ${lot.regionId}`);
+      sites.push({id:lot.id,prototypeId:lot.prototypeId,regionId:lot.regionId,edgeId:lot.edgeId,groupId:lot.groupId,tier:lot.regionId.split('/')[0],program:asset.spec.program,activityRole:district.activityRole,activityMode:district.activityMode,activityRegionId:district.activityRegionId??district.id,footprint:lot.footprint,groundY,baseY,position:asset.root.position.toArray(),rotation:lot.pose.rotationY,spec:asset.spec,measuredBounds:prototype.measuredBounds,entrance:{position:asset.root.localToWorld(new T.Vector3(...prototype.entrance.position)).toArray(),normal:normal.toArray(),width:prototype.entrance.width},partCounts:Object.fromEntries(Object.entries(asset.parts).map(([k,v])=>[k,v.length])),route:{surface,roadCenter,start:start.toArray(),end:leftEnd.clone().add(rightEnd).multiplyScalar(.5).toArray(),width,mesh:connectorMesh}});
     }
     // Source prototypes have finished serving measurement and baking consumers.
     releaseSources();

@@ -1,0 +1,18 @@
+{
+  "format": "activity-context-design/1",
+  "distribution": [
+    ["west", "workshop", "exchange"],
+    ["north", "gallery", "exhibit"],
+    ["east", "courtyard", "exhibit"],
+    ["south", "courtyard", "garden"]
+  ],
+  "modes": {
+    "near/north": "same-side-free-frontage",
+    "near/south": "same-side-free-frontage",
+    "default": "opposed-frontage"
+  },
+  "opposedApron": {
+    "inwardDepth": 7.6,
+    "tangentEndExtension": 0.06
+  }
+}
