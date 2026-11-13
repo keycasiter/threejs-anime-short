@@ -14,10 +14,11 @@ function ring(input,max,name,e,convex=false){
  * equal-weight reachable quad unit normals; materials do not introduce creases.
  * UV uses each offset ring's actual arc and profile arc: miter cells may shear.
  * Owns geometry only; callers must not mutate geometry while querying. */
-export function createContourProfileSource(T,{contour,profile,contourCreases,profileCreases,bandMaterialIndices,uvMeters=1,miterLimit=4,epsilon=1e-9,maxTriangles=250000}={}){
+export function createContourProfileSource(T,{contour,profile,contourCreases,profileCreases,bandMaterialIndices,uvMeters=1,miterLimit=4,epsilon=1e-9,maxTriangles=250000,formationCharts}={}){
  if(!Number.isFinite(epsilon)||epsilon<=0||!Number.isFinite(uvMeters)||uvMeters<=0||!Number.isFinite(miterLimit)||miterLimit<1||!Number.isSafeInteger(maxTriangles)||maxTriangles<=0)throw new RangeError('Invalid numeric options');
  const C=ring(contour,2048,'contour',epsilon,true),P=ring(profile,256,'profile',epsilon),N=C.n,M=P.n;
  if(2*N*M>maxTriangles)throw new RangeError('Triangle budget exceeded');
+ if(formationCharts!==undefined&&4*N*M>500000)throw new RangeError('Formation vertex budget exceeded');
  const creases=(v,n)=>{if(v===undefined)return Array(n).fill(true);if(!Array.isArray(v)||v.length!==n||Array.from(v).some(x=>typeof x!=='boolean'))throw new TypeError('Creases need matching boolean array');return v.slice();};
  const cc=creases(contourCreases,N),pc=creases(profileCreases,M),materials=bandMaterialIndices===undefined?Array(M).fill(0):(Array.isArray(bandMaterialIndices)?bandMaterialIndices.slice():null);
  if(!Array.isArray(materials)||materials.length!==M||Array.from(materials).some(x=>!Number.isSafeInteger(x)||x<0))throw new TypeError('Invalid band materials');
@@ -43,17 +44,82 @@ export function createContourProfileSource(T,{contour,profile,contourCreases,pro
   const clearance=Math.min(pointSegmentDistance(a,c,d),pointSegmentDistance(b,c,d),pointSegmentDistance(c,a,b),pointSegmentDistance(d,a,b));
   if(clearance<=2*quantizationError)throw new RangeError('Float32 nonadjacent profile clearance lost');
  }
+ // Charts are an opt-in material metric, built from source corners before any
+ // geometry is exposed. The ordinary source keeps its original qualification.
+ let formation,formationAt;
+ if(formationCharts!==undefined){
+  const record=(value,keys,name)=>{
+   if(!value||typeof value!=='object'||Array.isArray(value)||Reflect.ownKeys(value).length!==keys.length||Reflect.ownKeys(value).some(k=>!keys.includes(k)))throw new TypeError(`Invalid ${name} fields`);
+  };
+  record(formationCharts,['referenceOutsetM','depthDatumM','closedSeam','pieces'],'formation chart');
+  const {referenceOutsetM:reference,depthDatumM:depth,closedSeam,pieces}=formationCharts;
+  if(!Number.isFinite(reference)||!Number.isFinite(depth))throw new RangeError('Formation datum must be finite');
+  if(!Array.isArray(pieces)||pieces.length<1||pieces.length>Math.min(N,2048))throw new RangeError('Invalid formation pieces');
+  let covered=0;
+  for(const piece of pieces){
+   record(piece,['firstSegment','segmentCount','mode'],'formation piece');
+   const {firstSegment,segmentCount,mode}=piece;
+   if(!Number.isSafeInteger(firstSegment)||firstSegment!==covered||!Number.isSafeInteger(segmentCount)||segmentCount<1||firstSegment+segmentCount>N||(mode!=='member'&&mode!=='rail')||(mode==='member'&&segmentCount!==1))throw new RangeError('Formation pieces must cover ordered consecutive segments');
+   covered+=segmentCount;
+  }
+  if(covered!==N)throw new RangeError('Formation pieces leave uncovered segments');
+  const closedRail=pieces.length===1&&pieces[0].mode==='rail';
+  if(closedSeam!==(closedRail?'cutAtStart':'reject'))throw new RangeError('Invalid formation closed seam');
+  const guide=C.p.map((p,i)=>[p[0]+reference*miters[i][0],p[1]+reference*miters[i][1]]);
+  let guideError=0;
+  for(const p of guide){
+   const q=[...p,depth],error=Math.hypot(...q.map(x=>Math.fround(x)-x));
+   if(!q.every(Number.isFinite)||!Number.isFinite(error))throw new RangeError('Formation guide exceeds Float32 precision');
+   guideError=Math.max(guideError,error);
+  }
+  const tolerance=epsilon+quantizationError+guideError,Q=[reference,depth];
+  if(!Number.isFinite(tolerance))throw new RangeError('Formation clearance is not finite');
+  let inside=false;
+  for(let j=0;j<M;j++){
+   const a=P.p[j],b=P.p[(j+1)%M],distance=pointSegmentDistance(Q,a,b);
+   if(!Number.isFinite(distance)||distance<=tolerance)throw new RangeError('Formation datum is unresolved at profile boundary');
+   if((a[1]>depth)!==(b[1]>depth)){
+    const left=(b[0]-a[0])*(depth-a[1]),right=(b[1]-a[1])*(reference-a[0]),side=left-right;
+    // A half-open horizontal ray works for concave sections in either winding.
+    const uncertainty=4*Number.EPSILON*(Math.abs(left)+Math.abs(right));
+    if(!Number.isFinite(side)||!Number.isFinite(uncertainty)||Math.abs(side)<=uncertainty)throw new RangeError('Formation profile crossing is unresolved');
+    if((side>0)===(b[1]>a[1]))inside=!inside;
+   }
+  }
+  if(!inside)throw new RangeError('Formation datum must be inside profile material');
+  const segments=Array(N);
+  for(const piece of pieces){
+   let station=0;
+   for(let i=piece.firstSegment;i<piece.firstSegment+piece.segmentCount;i++){
+    const a=guide[i],b=guide[(i+1)%N],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy),end=station+length;
+    if(!Number.isFinite(length)||length<=epsilon||!Number.isFinite(end)||dx*edges[i][0]+dy*edges[i][1]<=epsilon)throw new RangeError('Formation guide edge collapsed or reversed');
+    segments[i]={direction:[dx/length,dy/length],origin:guide[piece.firstSegment],mode:piece.mode,start:station,end};
+    station=end;
+   }
+  }
+  formationAt=(i,r,k)=>{
+   const p=rings[r][k%N],g=guide[k%N],segment=segments[i],[dx,dy]=segment.direction;
+   return [-(p[0]-g[0])*dy+(p[1]-g[1])*dx,p[2]-depth,segment.mode==='rail'?(k===i?segment.start:segment.end):(p[0]-segment.origin[0])*dx+(p[1]-segment.origin[1])*dy];
+  };
+  // Bound all possible corners in Float64 and Float32 before allocating 12V
+  // bytes. Each emitted vertex below is written once from that same provenance.
+  for(let i=0;i<N;i++)for(let r=0;r<M;r++)for(const k of [i,i+1]){
+   if(formationAt(i,r,k).some(q=>!Number.isFinite(q)||Math.abs(q)>8192||!Number.isFinite(Math.fround(q))))throw new RangeError('Formation coordinates exceed finite metre bounds');
+  }
+  formation=new Float32Array(4*N*M*3);
+ }
  const arcs=rings.map(r=>{const a=[0];for(let i=0;i<N;i++)a.push(a.at(-1)+Math.hypot(r[(i+1)%N][0]-r[i][0],r[(i+1)%N][1]-r[i][1]));return a;});
  const positions=[],uvs=[],indices=[],groups=[],bands=[],flip=C.sign*P.sign<0;
  function emitCell(i,j){
   const nextBand=(j+1)%M,nextContour=(i+1)%N,base=positions.length/3;
   const corners=[
-   [j,i,arcs[j][i],P.arcs[j]],
-   [j,nextContour,arcs[j][i+1],P.arcs[j]],
-   [nextBand,nextContour,arcs[nextBand][i+1],P.arcs[j+1]],
-   [nextBand,i,arcs[nextBand][i],P.arcs[j+1]]
+   [j,i,arcs[j][i],P.arcs[j],i],
+   [j,nextContour,arcs[j][i+1],P.arcs[j],i+1],
+   [nextBand,nextContour,arcs[nextBand][i+1],P.arcs[j+1],i+1],
+   [nextBand,i,arcs[nextBand][i],P.arcs[j+1],i]
   ];
-  for(const [r,c,u,v]of corners){
+  for(const [r,c,u,v,k]of corners){
+   if(formation)formation.set(formationAt(i,r,k),positions.length);
    positions.push(...rings[r][c]);
    uvs.push(u/uvMeters,v/uvMeters);
   }
@@ -81,6 +147,10 @@ export function createContourProfileSource(T,{contour,profile,contourCreases,pro
  for(let c=0;c<N*M;c++){const vs=[0,1,2,3].map(k=>new T.Vector3().fromBufferAttribute(pos,c*4+k));const n=vs[1].clone().sub(vs[0]).cross(vs[2].clone().sub(vs[0])).normalize().multiplyScalar(flip?-1:1),n2=vs[2].clone().sub(vs[0]).cross(vs[3].clone().sub(vs[0])).normalize().multiplyScalar(flip?-1:1);if(n.dot(n2)<1-1e-6)throw new RangeError('Float32 cell folded or nonplanar');cellNormals.push(n);}
  for(let j=0;j<M;j++)for(let i=0;i<N;i++)for(let corner=0;corner<4;corner++){const vi=(i+(corner===1||corner===2?1:0))%N,vj=(j+(corner>=2?1:0))%M,is=cc[vi]?[i]:[(vi+N-1)%N,vi],js=pc[vj]?[j]:[(vj+M-1)%M,vj],sum=new T.Vector3();for(const y of js)for(const x of is)sum.add(cellNormals[y*N+x]);if(sum.length()<=epsilon)throw new RangeError('Smooth normal cancellation');sum.normalize();normal.setXYZ((j*N+i)*4+corner,sum.x,sum.y,sum.z);}
  if(!geometry.attributes.uv.array.every(Number.isFinite)||!Number.isFinite(geometry.boundingSphere.radius))throw new RangeError('Float32 bounds or UV overflow');
+ if(formation){
+  if(formation.length!==pos.count*3)throw new RangeError('Formation vertex count mismatch');
+  geometry.setAttribute('aFormationPosition',new T.BufferAttribute(formation,3));
+ }
  let disposed=false;
  function locateArc(arcs,parameter){
   const value=parameter===1?0:parameter,total=arcs.at(-1);
