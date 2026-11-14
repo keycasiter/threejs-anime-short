@@ -11,6 +11,8 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 随包当前可执行实现锁定`three@0.187.0`；项目固定Three与`examples/jsm` addons为同一精确版本。标明r180的设计快照、源码链接或历史验证仅描述其原始基线，不可当作当前运行依赖。
 
+本分支的默认后端是r187 `WebGLRenderer`/WebGL2，配合同版官方addons与浏览器原生DOM、Canvas、Web Audio。先按[浏览器原生能力路由](references/native-capabilities-r187.md)复用已有工具，再决定是否新增局部shader或模拟器；不要把裸WebGL教学栈、WebGPU/TSL能力或未经目标设备验证的API混为同一路径。程序纹理需沿“字段→像素/颜色空间→UV尺度/采样→真实材质与光照→释放”接通；可运行示范见[程序纹理实验](assets/examples/procedural-texture-lab/index.html)。
+
 ## 从当前任务进入
 
 | 请求 | 执行入口 |
@@ -38,6 +40,7 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 | 构图、白模、完整世界与多尺度 | [空间搭建](references/scene-layout.md)；生成图/街区/房间时读[算法配方](references/algorithm-recipes.md#世界连接图与局部语法)；多区域用途需扩成完整目的地时读[活动组接力](references/world-methods.md#区域用途到完整活动组)；既有地形局部改形且需保留道路时读[约束地形](references/constrained-terrain.md) | 共享布局/表面、可调用连接图/地块、完整活动组候选分配与区域/近中远规则、地形/道路共形接力 |
 | 主形、中层、厚度/开口、连接与资产工厂 | [构造方法](references/procedural-construction.md)；[几何配方](references/geometry-recipes.md) | [截面工具](references/profile-geometry.md)、[开间样件](assets/examples/procedural-bay.mjs)、端口/静态装配 |
 | 群体与具体资产细节 | [分布方法](references/detail-distribution.md)；[表面方法](references/surface-detail.md) | 原型/实例、实际宿主/完整足迹、区域与米制通道 |
+| 浏览器原生能力与r187边界 | [能力路由](references/native-capabilities-r187.md) | 复用Three.js管理的WebGL2渲染；DataTexture/CanvasTexture、官方后期/GPU计算按具体任务接入；WebAudio须由手势启动；WebGPU/TSL作为独立路径 |
 | 材光、反射、后期与自写效果 | [渲染选择](references/rendering-choices.md)；[效果配方](references/effect-recipes.md)；部件/世界坐标驱动的渐变、有限扫带或径向响应读[坐标响应](references/coordinate-response.md) | 自定义多遍时再读[渲染契约](references/render-contracts.md) |
 | 动作、资源、预算与交互 | [运行与规模](references/motion-and-scale.md)；[相机方法](references/camera-interaction.md)；涉及点击/选择/物体反馈时读[选择状态接力](references/selection-feedback.md) | 绝对时间/历史重建、真实接触、交互与观看范围；最近射线命中驱动稳定ID和对象级反馈 |
 | 复用现有模块或补算法 | [工具目录](references/production-toolkit.md)；[算法配方](references/algorithm-recipes.md)；[条件库接线](references/library-integration.md) | 随包实现与需适配方法分明，按结构、场、运动与规模选择 |

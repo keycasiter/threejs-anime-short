@@ -17,6 +17,7 @@
 | 目标天气确实需要可见雨丝 | [视觉雨场](../assets/environment/weather-field.mjs) | 有界LineSegments、绝对时间、风速/落速、实际强度与屋顶查询；非流体、体积雾、水花或自动湿润反馈 |
 | 需要接触AO、有限高亮扩散与正确输出 | [后期链](../assets/rendering/post-pipeline.mjs) | 半浮点线性HDR→可选GTAO→可选Bloom→一次Output→可选SMAA；不含体积光、自适应曝光、物体运动模糊 |
 | 需要定位质量责任层、复现镜头/时间、切换真实效果 | [场景工作台](../assets/runtime/scene-workbench.mjs) | 相机/target/FOV、绝对时钟、消费者开关、真实统计、可选DOM；历史模拟需额外reset，不能自动保证像素确定 |
+| 需要从代码生成材质图或浏览器原生配套效果 | [r187浏览器能力路由](native-capabilities-r187.md)；[程序纹理实验](../assets/examples/procedural-texture-lab/index.html) | `createRegionMaterial`真实连接sRGB颜色、线性标量与物理高度法线；实验可切换分辨率、wrap与滤波，并展示PBR消费者和手势触发的WebAudio。文档区分WebGL纹理计算与独立WebGPU/TSL路线 |
 
 注入**同一锁定版本**的 `THREE` 与官方addons，已验证路径为r187/WebGLRenderer。WebGPU、其他版本、XR、多相机rig需要另外验证。适配器不复制标杆的应用shader。新任务需要表中未覆盖的能力时，显式设计扩展并先做小样，不把近似能力命名成完整能力。
 
