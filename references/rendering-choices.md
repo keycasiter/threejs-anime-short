@@ -53,6 +53,19 @@ Three原生EffectComposer中，线性中间结果通常由末端OutputPass完成
 
 优先把可见质量落实在资产：有读得出的轮廓、边缘厚度与法线；UV/切线正确；同一材质族的粗糙度、细节尺度、纹理密度一致。近景检查掠射反射，远景检查主次；用高roughness、单色环境和无后期版本定位问题。
 
+**共享材质是共享可变状态。** `Mesh.material` 指向调色板中的共享实例时，直接改 `side`、`color`、`vertexColors`、`transparent` 或裁剪参数会同时改变所有使用该材质的网格。先确认是否需要改几何绕序/法线；确实只有单个网格需要不同渲染状态时，克隆材质再分配，并区分克隆材质的释放责任与仍由调色板共享的贴图：
+
+```js
+const shellMaterial = sharedRockMaterial.clone(); // maps remain shared references
+shellMaterial.side = THREE.DoubleSide;            // this mesh only
+// If vertex colors are the complete albedo, calibrate without a second color map/tint.
+shellMaterial.map = null;
+shellMaterial.color.set(0xffffff);
+shell.material = shellMaterial;
+```
+
+在着色前明确漫反射颜色来源：颜色贴图受 `material.color` 调制，启用 `vertexColors` 后顶点颜色也参与最终表面颜色；这些通道会相乘。需要贴图细节时，可用白色/中性色材质与较轻的顶点变化；需要顶点色直接定义表面色时，避免再叠加未经校准的彩色底图。先固定灯光与曝光，分别检查材质底色、贴图、顶点色，再逐项组合；双面可见、材质状态和颜色亮度都要用实际目标视角复查。
+
 `scene.background`决定看见的背景，`scene.environment`影响环境照明/反射，两者不能互相替代。光栅PBR的环境需正确预过滤（如PMREM；也可能由renderer自动处理，按版本确认），否则粗糙表面反射不成立。设计大面积亮暗反射带和主辅光关系，再调曝光；清漆、各向异性、transmission分别有额外计算与资产要求，按镜头需要启用。
 
 选择PBR贴图时先查看实际图像与通道语义，确认它描述的是材料本身还是已经包含整段装配。照片中的砖缝、板缝等宏观结构若又铺到逐块建模表面，会形成重复构造；改用不重复结构的代码材料场或按语义分区的程序取样。把一个tile对应的实际尺寸写入UV/采样变换，按上节色彩语义接通通道，再在最终景别查看比例和重复。
