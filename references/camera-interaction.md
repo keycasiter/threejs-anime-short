@@ -60,6 +60,59 @@ const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 
 camera.lookAt(spawn.position.clone().add(forward)); // 眼平线方向；仰俯角另设并限制
 ```
 
+### 第一人称连续贴地移动与净空接线
+
+出生点正确不代表移动正确。持续移动必须从最终可走表面重新取高程，并按角色身体碰撞检查每一步；否则角色会在斜坡漂浮/陷地、穿过立面或跨过实际断层。低速导览可用[`createGroundedWalkMotor`](../assets/scene/walk-motor.mjs)：它将水平位移分段，逐轴尝试以支持沿墙滑动；每段从最终walkable roots向下求交，按世界法线限制坡度，并用`maxStepUp`/`maxStepDown`拒绝不可跨越的高差。它只处理“已站在可走面上的水平行走”，不实现重力、跌落、跳跃和身体碰撞。`isCandidateClear`必须接入项目自己的角色胶囊/净空查询；不能用始终返回`true`的占位回调验收成品。
+
+对于自由物理/FPS游戏，r187随包官方addon更合适：[`PointerLockControls`](https://github.com/mrdoob/three.js/blob/r187/examples/jsm/controls/PointerLockControls.js)只负责视线锁定与方向读取；[`Capsule`](https://github.com/mrdoob/three.js/blob/r187/examples/jsm/math/Capsule.js)+[`Octree`](https://github.com/mrdoob/three.js/blob/r187/examples/jsm/math/Octree.js)负责动态角色与静态三角网格碰撞。三者必须从同一精确版本的`three@0.187.0`加载。Octree应只由静态碰撞网格构建；重复、透明或动画渲染对象应有经核验的简化碰撞体，而不是把整场所有视觉网格盲目塞入碰撞树。官方 [`games_fps`](https://github.com/mrdoob/three.js/blob/r187/examples/games_fps.html)按`capsuleIntersect()`的法线/深度修正角色，并用固定小步处理以降低高速穿透风险。若选用此物理路径，不再同时以ground motor改写相同Y坐标：必须有唯一的位置/速度所有者。
+
+纯贴地导览的最小接线如下；地面采样和角色净空来自同一套最终空间数据：
+
+```js
+import { findWalkableSpawn } from './assets/scene/walk-spawn.mjs';
+import { createGroundedWalkMotor } from './assets/scene/walk-motor.mjs';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { Capsule } from 'three/addons/math/Capsule.js';
+import { Octree } from 'three/addons/math/Octree.js';
+
+const eyeHeight = 1.65, radius = 0.28;
+const controls = new PointerLockControls(camera, renderer.domElement);
+const worldOctree = new Octree().fromGraphNode(staticCollisionRoot);
+const playerCapsule = new Capsule(new THREE.Vector3(), new THREE.Vector3(), radius);
+function isCandidateClear({ position }) {
+  const footY = position.y - eyeHeight;
+  playerCapsule.start.set(position.x, footY + radius, position.z);
+  playerCapsule.end.set(position.x, position.y - radius, position.z);
+  const hit = worldOctree.capsuleIntersect(playerCapsule);
+  return !hit || hit.depth < 1e-4; // 接触地面可接受；有穿透时拒绝此候选
+}
+
+const spawn = findWalkableSpawn(THREE, {
+  x: routeStart.x, z: routeStart.z,
+  groundRoots: finalWalkableRoots, eyeHeight, maxSlopeDegrees: 28,
+  isCandidateClear
+});
+if (!spawn) throw new Error('No clear walkable spawn on final terrain.');
+camera.position.copy(spawn.position);
+
+const motor = createGroundedWalkMotor(THREE, {
+  groundRoots: finalWalkableRoots, eyeHeight,
+  maxSlopeDegrees: 28, maxStepUp: 0.28, maxStepDown: 0.36,
+  maxSegmentLength: 0.18, isCandidateClear
+});
+const forward = new THREE.Vector3(), right = new THREE.Vector3();
+function moveOnFrame(dt, inputX, inputY) {
+  controls.getDirection(forward); forward.y = 0; forward.normalize();
+  right.crossVectors(forward, camera.up).normalize();
+  const displacement = forward.multiplyScalar(inputY).addScaledVector(right, inputX);
+  if (displacement.lengthSq() > 1) displacement.normalize();
+  displacement.multiplyScalar(walkSpeed * dt);
+  camera.position.copy(motor.move(camera.position, displacement).position);
+}
+```
+
+示例中的`PointerLockControls`只旋转相机；调用其`moveForward()`/`moveRight()`会绕开ground motor和净空回调，所以行走位置由`moveOnFrame`单独持有。若需要跳跃、跌落、推挤或高速运动，改由Capsule+Octree物理更新统一拥有角色位置，再逐帧把胶囊端点映射到相机；勿叠加两套位移更新。可运行的贴地斜坡/台阶/门洞测试页见[第一人称行走前向样例](../evals/current-candidate-pilot/first-person-walk-forward-r1/index.html)（评测产物不随Skill包发布）。验收至少覆盖平地、目标坡度边界、上/下台阶阈值、门洞/窄通道、墙角滑动、断面边缘与复位；记录首帧、移动后相机/脚底高度、阻挡状态和实屏视图。
+
 ### 第三人称跟随：相机臂扫掠、绕障与平滑
 
 角色移动不等于相机跟随正确。相机目标点、期望端点和路径间的净空必须与最终世界几何一起检查；只从角色到相机打一条中心射线，会漏掉视锥附近的小杆件，直接把被挡距离硬截断也会产生贴脸跳变。对运行中的第三人称相机，使用[`createFollowCameraSolver`](../assets/scene/follow-camera.mjs)在默认相机臂及少量项目验证过的备选偏移间做五射线截面扫掠。它返回安全机位和阻挡信息，不移动角色、不更新障碍物矩阵，也不负责时间平滑或材质淡出。

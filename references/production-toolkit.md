@@ -46,6 +46,7 @@
 | 重复铺覆的完整轮廓与封边 | [bounded-profile](../assets/geometry/bounded-profile.mjs)：`clipConvexPolygon` / `createBoundedProfileGeometry`，见[边界代码](visual-construction.md#2-重复单元先归属区域再裁完整轮廓) | 凸域交集、局部XY、一维profile与Z厚度的闭合网格；非通用CSG/曲面贴合；角点在epsilon内归并采样层，真正Float32塌缩拒绝 |
 | 单视图遮挡、候选机位、多视图覆盖与实测Orbit扇区验收 | [view-readability](../assets/scene/view-readability.mjs)：`inspectFeatureVisibility`；[observation-view](../assets/scene/observation-view.mjs)：`selectObservationView` / `auditObservationSet` / `auditOrbitObservations`，见[核心三线](core-systems.md#5-规模观看与上下文) | 实际世界样点、三角遮挡/命中实体、CSS覆盖、投影尺寸、视图并集和实测控制器扇区位姿；OrbitControls可自动订阅，自定义控制器用`readState`适配并手动采样或提供带清理函数的事件订阅；可选约束关键特征必须可见的方位；仅普通深度WebGL透视/正交；不证明连续表面覆盖、真实GPU像素、构图或美术评分 |
 | 第三人称跟随相机臂避障 | [follow-camera](../assets/scene/follow-camera.mjs)：`createFollowCameraSolver`，见[相机方法](camera-interaction.md#第三人称跟随相机臂扫掠绕障与平滑) | 默认臂加调用方验证的备选偏移、五射线截面扫掠、安全距离/tooClose状态与首选遮挡网格；不负责控制器、角色碰撞、候选自动寻路、平滑/淡出或视觉验收 |
+| 第一人称贴地导览移动 | [walk-motor](../assets/scene/walk-motor.mjs)：`createGroundedWalkMotor`，见[相机方法](camera-interaction.md#第一人称连续贴地移动与净空接线) | 最终地面采样、世界法线坡度、台阶高差、分段位移、轴向墙滑和项目角色净空回调；不实现重力/跳跃/跌落/身体碰撞 |
 | 最近景别的曲率/特征采样估计 | [projected-sampling](../assets/geometry/projected-sampling.mjs)：`estimateSamplingStep`，见[采样代码](visual-construction.md#4-按最近目标景别分配采样) | 当前投影/zoom、世界尺度与局部step；不是自适应网格器、全局误差保证或成本自动优化器 |
 
 ## 最短可执行入口

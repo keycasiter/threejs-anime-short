@@ -16,6 +16,7 @@
 | 区域用途与真实构造 | [区域程序](references/region-programs.md)、[同源工厂](assets/examples/region-programs.mjs)；真实足迹、到达面、材料语义与互补观察随同一设计接力 |
 | 空间、相机构图与世界规则 | [空间搭建](references/scene-layout.md)、[相机操作](references/camera-interaction.md) |
 | 第三人称相机臂避障 | [跟随相机代码与使用边界](assets/scene/follow-camera.mjs)、[扫掠/恢复/验收方法](references/camera-interaction.md#第三人称跟随相机臂扫掠绕障与平滑) |
+| 第一人称持续行走 | [地面与净空方法](references/camera-interaction.md#第一人称连续贴地移动与净空接线)、[可复用贴地马达](assets/scene/walk-motor.mjs) |
 | 点击选择与对象级反馈 | [选择状态接力](references/selection-feedback.md)、[选择实验](assets/examples/selection-lab/index.html) |
 | 场景锚点、CSS2D/Sprite标签 | [锚定标签方法](references/anchored-labels.md)、[r187标签实验](assets/examples/anchored-label-lab/index.html) |
 | 高程区、地形整平、坡度接缝与道路保形 | [高程规划/验收](references/terrain-grading.md)、[坡度接口字段](references/terrain-interface-field.md)、[受约束网格](references/constrained-terrain.md)、[道路消费者](references/terrain-roads.md) |
@@ -527,3 +528,11 @@ Three.js r187相关回归`52/52`通过。冻结C1探针中grid/terraced通过，
 变更：新增可复用r187 [`createFollowCameraSolver`](assets/scene/follow-camera.mjs)，使用主臂与调用方选择的安全备选、五射线截面扫掠、最小距离状态和首选/实际阻挡网格。相机文档加入真实障碍列表、矩阵更新、近向立即避让/远向平滑恢复、备选视点取舍、对象淡出资源归属及视觉验收边界；工具目录与Skill入口增加路由。
 
 验证：r187行为测试6/6通过；模块/内联语法、离线HTML闭包与差异空白检查通过。CUA在本地浏览器实测初始`CLEAR`、驶过横梁时`DETOUR`、复位、拖拽和滚轮距离变化。完整温室渲染仍显低模、重复，实时截图未保存并哈希绑定，性能、全路径边界及独立评分未测；本次只支持相机机制可复用，不证明整体画质或Agent遵循率提升。完整记录：`evals/current-candidate-pilot/follow-camera-forward-r1/README.md`（评测产物不纳入Skill包）。
+
+### 2026-11-15｜第一人称连续贴地行走
+
+依据：出生点查询只保证初始相机落在可走地面上；持续行走仍需每一步更新高度并检查坡度、台阶、断面和身体净空，否则镜头会漂浮、陷地或穿墙。
+
+变更：新增r187 [`createGroundedWalkMotor`](assets/scene/walk-motor.mjs)，以短距离子步沿X/Z轴尝试移动，调用现有最终地面查询重新求高程，并把角色净空交给项目碰撞回调。相机文档说明该贴地路线与Capsule/Octree自由物理路线的职责边界，禁止两套更新同时拥有角色位置；Skill入口与工具目录增加接力。
+
+验证：贴地马达测试7/7、跟随相机回归6/6、离线HTML闭包4/4、任务路由校验及`quick_validate.py`通过。CUA在本地坡道场景观察到WASD位移与坡面路线运行，浏览器error/warn为空。场景依旧是低模机制验证；截图未存档哈希，独立Agent采用、完整障碍矩阵、移动端、性能、视觉盲评均未完成，因此不宣称画质提升或最终视觉验收。详细证据与HTML哈希见[`前向试跑记录`](evals/current-candidate-pilot/first-person-walk-forward-r1/README.md)，该记录属于本地评估，不进入Skill包。
