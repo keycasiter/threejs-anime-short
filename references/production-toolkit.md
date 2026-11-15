@@ -19,6 +19,7 @@
 | 需要定位质量责任层、复现镜头/时间、切换真实效果 | [场景工作台](../assets/runtime/scene-workbench.mjs) | 相机/target/FOV、绝对时钟、消费者开关、真实统计、可选DOM；历史模拟需额外reset，不能自动保证像素确定 |
 | 场景内文字、指示或可选语义标签 | [锚定标签](anchored-labels.md)：`createAnchoredCanvasLabel` / `createCSS2DAnnotation` | Canvas/Sprite分世界米制与视口比例；CSS2D共享单渲染器并处理DOM事件/可选引导线。CSS2D不做遮挡和避碰；明确CSS像素尺寸与scene/anchor/材质所有权 |
 | 相机/动画状态下的DOM覆盖层几何检查 | [屏幕覆盖层审计](../assets/interaction/screen-overlay-audit.mjs)：`auditScreenOverlays` | 输入同一视口内的实测CSS像素矩形，报告视口外溢、安全区越界、标签互叠及保留UI冲突；不移动元素，不判断3D遮挡或文字美感 |
+| 需要从代码生成材质图或浏览器原生配套效果 | [r187浏览器能力路由](native-capabilities-r187.md)；[程序纹理实验](../assets/examples/procedural-texture-lab/index.html) | `createRegionMaterial`真实连接sRGB颜色、线性标量与物理高度法线；实验可切换分辨率、wrap与滤波，并展示PBR消费者和手势触发的WebAudio。文档区分WebGL纹理计算与独立WebGPU/TSL路线 |
 
 注入**同一锁定版本**的 `THREE` 与官方addons，已验证路径为r187/WebGLRenderer。WebGPU、其他版本、XR、多相机rig需要另外验证。适配器不复制标杆的应用shader。新任务需要表中未覆盖的能力时，显式设计扩展并先做小样，不把近似能力命名成完整能力。
 

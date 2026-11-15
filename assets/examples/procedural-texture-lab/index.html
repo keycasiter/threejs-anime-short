@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,"><title>Three.js r187 · 程序纹理到PBR</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#202a2c;color:#f2eee3;font:13px/1.55 system-ui,sans-serif}
+    canvas{display:block;touch-action:none}aside{position:fixed;left:18px;top:18px;width:270px;padding:17px 18px;background:#172022eF;border:1px solid #657273;border-radius:8px;backdrop-filter:blur(10px)}
+    h1{font:600 19px/1.2 Georgia,serif;margin:8px 0}p{color:#c3ceca;font-size:11px;margin:8px 0 12px}label{display:block;margin:11px 0 4px;font-size:11px;color:#d7ded8}
+    select,input,button{font:inherit}select,input[type=range]{width:100%;margin-top:5px}select{padding:7px;background:#263336;color:#f2eee3;border:1px solid #68787a;border-radius:4px}button{padding:8px 10px;margin:7px 5px 0 0;background:#c38a57;color:#171d1e;border:0;border-radius:4px;cursor:pointer}button.secondary{background:#3a4849;color:#eff1e8}pre{font:10px/1.5 ui-monospace,monospace;white-space:pre-wrap;color:#b7c8c0;max-height:18vh;overflow:auto}
+    footer{position:fixed;right:18px;bottom:17px;color:#eef0e7;font-size:10px;letter-spacing:.12em;text-shadow:0 1px 6px #000}
+    @media(max-width:600px){aside{top:8px;left:8px;width:230px;padding:12px}footer{right:8px;bottom:8px}}
+  </style>
+  <script type="importmap">{"imports":{"three":"../../vendor/three-r187/build/three.module.js","three/addons/":"../../vendor/three-r187/examples/jsm/"}}</script>
+</head>
+<body>
+  <aside>
+    <small>THREE.JS r187 · CODE GENERATED MATERIAL</small>
+    <h1>程序表面 → PBR响应</h1>
+    <p>DataTexture颜色与标量通道由同一空间场生成，落到真实UV网格；拖动观察掠射高光、粗糙变化和重复边界。</p>
+    <label for="resolution">烘焙分辨率 <span id="resolutionValue">256²</span></label>
+    <select id="resolution"><option>64</option><option>128</option><option selected>256</option><option>512</option></select>
+    <label for="sampling">采样方式</label>
+    <select id="sampling"><option value="mipmap" selected>三线性 + mipmap</option><option value="linear">线性，无mipmap</option><option value="nearest">最近点，无mipmap</option></select>
+    <label for="wrap">UV边界</label>
+    <select id="wrap"><option value="repeat" selected>Repeat：周期字段</option><option value="clamp">Clamp：边界延拓</option></select>
+    <button id="rebuild">重烘焙并替换</button><button id="reset" class="secondary">复位相机</button>
+    <div><button id="audioStart">启用低声部</button><button id="audioPause" class="secondary">暂停音频</button><button id="audioCue" class="secondary">空间敲击</button><button id="audioNoise" class="secondary">风噪提示</button><button id="audioMute" class="secondary">静音</button></div>
+    <pre id="status" aria-live="polite">等待场景初始化…</pre>
+  </aside>
+  <footer>拖动旋转 · 滚轮缩放 · 所有纹理均由代码生成</footer>
+  <script type="module" src="./main.mjs"></script>
+</body>
+</html>
