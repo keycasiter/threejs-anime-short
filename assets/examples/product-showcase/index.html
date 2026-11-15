@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#151b20"><link rel="icon" href="data:,">
+  <title>精密相机 · Three.js物体展示完整样例</title>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151b20;color:#e8e4d9;font:13px/1.55 Inter,"PingFang SC","Microsoft YaHei",sans-serif}canvas{display:block;width:100%;height:100%;touch-action:none}
+    .panel{position:fixed;left:clamp(14px,2.8vw,36px);top:clamp(14px,3vh,30px);width:min(310px,calc(100vw - 28px));padding:18px;background:#171d21d9;border:1px solid #d4c6a534;backdrop-filter:blur(14px);box-shadow:0 14px 46px #03080d66;z-index:2}.eyebrow{font-size:9px;letter-spacing:.23em;color:#d0af74;font-weight:700}h1{font:500 28px/1.08 Georgia,"Songti SC",serif;margin:10px 0 8px}.lede{font-size:12px;color:#bdc5c5;margin:0 0 15px}.rule{height:1px;background:#d4c6a526;margin:14px 0}.field{display:grid;gap:7px;margin:12px 0;color:#d8d6ce;font-size:11px}.field input{width:100%;accent-color:#d0af74}.field select{padding:8px;background:#20272b;border:1px solid #8e999b55;color:#eee9dd}.actions{display:flex;gap:8px;flex-wrap:wrap}button{padding:8px 11px;background:#3a403e;border:1px solid #d4c6a54d;color:#eee9dd;font:inherit;cursor:pointer}button:hover{background:#51534b}.stats{font:10px/1.7 ui-monospace,monospace;white-space:pre-wrap;color:#bdc8c6}.note{font-size:10px;color:#a8b3b4;margin:10px 0 0}.footer{position:fixed;right:18px;bottom:16px;padding:9px 12px;background:#171d21bb;border:1px solid #d4c6a52c;color:#e0ddcf;font-size:9px;letter-spacing:.13em;z-index:1}.load{position:fixed;inset:0;display:grid;place-items:center;background:#151b20;z-index:5;color:#d0af74;letter-spacing:.2em;font-size:10px;transition:opacity .4s}#error{position:fixed;z-index:8;left:12px;bottom:12px;max-width:calc(100vw - 24px);padding:10px;background:#381c1c;color:#fff;white-space:pre-wrap}
+    @media(max-width:620px){.panel{width:254px;padding:14px}.panel h1{font-size:23px}.footer{right:9px;bottom:10px;font-size:8px}}
+  </style>
+  <!-- Supply the matching Three.js r187 build/ and examples/jsm/ at ./vendor/. -->
+  <script type="importmap">{"imports":{"three":"./vendor/build/three.module.js","three/addons/":"./vendor/examples/jsm/"}}</script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div class="load" id="load">PRECISION OPTICS · STUDIO 04</div>
+  <aside class="panel">
+    <div class="eyebrow">THREE.JS / OBJECT SHOWCASE</div>
+    <h1>精密相机</h1>
+    <p class="lede">从金属机身、光圈与对焦环，到无缝影棚、静态环境反射和近景观察，整套资产由Three.js代码生成。</p>
+    <div class="rule"></div>
+    <label class="field">镜头对焦位置 <input id="focus" type="range" min="0" max="1" step=".01" value=".28"></label>
+    <label class="field">观察视角 <select id="view"><option value="hero">三分之四产品视图</option><option value="front">镜头结构近景</option><option value="rear">背屏与操控面</option><option value="top">顶部机械控制</option></select></label>
+    <div class="actions"><button id="reset">复位构图</button></div>
+    <div class="rule"></div><pre class="stats" id="stats">正在构建机身、光学组件与影棚…</pre>
+    <p class="note">无外部模型、贴图、字体或网络资源。场景、几何、表面纹理和反射探针由本地代码生成。</p>
+  </aside>
+  <div class="footer">DRAG TO ORBIT · SCROLL TO APPROACH · HORIZONTAL 360°</div>
+  <pre id="error" hidden></pre>
+  <script type="module" src="./main.mjs"></script>
+</body>
+</html>

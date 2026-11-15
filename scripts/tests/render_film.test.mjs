@@ -151,6 +151,40 @@ test('waits for the declared settled frame before capturing actual pixels',async
  for(const s of m.samples)assert.deepEqual(await centerPixel(join(f.out,s.file)),[Math.round(s.t*100),80,140]);
 });
 
+test('render-mode cancels CSS loading-cover transitions before screenshot capture',async t=>{
+ const f=await fixture(t,`<canvas id="stage" width="320" height="180"></canvas><div id="cover"></div><style>
+ #cover{position:fixed;inset:0;background:rgb(17,34,51);opacity:1;transition:opacity 8s linear}
+ body.render-mode #cover{opacity:0}
+ </style><script>
+ window.__FILM={duration:1,fps:2};window.renderAt=t=>{const c=document.querySelector('#stage').getContext('2d');c.fillStyle='rgb(0,255,0)';c.fillRect(0,0,320,180)};window.__ready=true;
+ </script>`);
+ const r=await exportFilm(f);assert.equal(r.code,0,r.output);
+ const m=JSON.parse(await readFile(join(f.out,'manifest.json'),'utf8'));
+ assert.ok(m.deterministic);for(const sample of m.samples)assert.deepEqual(await centerPixel(join(f.out,sample.file)),[0,255,0]);
+});
+
+test('real browser DOM rectangles feed the screen-overlay audit in CSS pixels',async t=>{
+ const auditUrl=new URL('../../assets/interaction/screen-overlay-audit.mjs',import.meta.url).href;
+ const f=await fixture(t,`<canvas id="stage" width="320" height="180"></canvas><div id="layer"><div id="a" class="label"></div><div id="b" class="label"></div><div id="reserved"></div></div><style>
+ #layer{position:fixed;inset:0;width:320px;height:180px}
+ .label,#reserved{position:absolute;box-sizing:border-box}
+ #a{left:-4px;top:12px;width:50px;height:20px}
+ #b{left:30px;top:20px;width:50px;height:20px}
+ #reserved{left:34px;top:24px;width:56px;height:40px}
+ </style><script type="module">
+ import {auditScreenOverlays} from '${auditUrl}';
+ const layer=document.querySelector('#layer');
+ window.__FILM={duration:1,fps:1};window.renderAt=t=>{const c=document.querySelector('#stage').getContext('2d');c.fillStyle='rgb(0,255,0)';c.fillRect(0,0,320,180)};
+ window.filmMetrics=()=>auditScreenOverlays({viewport:layer.getBoundingClientRect(),items:['a','b'].map(id=>({id,rect:document.querySelector('#'+id).getBoundingClientRect()})),reserved:[{id:'panel',rect:document.querySelector('#reserved').getBoundingClientRect()}]});
+ window.__ready=true;
+ </script>`);
+ const r=await exportFilm(f);assert.equal(r.code,0,r.output);
+ const m=JSON.parse(await readFile(join(f.out,'manifest.json'),'utf8'));
+ assert.equal(m.metrics.status,'FAIL');assert.equal(m.metrics.checked,2);
+ assert.deepEqual(m.metrics.violations.map(v=>v.type),['outside-viewport','reserved-overlap','reserved-overlap','label-overlap']);
+ assert.deepEqual(m.metrics.violations.map(v=>v.area).filter(Number.isFinite),[96,736,192]);
+});
+
 test('does not publish a manifest for an incomplete sample budget',async t=>{
  const f=await fixture(t,delayed.replace('completedSamples:2','completedSamples:1'));const r=await exportFilm(f);assert.notEqual(r.code,0,r.output);
  assert.match(r.output,/sample budget incomplete/);await assert.rejects(readFile(join(f.out,'manifest.json')),{code:'ENOENT'});

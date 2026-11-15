@@ -44,3 +44,70 @@ test('a required feature behind a page overlay cannot satisfy its visible fracti
  const selected=choose({candidates:[{position:[0,0,5],target:[0,0,0]},{position:[0,0,10],target:[0,0,0]}],points:[[0,0,0]],requiredFeatures:[{id:'joint',points:[[1,0,0]],minVisibleFraction:1}],overlays:[{id:'panel',left:790,top:300,width:100,height:120}]});
  assert.equal(selected.index,1);assert.equal(selected.candidates[0].satisfiedFeatureCount,0);
 });
+
+test('required features can declare a minimum projected pixel size for readable views',()=>{
+ const selected=choose({
+  candidates:[{position:[0,0,5],target:[0,0,0]},{position:[0,0,15],target:[0,0,0]}],
+  points:[[0,0,0]],
+  requiredFeatures:[{id:'middle-scale-joint',points:[[-1,0,0],[0,0,0],[1,0,0]],
+   minVisibleFraction:1,minProjectedBoundsPx:{width:300,height:0}}]
+ });
+ assert.equal(selected.index,0);
+ assert.equal(selected.candidates[0].features[0].projectedSizeSatisfied,true);
+ assert.equal(selected.candidates[1].features[0].projectedSizeSatisfied,false);
+ assert.ok(selected.candidates[0].features[0].projectedBoundsPx.width>=300);
+ assert.ok(selected.candidates[1].features[0].projectedBoundsPx.width<300);
+});
+
+test('projected-size requirements validate their contract and remain opt-in',()=>{
+ for(const minProjectedBoundsPx of [{width:-1,height:1},{width:1,height:Infinity},{width:0,height:0},{}])
+  assert.throws(()=>choose({requiredFeatures:[{id:'joint',points:[[0,0,0]],minProjectedBoundsPx}]}));
+ const legacy=choose({requiredFeatures:[{id:'joint',points:[[0,0,0]],minVisibleFraction:1}]});
+ assert.equal(legacy.candidates[0].features[0].projectedSizeSatisfied,true);
+ assert.equal(legacy.candidates[0].features[0].projectedBoundsPx.width,0);
+});
+
+test('an authored view set unions complementary feature coverage without treating views as samples',()=>{
+ assert.equal(typeof api.auditObservationSet,'function');
+ const wall=new T.Mesh(new T.BoxGeometry(.1,8,8),new T.MeshBasicMaterial());
+ const result=api.auditObservationSet(T,{
+  views:[{id:'east',position:[5,0,0],target:[0,0,0]},{id:'west',position:[-5,0,0],target:[0,0,0]}],
+  features:[{id:'opposing-faces',points:[[2,0,0],[-2,0,0]],minCoverageFraction:1}],
+  occluders:[wall],viewport:{width:800,height:600}
+ });
+ assert.equal(result.features[0].coverageFraction,1);
+ assert.deepEqual(result.features[0].coveredSampleIndices,[0,1]);
+ assert.deepEqual(result.viewResults.map(v=>v.features[0].visibleSampleIndices),[[0],[1]]);
+ assert.equal(result.features[0].satisfied,true);
+ wall.geometry.dispose();wall.material.dispose();
+});
+
+test('a feature hidden by overlays or below its declared pixel bounds remains uncovered',()=>{
+ const result=api.auditObservationSet(T,{
+  views:[
+   {id:'covered-by-hud',position:[0,0,5],target:[0,0,0]},
+   {id:'too-distant',position:[0,0,30],target:[0,0,0]}
+  ],
+  features:[{id:'small-interface',points:[[-1,0,0],[1,0,0]],minCoverageFraction:1,
+   minProjectedBoundsPx:{width:300,height:0}}],
+  viewport:{width:800,height:600},
+  overlays:[{id:'panel',left:0,top:0,width:800,height:600}]
+ });
+ assert.equal(result.features[0].coverageFraction,0);
+ assert.deepEqual(result.features[0].uncoveredSampleIndices,[0,1]);
+ assert.equal(result.viewResults[0].features[0].overlaySampleCount,2);
+ assert.equal(result.viewResults[1].features[0].projectedSizeSatisfied,false);
+ assert.equal(result.features[0].satisfied,false);
+});
+
+test('view-set audit rejects duplicate identities and impossible coverage thresholds',()=>{
+ assert.equal(typeof api.auditObservationSet,'function');
+ const base={views:[{id:'front',position:[0,0,5],target:[0,0,0]}],
+  features:[{id:'body',points:[[0,0,0]]}],viewport:{width:800,height:600}};
+ for(const patch of [
+  {views:[...base.views,...base.views]},
+  {features:[...base.features,...base.features]},
+  {features:[{id:'body',points:[[0,0,0]],minCoverageFraction:0}]},
+  {features:[{id:'body',points:[[0,0,0]],minProjectedBoundsPx:{width:0,height:0}}]}
+ ])assert.throws(()=>api.auditObservationSet(T,{...base,...patch}));
+});

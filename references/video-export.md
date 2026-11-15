@@ -2,6 +2,8 @@
 
 `render_film.mjs` 仅用于渲染自己有权制作的离线影片源码；不是网站浏览或 CUA 权限回退工具。依赖 Node 22+、本机 Chrome；`--video`导出和最终MP4证据校验需要 ffmpeg/ffprobe。通过 `CHROME` 指定其他平台的可执行文件。
 
+导出器以临时隔离配置启动 headless Chrome，并允许该本地页面导入同一离线包中的 ES 模块文件；这对应它直接导航到 `file://` 源文件的渲染方式。只对可信的本地影片源码运行，不把它用于浏览外部网页。
+
 ```sh
 node <skill-root>/scripts/render_film.mjs --html /absolute/film.html --out /absolute/review
 node <skill-root>/scripts/render_film.mjs --html /absolute/film.html --out /absolute/export --video
@@ -14,12 +16,12 @@ node <skill-root>/scripts/render_film.mjs --html /absolute/film.html --out /abso
 | `window.__ready === true` | 必需资产、字体和渲染准备完成后置true；不是吞掉模块错误后的占位状态 |
 | `window.__FILM={duration,fps}` | 时长为秒，两者均为有限正数；省略`--times`时取0、duration/2、duration，显式时间须位于此区间 |
 | `window.renderAt(seconds)` | 默认同步、完整地求值并绘制该时刻，包括canvas、DOM标题/字幕与FX；未声明awaited时返回Promise会失败。有限采样/异步渲染采用下述显式完成协议 |
-| `body.render-mode`及`?still=1` | 页面进入静帧导出状态：只保留目标画面，暂停独立RAF、CSS墙钟动画/过渡等，所有可见状态由`t`确定。不得依赖某个canvas ID；支持多个canvas及DOM合成 |
+| `body.render-mode`及`?still=1` | 导出器添加该class后，自动注入静帧样式禁用CSS animation/transition、平滑滚动和插入符；页面仍须用此状态隐藏加载罩/控件，并由`t`确定所有可见状态。导出器不会猜测或移除页面内容。暂停独立RAF；不得依赖某个canvas ID，支持多个canvas及DOM合成 |
 | 音频与可选统计 | `__FILM.audio="none"`输出无音轨MP4，不调用WAV入口；`"wav"`要求同步`renderWav(22050)`返回WAV Uint8Array。未声明时兼容旧作品：存在WAV入口则用它，否则无音轨；可选`filmMetrics()`提供项目可解释的统计 |
 
 异步作品显式设置`__FILM.capture={mode:'awaited',timeoutMs:120000}`。`renderAt(t)`必须在姿势求值、累积重置、固定预算采样及所需GPU/降噪完成后，返回`{complete:true,time:t}`；固定采样实现同时返回正整数`completedSamples`与`requiredSamples`，两者必须相等。导出器await并校验报告后才截图，超时、时间不符或预算未完成即失败，不生成本轮manifest。报告是应用的完成信号，不能代替内部正确的GPU等待或证明视觉已收敛。具体适配见[渲染选择](rendering-choices.md#路径追踪与异步导出)。
 
-默认视口1280×720、deviceScaleFactor=1，可传`--width/--height`。页面依据该视口与`render-mode`确定布局；导出器添加该class并兼容隐藏旧`#start`入口，但影片自己的控制层由页面负责清理。字体在READY前准备，导出器也等待当前`document.fonts.ready`；按时间才发起的资源加载也必须在该帧完成信号前结束。
+默认视口1280×720、deviceScaleFactor=1，可传`--width/--height`。页面依据该视口与`render-mode`确定布局；导出器添加该class、注入CSS静帧规则并兼容隐藏旧`#start`入口，但影片自己的加载罩和控制层由页面负责隐藏。CSS冻结只消除墙钟动画/过渡的不确定性，不会让`renderAt(t)`之外的场景状态自动变化。字体在READY前准备，导出器也等待当前`document.fonts.ready`；按时间才发起的资源加载也必须在该帧完成信号前结束。
 
 脚本检查页面异常、console.error、浏览器错误日志、READY、声明的渲染完成入口和随机访问图像一致性。导出与比较使用同一目标视口PNG，包含canvas及DOM；不依赖canvas.toDataURL。manifest记录源HTML SHA256、样本帧哈希、`determinism.scope="viewport"`、方法和复取样本，MP4模式另含媒体探测信息、实际音频模式及MP4文件路径/哈希；导出成功前必须核对成片尺寸、fps、帧数、时长和音轨/采样率与声明值一致。编码完成后从MP4重新解码代表帧（开场、25%、中点、75%、最后一个编码帧）以及请求时间点；`videoSamples`记录实际抽帧时间、PNG路径、尺寸和SHA-256，不能复用编码前浏览器帧冒充成片证据。`captureContract`记录模式、超时和awaited调用的完成/预算报告。
 

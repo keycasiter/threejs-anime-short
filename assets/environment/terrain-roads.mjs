@@ -1,4 +1,4 @@
-import {clipConvexPolygon} from '../geometry/bounded-profile.mjs';
+import {createFloat32LineEventTable,clipConvexPolygonWithFloat32Events,nodeAndCancelFloat32Ring,nodeFloat32Rings,float32TriangleInteriorsOverlap} from '../geometry/float32-line-events.mjs';
 
 const finite=Number.isFinite;
 const FLOAT_GPU_TYPE=1015; // THREE.FloatType in the pinned r187 attribute contract.
@@ -64,7 +64,7 @@ function gridTerrain(g,epsilon,maxTriangles){
  const cell=(x,z)=>cells[Math.max(0,Math.min(nz-1,upper(zs,z)-1))*nx+Math.max(0,Math.min(nx-1,upper(xs,x)-1))];
  function sample(p){const pair=cell(...p);return evaluate(p,pair.find(t=>weights(p,t).every(w=>w>=-1e-10))??pair[0]);}
  function range(a,b,values){return [Math.max(0,Math.min(values.length-2,upper(values,a)-1)),Math.max(0,Math.min(values.length-2,upper(values,b)-1))];}
- return {xs,zs,snapXs:xs,snapZs:zs,nx,nz,cells,cell,sample,evaluate,range};
+ return {xs,zs,snapXs:xs,snapZs:zs,nx,nz,cells,cell,sample,evaluate,range,terrainTriangleCount:idx.count/3};
 }
 
 // Opt-in path for a CPU-authored, conforming heightfield triangulation. The
@@ -84,29 +84,32 @@ function triangulatedTerrain(g,epsilon,maxTriangles,maxValidationPairs,maxSpatia
  for(let i=0;i<p.count;i++){const v=[p.getX(i),p.getY(i),p.getZ(i)];if(!v.every(x=>finite(x)&&Math.abs(x)<=100000))throw new Error('terrain positions must be finite within ±100000');const key=`${v[0]},${v[2]}`;if(coordinateIds.has(key))throw new Error('triangulated terrain requires unique XZ vertices');coordinateIds.add(key);snapXSet.add(v[0]);snapZSet.add(v[2]);vertices.push(v);minX=Math.min(minX,v[0]);maxX=Math.max(maxX,v[0]);minZ=Math.min(minZ,v[2]);maxZ=Math.max(maxZ,v[2]);}
  if(vertices.length<4||idx.count<6)throw new Error('triangulated terrain requires at least four vertices and two faces');
  if(!(maxX-minX>epsilon*16&&maxZ-minZ>epsilon*16))throw new Error('triangulated terrain requires positive XZ bounds');
- const triangles=[],edgeUse=new Map();let sumArea=0;
+ const triangles=[],edgeUse=new Map();let sumArea=0,areaCompensation=0;
  for(let i=0;i<idx.count;i+=3){
   const ids=[idx.getX(i),idx.getX(i+1),idx.getX(i+2)];if(ids.some(id=>!Number.isInteger(id)||id<0||id>=vertices.length)||new Set(ids).size!==3)throw new Error('invalid terrain triangle index');
   const pts=ids.map(id=>vertices[id]),xz=pts.map(v=>[v[0],v[2]]),den=cross(...xz);if(!(den<-epsilon*epsilon))throw new Error('terrain triangles require nondegenerate upward +Y winding');
   const u=pts[1].map((v,k)=>v-pts[0][k]),v=pts[2].map((w,k)=>w-pts[0][k]),n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],len=Math.hypot(...n),tri={id:triangles.length,ids,pts,xz,den,normal:n.map(v=>v/len),minX:Math.min(...xz.map(q=>q[0])),maxX:Math.max(...xz.map(q=>q[0])),minZ:Math.min(...xz.map(q=>q[1])),maxZ:Math.max(...xz.map(q=>q[1]))};
-  sumArea+=-den/2;triangles.push(tri);
-  for(let k=0;k<3;k++){const a=xz[k],b=xz[(k+1)%3],ka=`${a[0]},${a[1]}`,kb=`${b[0]},${b[1]}`,key=ka<kb?`${ka}/${kb}`:`${kb}/${ka}`,entry=edgeUse.get(key)??{count:0,balance:0,a,b};entry.count++;entry.balance+=ka<kb?1:-1;if(entry.count>2)throw new Error('triangulated terrain has a nonmanifold edge');edgeUse.set(key,entry);}
+  const areaTerm=-den/2-areaCompensation;const areaNext=sumArea+areaTerm;areaCompensation=(areaNext-sumArea)-areaTerm;sumArea=areaNext;triangles.push(tri);
+  for(let k=0;k<3;k++){const a=xz[k],b=xz[(k+1)%3],ka=`${a[0]},${a[1]}`,kb=`${b[0]},${b[1]}`,key=ka<kb?`${ka}/${kb}`:`${kb}/${ka}`,entry=edgeUse.get(key)??{count:0,balance:0,a,b,faces:[]};entry.count++;entry.balance+=ka<kb?1:-1;entry.faces.push(tri.id);if(entry.count>2)throw new Error('triangulated terrain has a nonmanifold edge');edgeUse.set(key,entry);}
  }
- for(const edge of edgeUse.values()){if(edge.count===2){if(edge.balance!==0)throw new Error('triangulated terrain internal edge winding is inconsistent');continue;}const onBox=edge.a[0]===minX&&edge.b[0]===minX||edge.a[0]===maxX&&edge.b[0]===maxX||edge.a[1]===minZ&&edge.b[1]===minZ||edge.a[1]===maxZ&&edge.b[1]===maxZ;if(!onBox)throw new Error('triangulated terrain boundary must follow its rectangular outer bounds');}
- const domainArea=(maxX-minX)*(maxZ-minZ),areaTolerance=Math.max(epsilon*epsilon*64,domainArea*1e-10);if(Math.abs(sumArea-domainArea)>areaTolerance)throw new Error('triangulated terrain must cover its complete rectangular XZ bounds exactly once');
+ const invalidBoundary=[];let outerBoundaryEdges=0,internalEdges=0;
+ for(const edge of edgeUse.values()){if(edge.count>2)throw new Error('triangulated terrain has a nonmanifold edge');if(edge.count===2){if(edge.balance!==0)throw new Error('triangulated terrain internal edge winding is inconsistent');internalEdges++;continue;}const onBox=edge.a[0]===minX&&edge.b[0]===minX||edge.a[0]===maxX&&edge.b[0]===maxX||edge.a[1]===minZ&&edge.b[1]===minZ||edge.a[1]===maxZ&&edge.b[1]===maxZ;if(onBox)outerBoundaryEdges++;else invalidBoundary.push(edge);}
+ if(invalidBoundary.length){const samples=invalidBoundary.slice(0,32).map(edge=>({edge:[edge.a,edge.b],faceIds:edge.faces,faceTriangles:edge.faces.map(id=>triangles[id].xz)})),details={count:invalidBoundary.length,samples,bounds:{minX,maxX,minZ,maxZ}};const error=new Error(`triangulated terrain boundary must follow its rectangular outer bounds: ${JSON.stringify(details)}`);error.details=details;throw error;}
+ const domainArea=(maxX-minX)*(maxZ-minZ),areaTolerance=Math.max(epsilon*epsilon*64,domainArea*Number.EPSILON*128);if(Math.abs(sumArea-domainArea)>areaTolerance)throw new Error('triangulated terrain must cover its complete rectangular XZ bounds exactly once');
  const nx=Math.min(512,Math.max(1,Math.ceil(Math.sqrt(triangles.length*(maxX-minX)/(maxZ-minZ))))),nz=Math.min(512,Math.max(1,Math.ceil(triangles.length/nx))),makeAxis=(lo,hi,n)=>Array.from({length:n+1},(_,i)=>i===n?hi:lo+(hi-lo)*i/n),xGrid=makeAxis(minX,maxX,nx),zGrid=makeAxis(minZ,maxZ,nz),cells=Array.from({length:nx*nz},()=>[]),upperBound=(values,x)=>upper(values,x),range=(a,b,values)=>[Math.max(0,Math.min(values.length-2,upperBound(values,a)-1)),Math.max(0,Math.min(values.length-2,upperBound(values,b)-1))];
- let references=0,pairs=0;const testedPairs=new Set();
+ let references=0,pairs=0,overlapTests=0;const testedPairs=new Set();
  for(let ti=0;ti<triangles.length;ti++){
   const tri=triangles[ti],[x0,x1]=range(tri.minX,tri.maxX,xGrid),[z0,z1]=range(tri.minZ,tri.maxZ,zGrid);
   for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){
-   const bucket=cells[z*nx+x];for(const other of bucket){const a=Math.min(ti,other.id),b=Math.max(ti,other.id),key=`${a}/${b}`;if(testedPairs.has(key))continue;testedPairs.add(key);if(++pairs>maxValidationPairs)throw new Error('triangulated terrain maxValidationPairs exceeded');const q=other;if(tri.maxX<=q.minX+epsilon||q.maxX<=tri.minX+epsilon||tri.maxZ<=q.minZ+epsilon||q.maxZ<=tri.minZ+epsilon)continue;const overlap=clipConvexPolygon(tri.xz,q.xz,{epsilon:epsilon/8});if(overlap.length>=3&&Math.abs(area(overlap))>areaTolerance)throw new Error('triangulated terrain projected faces overlap');}
+   const bucket=cells[z*nx+x];for(const other of bucket){const a=Math.min(ti,other.id),b=Math.max(ti,other.id),key=`${a}/${b}`;if(testedPairs.has(key))continue;testedPairs.add(key);if(++pairs>maxValidationPairs)throw new Error('triangulated terrain maxValidationPairs exceeded');const q=other;if(tri.maxX<=q.minX||q.maxX<=tri.minX||tri.maxZ<=q.minZ||q.maxZ<=tri.minZ)continue;overlapTests++;if(float32TriangleInteriorsOverlap(tri.xz,q.xz))throw new Error(`triangulated terrain projected faces overlap: ${tri.id}/${q.id}`);}
    bucket.push(tri);if(++references>maxSpatialReferences)throw new Error('triangulated terrain maxSpatialReferences exceeded');
   }
  }
  function cell(x,z){const ix=Math.max(0,Math.min(nx-1,upperBound(xGrid,x)-1)),iz=Math.max(0,Math.min(nz-1,upperBound(zGrid,z)-1));return cells[iz*nx+ix];}
  const weights=(p,t)=>[cross(t.xz[1],t.xz[2],p)/t.den,cross(t.xz[2],t.xz[0],p)/t.den,cross(t.xz[0],t.xz[1],p)/t.den],evaluate=(p,t)=>{const w=weights(p,t);return {height:w.reduce((s,v,i)=>s+v*t.pts[i][1],0),normal:[...t.normal]};};
  function sample(p){const candidates=cell(...p);for(const t of candidates){if(p[0]<t.minX-epsilon||p[0]>t.maxX+epsilon||p[1]<t.minZ-epsilon||p[1]>t.maxZ+epsilon)continue;const w=weights(p,t);if(w.every(v=>v>=-epsilon))return evaluate(p,t);}throw new Error('terrain query is outside the represented triangulated surface');}
- return {xs:xGrid,zs:zGrid,snapXs:[...snapXSet].sort((a,b)=>a-b),snapZs:[...snapZSet].sort((a,b)=>a-b),nx,nz,cells,cell,sample,evaluate,range};
+ const audit=Object.freeze({status:'PASS',triangleCount:triangles.length,projectedArea:sumArea,domainArea,areaDelta:sumArea-domainArea,areaTolerance,edgeCount:edgeUse.size,internalEdges,outerBoundaryEdges,interiorBoundaryEdges:invalidBoundary.length,nonManifoldEdges:0,inconsistentWindingEdges:0,overlapCandidatePairs:pairs,overlapTests,spatialReferences:references});
+ return {xs:xGrid,zs:zGrid,snapXs:[...snapXSet].sort((a,b)=>a-b),snapZs:[...snapZSet].sort((a,b)=>a-b),nx,nz,cells,cell,sample,evaluate,range,terrainTriangleCount:triangles.length,audit};
 }
 
 // Private data is keyed only by the explicit owner token, never by mutable
@@ -114,18 +117,32 @@ function triangulatedTerrain(g,epsilon,maxTriangles,maxValidationPairs,maxSpatia
 const supportGrids=new WeakMap();
 function validateEpsilon(epsilon){if(!finite(epsilon)||epsilon<1e-10||epsilon>1e-4)throw new Error('epsilon must be finite in 1e-10..1e-4');}
 function requireGrid(support){const grid=supportGrids.get(support);if(!grid)throw new Error('terrainSupport is invalid or disposed');return grid;}
-function makeSupportHandle(epsilon,terrainTriangles){const handle=Object.freeze({epsilon,terrainTriangles,dispose(){supportGrids.delete(handle);}});return handle;}
-function makeSupport(grid,epsilon){
- const support=makeSupportHandle(epsilon,grid.nx*grid.nz*2);
+function normalizeCoordinateOrigin(origin){if(!Array.isArray(origin)||origin.length!==2||!origin.every(v=>finite(v)&&Math.abs(v)<=100000))throw new TypeError('coordinateOrigin must be finite [x,z] within ±100000');return Object.freeze(origin.map(Math.fround));}
+function makeSupportHandle(epsilon,terrainTriangles,coordinateOrigin,audit){const handle=Object.freeze({epsilon,terrainTriangles,coordinateOrigin,position:Object.freeze([coordinateOrigin[0],0,coordinateOrigin[1]]),audit,dispose(){supportGrids.delete(handle);}});return handle;}
+function makeSupport(grid,epsilon,coordinateOrigin){
+ const support=makeSupportHandle(epsilon,grid.terrainTriangleCount,coordinateOrigin,grid.audit??null);
  supportGrids.set(support,grid);return support;
 }
 /** Prepare the final terrain once. The caller owns this immutable CPU snapshot;
  * road builders borrow it. Dispose borrowers, then the support, then the terrain. */
-export function prepareTerrainRoadSupport({terrainGeometry,epsilon=1e-7,maxTerrainTriangles=262144,topology='regular-grid',maxValidationPairs=4000000,maxSpatialReferences=4000000}={}){
+export function prepareTerrainRoadSupport({terrainGeometry,epsilon=1e-7,maxTerrainTriangles=262144,topology='regular-grid',maxValidationPairs=4000000,maxSpatialReferences=4000000,coordinateOrigin=[0,0]}={}){
  validateEpsilon(epsilon);limit(maxTerrainTriangles,'maxTerrainTriangles',262144);
  limit(maxValidationPairs,'maxValidationPairs',8000000);limit(maxSpatialReferences,'maxSpatialReferences',8000000);
- const grid=topology==='regular-grid'?gridTerrain(terrainGeometry,epsilon,maxTerrainTriangles):topology==='triangulated'?triangulatedTerrain(terrainGeometry,epsilon,maxTerrainTriangles,maxValidationPairs,maxSpatialReferences):(()=>{throw new Error('topology must be regular-grid or triangulated');})();
- return makeSupport(grid,epsilon);
+ const origin=normalizeCoordinateOrigin(coordinateOrigin),shifted=origin[0]!==0||origin[1]!==0?terrainGeometry.clone():terrainGeometry;
+ try{
+  if(shifted!==terrainGeometry){const position=shifted.getAttribute('position');if(!position?.isBufferAttribute||position.itemSize!==3)throw new Error('terrain position must be xyz to apply coordinateOrigin');for(let i=0;i<position.count;i++){position.setX(i,Math.fround(position.getX(i)-origin[0]));position.setZ(i,Math.fround(position.getZ(i)-origin[1]));}position.needsUpdate=true;shifted.computeBoundingBox();shifted.computeBoundingSphere();}
+  const grid=topology==='regular-grid'?gridTerrain(shifted,epsilon,maxTerrainTriangles):topology==='triangulated'?triangulatedTerrain(shifted,epsilon,maxTerrainTriangles,maxValidationPairs,maxSpatialReferences):(()=>{throw new Error('topology must be regular-grid or triangulated');})();
+  return makeSupport(grid,epsilon,origin);
+ }finally{if(shifted!==terrainGeometry)shifted.dispose();}
+}
+
+/** Sample the exact prepared, rendered terrain triangulation. The caller owns
+ * the support token; the returned normal and height are detached values. */
+export function samplePreparedTerrainSurface(support,x,z){
+ const grid=requireGrid(support);if(!finite(x)||!finite(z))throw new TypeError('terrain sample x,z must be finite');
+ const local=[x-support.coordinateOrigin[0],z-support.coordinateOrigin[1]];
+ if(local[0]<grid.xs[0]||local[0]>grid.xs.at(-1)||local[1]<grid.zs[0]||local[1]>grid.zs.at(-1))return null;
+ const sample=grid.sample(local);return {height:sample.height,normal:[...sample.normal]};
 }
 
 /** Drape already-unioned simple XZ surfaces (outer + holes) onto FINAL rendered
@@ -137,7 +154,7 @@ export function prepareTerrainRoadSupport({terrainGeometry,epsilon=1e-7,maxTerra
  * walls; no verified normal-map/tangent chart is promised.
  */
 export function createTerrainRoadSource(T,{
- surfaces,terrainGeometry,terrainSupport,thickness=.12,epsilon=terrainSupport?.epsilon??1e-7,
+ surfaces,terrainGeometry,terrainSupport,thickness=.12,epsilon=terrainSupport?.epsilon??1e-7,coordinateOrigin=terrainSupport?.coordinateOrigin??[0,0],
  maxTerrainTriangles=262144,terrainTopology='regular-grid',maxTerrainValidationPairs=4000000,maxTerrainSpatialReferences=4000000,maxRoadVertices=4096,maxCandidatePairs=1000000,
  maxOutputTriangles=500000,maxValidationPairs=1000000
 }={}){
@@ -149,16 +166,19 @@ export function createTerrainRoadSource(T,{
  let vertexCount=0;
  for(const s of surfaces){if(!s||!Array.isArray(s.outer)||s.holes!==undefined&&(!Array.isArray(s.holes)||s.holes.length>128))throw new Error('surface requires outer and optional holes arrays');for(const r of [s.outer,...(s.holes??[])]){if(!Array.isArray(r)||r.length<3)throw new Error('road rings need >=3 unclosed vertices');vertexCount+=r.length;if(vertexCount>maxRoadVertices)throw new Error('maxRoadVertices exceeded');}}
  if((terrainGeometry===undefined)===(terrainSupport===undefined))throw new Error('provide exactly one of terrainGeometry or terrainSupport');
- const owned=terrainSupport===undefined,support=owned?prepareTerrainRoadSupport({terrainGeometry,epsilon,maxTerrainTriangles,topology:terrainTopology,maxValidationPairs:maxTerrainValidationPairs,maxSpatialReferences:maxTerrainSpatialReferences}):terrainSupport;
+ const origin=normalizeCoordinateOrigin(coordinateOrigin),owned=terrainSupport===undefined,support=owned?prepareTerrainRoadSupport({terrainGeometry,epsilon,maxTerrainTriangles,topology:terrainTopology,maxValidationPairs:maxTerrainValidationPairs,maxSpatialReferences:maxTerrainSpatialReferences,coordinateOrigin:origin}):terrainSupport;
  try{
   const grid=requireGrid(support);
   if(support.epsilon!==epsilon)throw new Error('epsilon must match the prepared terrainSupport');
+  if(origin[0]!==support.coordinateOrigin[0]||origin[1]!==support.coordinateOrigin[1])throw new Error('coordinateOrigin must match the prepared terrainSupport');
   if(support.terrainTriangles>maxTerrainTriangles)throw new Error('prepared support exceeds maxTerrainTriangles');
-  return buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTriangles,maxValidationPairs,vertexCount},support,owned,grid);
+  const localSurfaces=origin[0]===0&&origin[1]===0?surfaces:surfaces.map(s=>({outer:s.outer.map(([x,z])=>[x-origin[0],z-origin[1]]),holes:(s.holes??[]).map(h=>h.map(([x,z])=>[x-origin[0],z-origin[1]]))}));
+  return buildRoad(T,{surfaces:localSurfaces,thickness,epsilon,maxCandidatePairs,maxOutputTriangles,maxValidationPairs,vertexCount,coordinateOrigin:origin},support,owned,grid);
  }catch(error){if(owned)support.dispose();throw error;}
 }
-function buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTriangles,maxValidationPairs,vertexCount},support,owned,grid){
+function buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTriangles,maxValidationPairs,vertexCount,coordinateOrigin},support,owned,grid){
  let validationPairs=0,candidatePairs=0,outputTriangles=0,wallSegments=0,discardedCollinearTriangles=0;
+ const lineEvents=createFloat32LineEventTable({maxLines:Math.min(1000000,maxValidationPairs),maxEvents:maxValidationPairs});
  const spend=()=>{if(++validationPairs>maxValidationPairs)throw new Error('maxValidationPairs exceeded; simplify road boundaries or increase the finite budget');};
  const numericEpsilon=Math.max(1e-13,Math.max(...[grid.xs[0],grid.xs.at(-1),grid.zs[0],grid.zs.at(-1)].map(Math.abs))*Number.EPSILON*32);
  const quantizedRing=(r,ccw)=>{const original=ring(r,ccw,epsilon,spend);try{return ring(original.map(p=>p.map(Math.fround)),ccw,numericEpsilon,spend);}catch(error){throw new Error(`Float32 precision cannot represent road boundary: ${error.message}`);}};
@@ -204,7 +224,7 @@ function buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTria
  }
  for(const s of roads){
   const all=[s.outer,...s.holes].flat(),faces=T.ShapeUtils.triangulateShape(s.outer.map(p=>new T.Vector2(...p)),s.holes.map(r=>r.map(p=>new T.Vector2(...p))));
-  let sum=0;for(const ids of faces){
+  let sum=0;const clippedPolygons=[];for(const ids of faces){
    let r=ids.map(i=>all[i]);if(area(r)<0)r=[r[0],r[2],r[1]];
    const triangleArea=area(r),longest=Math.max(...edges(r).map(([a,b])=>distance(a,b))),magnitude=Math.max(1,...r.flat().map(Math.abs));
    if(triangleArea<=Number.EPSILON*magnitude*longest*16){discardedCollinearTriangles++;continue;}
@@ -214,25 +234,35 @@ function buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTria
    const candidateTerrain=new Set();for(let z=loZ;z<=hiZ;z++)for(let x=loX;x<=hiX;x++)for(const t of grid.cells[z*grid.nx+x])candidateTerrain.add(t);
    takeCandidates(candidateTerrain.size);
    for(const t of candidateTerrain){
-    const clipped=clipConvexPolygon(r,t.xz,{epsilon:numericEpsilon});if(!clipped.length)continue;
+    const clipped=clipConvexPolygonWithFloat32Events(r,t.xz,lineEvents);if(!clipped.length)continue;
     const raw=splitEdges(clipped,edgeVertices),piece=[];
     for(const p of raw){const q=point(p);if(!piece.length||piece.at(-1).key!==q.key)piece.push(q);}
     if(piece.length>1&&piece[0].key===piece.at(-1).key)piece.pop();
-    const projected=piece.map(p=>p.xz),signed=piece.length>=3?area(projected):0;
+    if(piece.length<3)continue;
+    let projected=piece.map(p=>p.xz);
+    const normalized=nodeAndCancelFloat32Ring(projected,lineEvents);
+    if(normalized.length>1)throw new Error('Float32 precision split one road/terrain intersection into multiple boundary cycles');
+    if(normalized.length===0)continue;
+    const byPosition=new Map(piece.map(p=>[`${p.xz[0]},${p.xz[1]}`,p]));piece.splice(0,piece.length,...normalized[0].map(p=>{const vertex=byPosition.get(`${p[0]},${p[1]}`);if(!vertex)throw new Error('Float32 ring noding introduced a vertex without source event data');return vertex;}));
+    projected=piece.map(p=>p.xz);const signed=piece.length>=3?area(projected):0;
     // A clipped fragment may collapse entirely after XZ quantization. It is
     // omitted here, then complete source-boundary coverage is mandatory below.
     if(signed===0)continue;if(signed<0||new Set(piece.map(p=>p.key)).size!==piece.length)throw new Error('Float32 precision folded a clipped road polygon');
-    for(let i=0;i<piece.length;i++)for(let j=0;j<i;j++){spend();if(j===i-1||i===piece.length-1&&j===0)continue;if(touching(piece[i].xz,piece[(i+1)%piece.length].xz,piece[j].xz,piece[(j+1)%piece.length].xz,0))throw new Error('Float32 precision crossed a clipped road polygon');}
-    // Ear removal in the final represented polygon retains every boundary
-    // subdivision without introducing an unrepresentable interior fan center.
-    const pending=[...piece];
-    while(pending.length>3){let found=false;for(let i=0;i<pending.length;i++){
-     spend();const a=pending[(i+pending.length-1)%pending.length],b=pending[i],c=pending[(i+1)%pending.length];if(cross(a.xz,b.xz,c.xz)<=0)continue;
-     const blocked=pending.some(p=>{if(p===a||p===b||p===c)return false;spend();return cross(a.xz,b.xz,p.xz)>=0&&cross(b.xz,c.xz,p.xz)>=0&&cross(c.xz,a.xz,p.xz)>=0;});
-     if(blocked)continue;cap([a.xz,c.xz,b.xz]);pending.splice(i,1);found=true;break;
-    }if(!found)throw new Error('Float32 precision cannot triangulate represented road boundary');}
-    cap([pending[0].xz,pending[2].xz,pending[1].xz]);
+    clippedPolygons.push({piece,roadFace:r,terrainFace:t.xz});
    }
+  }
+  const nodedRings=nodeFloat32Rings(clippedPolygons.map(({piece})=>piece.map(p=>p.xz)),lineEvents);
+  for(let polygonIndex=0;polygonIndex<clippedPolygons.length;polygonIndex++){
+   const source=clippedPolygons[polygonIndex],pointByKey=new Map(source.piece.map(p=>[p.key,p])),piece=nodedRings[polygonIndex].map(p=>pointByKey.get(`${p[0]},${p[1]}`)??point(p)),projected=piece.map(p=>p.xz),signed=area(projected);
+   if(signed<=0||new Set(piece.map(p=>p.key)).size!==piece.length)throw new Error('Float32 shared-edge noding produced a folded road polygon');
+   for(let i=0;i<piece.length;i++)for(let j=0;j<i;j++){spend();if(j===i-1||i===piece.length-1&&j===0)continue;if(touching(piece[i].xz,piece[(i+1)%piece.length].xz,piece[j].xz,piece[(j+1)%piece.length].xz,0)){const details={roadFace:source.roadFace,terrainFace:source.terrainFace,representedPolygon:projected,representedArea:signed};const error=new Error(`Float32 precision crossed a noded road polygon: ${JSON.stringify(details)}`);error.details=details;throw error;}}
+   const pending=[...piece];
+   while(pending.length>3){let found=false;for(let i=0;i<pending.length;i++){
+    spend();const a=pending[(i+pending.length-1)%pending.length],b=pending[i],c=pending[(i+1)%pending.length];if(cross(a.xz,b.xz,c.xz)<=0)continue;
+    const blocked=pending.some(p=>{if(p===a||p===b||p===c)return false;spend();return cross(a.xz,b.xz,p.xz)>=0&&cross(b.xz,c.xz,p.xz)>=0&&cross(c.xz,a.xz,p.xz)>=0;});
+    if(blocked)continue;cap([a.xz,c.xz,b.xz]);pending.splice(i,1);found=true;break;
+   }if(!found)throw new Error('Float32 precision cannot triangulate represented road boundary');}
+   cap([pending[0].xz,pending[2].xz,pending[1].xz]);
   }
   const expected=area(s.outer)+s.holes.reduce((a,r)=>a+area(r),0);if(Math.abs(sum-expected)>Math.max(numericEpsilon*numericEpsilon*vertexCount*8,expected*1e-10))throw new Error('road triangulation coverage mismatch at numeric precision');
  }
@@ -256,9 +286,9 @@ function buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTria
  const segmentDistance=(p,a,b)=>{const dx=b[0]-a[0],dz=b[1]-a[1],t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dz)/(dx*dx+dz*dz)));return distance(p,[a[0]+dx*t,a[1]+dz*t]);};
  const coordinateTolerance=p=>Math.max(numericEpsilon*4,Math.max(Math.abs(p[0]),Math.abs(p[1]))*2**-23);
  for(const e of boundary){
-  let best=null,bestError=Infinity;const tolerance=Math.max(coordinateTolerance(e.a.xz),coordinateTolerance(e.b.xz));
-  for(const source of sourceEdges){spend();const error=Math.max(segmentDistance(e.a.xz,source.a,source.b),segmentDistance(e.b.xz,source.a,source.b));if(error<=tolerance&&error<bestError){const dx=source.b[0]-source.a[0],dz=source.b[1]-source.a[1],parameter=p=>((p[0]-source.a[0])*dx+(p[1]-source.a[1])*dz)/(source.length*source.length),a=parameter(e.a.xz),b=parameter(e.b.xz);if(a>b){best={source,a,b,tolerance:tolerance/source.length};bestError=error;}}}
-  if(!best)throw new Error('Float32 precision lost source coverage or created an internal boundary');best.source.intervals.push(best);
+  let best=null,bestError=Infinity,nearest=null,nearestError=Infinity;const tolerance=Math.max(coordinateTolerance(e.a.xz),coordinateTolerance(e.b.xz));
+  for(const source of sourceEdges){spend();const error=Math.max(segmentDistance(e.a.xz,source.a,source.b),segmentDistance(e.b.xz,source.a,source.b));if(error<nearestError){nearest={a:source.a,b:source.b};nearestError=error;}if(error<=tolerance&&error<bestError){const dx=source.b[0]-source.a[0],dz=source.b[1]-source.a[1],parameter=p=>((p[0]-source.a[0])*dx+(p[1]-source.a[1])*dz)/(source.length*source.length),a=parameter(e.a.xz),b=parameter(e.b.xz);if(a>b){best={source,a,b,tolerance:tolerance/source.length};bestError=error;}}}
+  if(!best){const details={boundaryEdge:[e.a.xz,e.b.xz],nearestSourceEdge:nearest,nearestError,tolerance};const error=new Error(`Float32 precision lost source coverage or created an internal boundary: ${JSON.stringify(details)}`);error.details=details;throw error;}best.source.intervals.push(best);
  }
  for(const source of sourceEdges){
   if(!source.intervals.length)throw new Error('Float32 precision removed a road component or source boundary');source.intervals.sort((a,b)=>a.b-b.b);let end=0;
@@ -292,7 +322,7 @@ function buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTria
   for(let z=loZ;z<=hiZ;z++)for(let x=loX;x<=hiX;x++){
    const cell=z*grid.nx+x,list=queryCells.get(cell)??[];list.push(face);queryCells.set(cell,list);
    for(const terrain of grid.cells[cell]){
-    const clipped=clipConvexPolygon(r,terrain.xz,{epsilon:numericEpsilon});if(!clipped.length)continue;
+    const clipped=clipConvexPolygonWithFloat32Events(r,terrain.xz,lineEvents);if(!clipped.length)continue;
     const values=clipped.map(p=>{supportChecks++;spend();const w=barycentric(p,face),ground=grid.evaluate(p,terrain).height,bottom=w.reduce((s,v,i)=>s+v*face[i].bottom[1],0),top=w.reduce((s,v,i)=>s+v*face[i].top[1],0);return {p,ground,bottom,top,bottomError:Math.abs(bottom-ground),topError:Math.abs(top-ground-thickness)};});
     // Both cap errors are affine on this intersection. Their maximum absolute
     // error is attained at a vertex, so ONE uniform bound covers its interior,
@@ -311,14 +341,15 @@ function buildRoad(T,{surfaces,thickness,epsilon,maxCandidatePairs,maxOutputTria
  groups.push({start:wallStart,count:positions.length/3-wallStart,materialIndex:2});
  let geometry;
  try{geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('normal',new T.Float32BufferAttribute(normals,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));for(const group of groups)geometry.addGroup(group.start,group.count,group.materialIndex);geometry.computeBoundingBox();geometry.computeBoundingSphere();}catch(error){geometry?.dispose();throw error;}
- return roadHandle(geometry,Object.freeze({terrainTriangles:grid.nx*grid.nz*2,roadVertices:vertexCount,validationPairs,candidatePairs,outputTriangles,topTriangles:groups[0].count/3,undersideTriangles:groups[1].count/3,wallTriangles:groups[2].count/3,wallSegments,discardedCollinearTriangles,supportChecks,maxSupportError,maxSupportTolerance,maxSupportYErrorBound,maxSupportXZErrorBound}),queryCells,support,owned);
+ geometry.userData.coordinateOrigin=[coordinateOrigin[0],0,coordinateOrigin[1]];
+ return roadHandle(geometry,Object.freeze({terrainTriangles:grid.nx*grid.nz*2,roadVertices:vertexCount,validationPairs,candidatePairs,outputTriangles,topTriangles:groups[0].count/3,undersideTriangles:groups[1].count/3,wallTriangles:groups[2].count/3,wallSegments,discardedCollinearTriangles,supportChecks,maxSupportError,maxSupportTolerance,maxSupportYErrorBound,maxSupportXZErrorBound,lineEvents:lineEvents.stats}),queryCells,support,owned,coordinateOrigin);
 }
 const barycentric=(p,face)=>{const r=face.map(v=>v.xz),den=cross(...r);return [cross(r[1],r[2],p)/den,cross(r[2],r[0],p)/den,cross(r[0],r[1],p)/den];};
 // A retained handle owns only its road-cell references and optional private
 // terrain token. No build scratch or direct reference to the full grid escapes.
-function roadHandle(geometry,stats,queryCells,support,owned){
- return {geometry,stats,query(x,z){
-  if(!support)throw new Error('terrain road source is disposed');const grid=requireGrid(support);if(!finite(x)||!finite(z))throw new Error('query x,z must be finite');if(x<grid.xs[0]||x>grid.xs.at(-1)||z<grid.zs[0]||z>grid.zs.at(-1))return null;
+function roadHandle(geometry,stats,queryCells,support,owned,coordinateOrigin){
+ return {geometry,stats,coordinateOrigin,position:Object.freeze([coordinateOrigin[0],0,coordinateOrigin[1]]),query(x,z){
+  if(!support)throw new Error('terrain road source is disposed');const grid=requireGrid(support);if(!finite(x)||!finite(z))throw new Error('query x,z must be finite');x-=coordinateOrigin[0];z-=coordinateOrigin[1];if(x<grid.xs[0]||x>grid.xs.at(-1)||z<grid.zs[0]||z>grid.zs.at(-1))return null;
   const ix=Math.min(grid.nx-1,upper(grid.xs,x)-1),iz=Math.min(grid.nz-1,upper(grid.zs,z)-1);
   for(const face of queryCells.get(iz*grid.nx+ix)??[]){const w=barycentric([x,z],face);if(!w.every(v=>v>=0))continue;return {height:w.reduce((s,v,i)=>s+v*face[i].bottom[1],0),topHeight:w.reduce((s,v,i)=>s+v*face[i].top[1],0),normal:grid.sample([x,z]).normal,supportTolerance:face.supportTolerance};}return null;
  },dispose(){if(!support)return;queryCells.clear();if(owned)support.dispose();support=null;geometry.dispose();}};

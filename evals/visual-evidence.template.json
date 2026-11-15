@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "runId": "ENV-S-A",
+  "taskId": "ENV-S",
+  "observationSet": "environmentOrbit",
+  "runManifestSha256": "<sha256-of-run.json>",
+  "artifactFingerprint": "<sha256-derived-from-run.sha256-map>",
+  "viewportCss": [1280, 720],
+  "devicePixelRatio": 1,
+  "runtime": {
+    "browser": "<browser>",
+    "browserVersion": "<version>",
+    "rendererBackend": "<webgl2-or-other>"
+  },
+  "reviewStatus": "complete",
+  "checkpoints": [
+    {
+      "id": "hero",
+      "reproduction": "Reset view, then leave the authored default camera unchanged.",
+      "capture": {
+        "path": "qa/visual-evidence/hero.png",
+        "sha256": "<sha256-of-capture>"
+      },
+      "outcome": "clear",
+      "observation": "The pool, buildings, path and valley read as one connected scene."
+    },
+    {
+      "id": "azimuth-000",
+      "reproduction": "Orbit to azimuth 0 degrees at elevation 20 degrees.",
+      "capture": {
+        "path": "qa/visual-evidence/azimuth-000.png",
+        "sha256": "<sha256-of-capture>"
+      },
+      "outcome": "issue",
+      "observation": "The foreground rail hides the lower half of the entry path."
+    }
+  ],
+  "requirementCoverage": [
+    {
+      "kind": "mustShow",
+      "text": "完整地形与场景边界",
+      "status": "partial",
+      "checkpointIds": ["hero", "azimuth-000"],
+      "observation": "The near and side boundaries are visible; the rear edge is only partly readable."
+    },
+    {
+      "kind": "notAllowed",
+      "text": "只用孤立粗模代表整个村落",
+      "status": "met",
+      "checkpointIds": ["hero"],
+      "observation": "The scene includes connected terrain, structures, water and paths."
+    }
+  ],
+  "visualFindings": {
+    "composition": {"finding": "The hero view has a clear focus but too much empty upper background.", "checkpointIds": ["hero"]},
+    "space": {"finding": "Side and rear relation needs a stronger enclosure cue.", "checkpointIds": ["azimuth-000"]},
+    "formMiddle": {"finding": "Roof thickness and pool edges remain readable at this view.", "checkpointIds": ["hero"]},
+    "detailDistribution": {"finding": "Near details are distinct; distant shrub groups merge together.", "checkpointIds": ["hero"]},
+    "materialsLighting": {"finding": "Warm pools read against cool terrain, but water is too dark at the rear.", "checkpointIds": ["hero"]}
+  },
+  "interactionChecks": [
+    {"action": "orbit-360", "status": "works", "checkpointIds": ["azimuth-000"], "observation": "A full drag rotation reaches the rear without exposing an empty shell."},
+    {"action": "zoom", "status": "works", "checkpointIds": ["hero"], "observation": "Wheel zoom reaches the detail and overview endpoints without clipping."},
+    {"action": "reset", "status": "works", "checkpointIds": ["hero"], "observation": "Reset restores the authored hero framing."}
+  ],
+  "unresolvedIssues": ["Rear-side scene density remains low."],
+  "fullPlayback": null
+}

@@ -10,7 +10,32 @@ For an existing regular terrain that needs local grade constraints, first read [
 
 `prepareTerrainRoadSupport` also accepts `topology: 'triangulated'`; a standalone road can pass `terrainTopology: 'triangulated'` to `createTerrainRoadSource`. This is an opt-in consumer for an already-built `BufferGeometry`. It requires unique XZ vertices, upward nondegenerate triangles, consistent manifold edge winding, a complete rectangular outer boundary, no holes or projected overlaps, and one height at every XZ point. Every condition is checked before road construction. The default remains `regular-grid`; do not switch a producer until its final geometry satisfies this stricter contract.
 
+The triangulated consumer performs a global audit of the final Float32 geometry, including faces that came from different source triangles. It compares compensated projected-area sum with the complete rectangular domain, counts undirected edge incidence and winding, verifies that one-use edges form only the outer rectangle, and checks candidate triangle pairs in a bounded uniform XZ index. A fast filtered orientation test falls back to exact predicates over the represented Float32 coordinates; any positive-area interior overlap rejects, while shared edges and vertices remain valid. Area tolerance is tied to Float32 arithmetic (`max(epsilon² × 64, domainArea × Number.EPSILON × 128)`), not used to hide an overlap. Pair and spatial-reference budgets are hard limits.
+
+Successful `prepareTerrainRoadSupport({topology: 'triangulated'})` handles expose a frozen `support.audit` summary: `status`, face/domain area and delta/tolerance, triangle and edge counts, outer/interior boundary counts, non-manifold and winding counts, and overlap/index work counts. This audit proves the accepted final projected mesh contract within the stated representation and budgets; it does not prove that an upstream design is visually good or that a pre-conform diagnostic mesh was valid.
+
 The constrained path builds a bounded uniform XZ lookup over the authored triangles, while retaining the actual source X/Z vertex axes separately for boundary snapping. Spatial lookup-bin lines must never be treated as terrain geometry. It then shares the same road clipping, Float32 support proof, query and disposal behavior as the regular-grid path. This lets a producer insert vertices near hard terrain constraints while retaining the original large-scale mesh, but does not itself protect or preserve any preexisting road, prove a grading design, or generate the terrain. Compare source/target vertex and face ranges in the terrain producer before claiming old geometry is preserved.
+
+Road/terrain triangle intersections use `clipConvexPolygonWithFloat32Events` and one per-road `createFloat32LineEventTable`. Exact Float32 support-line IDs and pairwise intersection caching make the same geometric event reuse one Float64 coordinate through clipping; emitted vertices are still converted into the final Float32 road mesh and must pass simple-ring, area, boundary-coverage, and terrain-support checks. `maxLines` and `maxEvents` are finite and capped by `maxValidationPairs`. This prevents independent arithmetic from assigning different coordinates to a shared line event. It does not make a sub-ULP feature representable: if final Float32 quantization creates a folded or self-crossing clipped piece, reject it. Do not silently drop, snap, or expand that piece; absorption is valid only after adjacent intersections are rebuilt and the complete road boundary and support are re-proven.
+
+For validated geometry whose world-space detail is smaller than Float32 can preserve, use a **shared local origin per spatial chunk**. Pass the same `[originX, originZ]` to terrain support and road construction. The original terrain remains caller-owned and unchanged; support snapshots an XZ-shifted copy, road rings are converted from world coordinates, and generated road vertices stay near local zero. `samplePreparedTerrainSurface` and `road.query` continue to accept world XZ. Returned `road.position` is `[originX, 0, originZ]`; apply it to the road `Mesh` so local geometry is restored to the terrain's world location. Use one origin for all objects that must align in that chunk. Separate distant chunks may use separate support/road pairs and origins.
+
+```js
+const coordinateOrigin = [10000, 20000];
+const terrainSupport = prepareTerrainRoadSupport({
+  terrainGeometry, topology: 'triangulated', coordinateOrigin
+});
+const road = createTerrainRoadSource(THREE, {
+  terrainSupport, surfaces: world.levels[0].surfaces, thickness: .12
+});
+const roadMesh = new THREE.Mesh(road.geometry, roadMaterial);
+roadMesh.position.fromArray(road.position); // [10000, 0, 20000]
+scene.add(terrainMesh, roadMesh);
+const ground = samplePreparedTerrainSurface(terrainSupport, worldX, worldZ);
+const onRoad = road.query(worldX, worldZ); // world-space input remains stable
+```
+
+An origin is a precision tool, not a way to mask bad geometry. Choose it from the chunk's spatial bounds, keep related surfaces in the same coordinate frame, and rerun topology, boundary and support checks after conversion. A single origin for a large world can leave distant local features below Float32 resolution; use multiple chunks when the measured feature scale requires it.
 
 ```js
 const terrainSupport = prepareTerrainRoadSupport({
@@ -75,7 +100,7 @@ terrainMaterial.dispose();
 roadMaterial.dispose();
 ```
 
-`thickness` is the positive **vertical +Y distance** from terrain to desired road top, not a constant distance along a sloping normal. Road boundary XZ coordinates are converted to Float32 before triangulation. Every generated vertex is sampled at its final representable Float32 XZ, then its underside/top Y are converted to Float32. Consequently the emitted footprint can differ from the supplied doubles by Float32 coordinate precision. There is no silent local-origin rebase; callers can supply terrain and roads in a shared local frame and place them together when smaller world features require it.
+`thickness` is the positive **vertical +Y distance** from terrain to desired road top, not a constant distance along a sloping normal. Road boundary XZ coordinates are converted to Float32 before triangulation. Every generated vertex is sampled at its final representable Float32 XZ, then its underside/top Y are converted to Float32. Consequently the emitted footprint can differ from the supplied doubles by Float32 coordinate precision. `coordinateOrigin` defaults to `[0,0]`. When nonzero, the prepared support records that origin; a borrowing road must use the same origin. The returned handle exposes `coordinateOrigin` (`[x,z]`) and `position` (`[x,0,z]`), and marks the geometry's `userData.coordinateOrigin`. Place the road mesh at `road.position`; analytic sampling and query inputs remain in world coordinates.
 
 Top triangles must have strictly positive upward XZ projection after quantization. Internal edges must pair in opposite directions; the actual remaining top boundary must be simple and fully cover the quantized source boundary. The underside and external/hole walls are derived from those same top vertices and boundary edges, so they share exact seams. Zero-area quantized clipping fragments can be removed only when the final boundary/coverage checks still pass. A whole lost component or boundary coverage gap rejects. Earcut source bridges and clipped polygon subdivisions are triangulated without introducing an interior point that might collapse at Float32 precision.
 
@@ -105,6 +130,15 @@ Choose one terrain input per road:
 | Many roads on one final mesh | Call `prepareTerrainRoadSupport({terrainGeometry, epsilon, maxTerrainTriangles})` once; give every road the same `terrainSupport`. The scene owns the frozen token; the terrain grid is private. | Dispose the road borrowers first, then the token. Disposing one borrower or failing to construct another leaves the shared index live for its siblings. Disposing the token invalidates further builds and queries that depend on it. |
 
 The prepared source snapshots the actual mesh positions and indices. Mutating or disposing the input geometry does not update existing snapshots; they are never cached by geometry identity. After changing the terrain, prepare a new source and rebuild the corresponding roads. Road surface arrays are copied at construction. A road inherits its support's `epsilon`; an explicit value must match. Its own `maxTerrainTriangles` must admit the prepared triangle count. Other budgets still apply per road. Shared preparation avoids a second full-terrain scan; each road retains its own emitted geometry and bounded footprint-query cells.
+
+`samplePreparedTerrainSurface(support, x, z)` reads the same prepared piecewise-planar triangles used by road draping and returns detached `{height, normal}` data, or `null` outside the terrain bounds. Use it for object placement and qualification that must agree with the final rendered ground; do not substitute the analytic source field after terrain geometry is frozen. It is a borrower of the support token and therefore rejects after that token is disposed. The normal is the selected triangle's geometric normal.
+
+```js
+const ground = samplePreparedTerrainSurface(terrainSupport, gateX, gateZ);
+if (!ground) throw new Error('gate lies outside final terrain');
+gate.position.set(gateX, ground.height, gateZ);
+gate.userData.groundNormal = ground.normal; // detached value; geometry stays caller-owned
+```
 
 Queries reject nonfinite coordinates and calls after disposal. All disposals are idempotent. Terrain geometry, materials and textures remain caller-owned. Use a resource scope or `finally` to release a successful shared preparation if a later build fails; a failed standalone build drops its private snapshot. Geometry allocation failures release generated geometry before throwing.
 

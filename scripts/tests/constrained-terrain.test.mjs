@@ -19,6 +19,19 @@ test('constraint boundaries split the source triangles while preserving the exac
  const support=prepareTerrainRoadSupport({terrainGeometry:result.geometry,topology:'triangulated'});support.dispose();assert.deepEqual([...source.attributes.position.array],before);assert.deepEqual([...source.index.array],index);result.geometry.dispose();source.dispose();
 });
 
+test('a multi-cell constraint remains a candidate in every grid row it crosses',()=>{
+ const source=createHeightFieldGeometry(T,{sample:()=>({height:0,dx:0,dz:0})},{sizeX:8,sizeZ:8,segmentsX:4,segmentsZ:4}),zone=rect(-3,-3,-1,3),inside=(x,z)=>x>=-3&&x<=-1&&z>=-3&&z<=3;
+ const result=api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints:[zone],heightAt:({x,z,baseHeight})=>inside(x,z)?10:baseHeight}),actual=ray(result.geometry,-2.9,-1);
+ near(actual,10,1e-4);result.dispose();source.dispose();
+});
+
+test('opt-in topology diagnostics locate interior boundary edges before and after conforming subdivision',()=>{
+ const source=make(),result=api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints:[rect(-3,-1,-1,1)],collectTopologyDiagnostics:true}),audit=result.stats.topologyDiagnostics;
+ assert.ok(audit.beforeConform.interiorBoundaryEdges>0);assert.equal(audit.afterConform.interiorBoundaryEdges,0);assert.equal(audit.afterConform.nonManifoldEdges,0);assert.equal(audit.afterConform.inconsistentWindingEdges,0);
+ assert.throws(()=>api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,collectTopologyDiagnostics:'yes'}),/collectTopologyDiagnostics must be a boolean/);
+ result.dispose();source.dispose();
+});
+
 test('height edits stay continuous and protected road corridors retain the borrowed source surface',()=>{
  const source=make(),protectedRoad=rect(.5,-1.5,3.5,1.5),road=awaitRoad(source,protectedRoad),before=[...source.attributes.position.array];
  const result=api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints:[rect(-3.4,-1.4,-.6,1.4)],protectedRegions:[protectedRoad],heightAt:({x,z,baseHeight})=>baseHeight+.35*Math.max(0,1-Math.abs(x+2)/1.4)});
@@ -28,10 +41,11 @@ test('height edits stay continuous and protected road corridors retain the borro
  draped.dispose();support.dispose();result.geometry.dispose();road.dispose();source.dispose();
 });
 
-test('multiple oblique convex constraints remain a manifold and preserve source coverage',()=>{
+test('Float32 triangulation resolves oblique multi-constraint intersections into a valid mesh',()=>{
  const source=make(),constraints=[[[ -3.3,-1.1],[-1.1,-1.5],[-.6,.5],[-2.8,.9]],[[.2,-1.6],[2.1,-.8],[1.4,1.4],[-.1,.8]]];
- const result=api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints});
- const support=prepareTerrainRoadSupport({terrainGeometry:result.geometry,topology:'triangulated'});assert.ok(result.stats.outputTriangles>result.stats.sourceTriangles);support.dispose();result.geometry.dispose();source.dispose();
+ const result=api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints,collectTopologyDiagnostics:true});
+ assert.ok(result.stats.outputTriangles>result.stats.sourceTriangles);assert.equal(result.stats.topologyDiagnostics.afterConform.interiorBoundaryEdges,0);assert.equal(result.stats.topologyDiagnostics.afterConform.nonManifoldEdges,0);
+ result.geometry.dispose();source.dispose();
 });
 
 test('translated world-space constraints preserve source coverage at Float32 terrain coordinates',()=>{
@@ -55,6 +69,19 @@ test('input validation and work budgets fail before mutating the borrowed source
  assert.throws(()=>api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints:[rect(-3,-1,-1,1)],maxWorkUnits:1}),/maxWorkUnits/i);
  assert.throws(()=>api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints:[rect(-3,-1,-1,1)],maxOutputTriangles:1}),/maxOutputTriangles/i);
  assert.deepEqual([...source.attributes.position.array],before);source.dispose();
+});
+
+test('custom float vertex attributes require explicit resolvers and follow refined vertex positions',()=>{
+ const source=make(),position=source.getAttribute('position');source.setAttribute('aFormationPosition',position.clone());const before=[...source.attributes.aFormationPosition.array],options={terrainGeometry:source,constraints:[rect(-3,-1,-1,1)],heightAt:({x,z,baseHeight})=>baseHeight+.4*Math.max(0,1-Math.abs(x+2)/1.4)};
+ assert.throws(()=>api.createConstrainedTerrainGeometry(T,options),/explicit attributeResolvers/);
+ const result=api.createConstrainedTerrainGeometry(T,{...options,attributeResolvers:{aFormationPosition:({position})=>position}}),p=result.geometry.getAttribute('position'),a=result.geometry.getAttribute('aFormationPosition');
+ assert.equal(a.count,p.count);for(let i=0;i<p.count;i++)for(let k=0;k<3;k++)near(a.getComponent(i,k),p.getComponent(i,k),1e-6);
+ assert.deepEqual([...source.attributes.aFormationPosition.array],before);result.geometry.dispose();source.dispose();
+});
+
+test('Float32 constraints that collapse below represented world-coordinate precision reject',()=>{
+ const source=make(),position=source.getAttribute('position');for(let i=0;i<position.count;i++){position.setX(i,position.getX(i)+65536);position.setZ(i,position.getZ(i)+65536);}position.needsUpdate=true;
+ assert.throws(()=>api.createConstrainedTerrainGeometry(T,{terrainGeometry:source,constraints:[[[65536,65536],[65536.001,65536],[65536.001,65537],[65536,65537]]]}),/Float32-collapsed|zero area/i);source.dispose();
 });
 
 function awaitRoad(terrain,area){return createTerrainRoadSource(T,{terrainGeometry:terrain,surfaces:[{outer:area}],thickness:.15});}

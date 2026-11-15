@@ -43,14 +43,15 @@ async function captureAt(t){
 }
 async function frame(t,path){const png=await captureAt(t);await writeFile(path,png);return png}
 try{
- proc=spawn(chrome,['--headless=new','--no-first-run','--disable-background-networking','--remote-debugging-port=0',`--user-data-dir=${join(temp,'profile')}`,'--force-device-scale-factor=1','--autoplay-policy=no-user-gesture-required','about:blank'],{stdio:['ignore','ignore','pipe']});proc.on('error',error=>{stderr=(stderr+error.message).slice(-6000)});proc.stderr.on('data',d=>{stderr=(stderr+d).slice(-6000)});
+ // This page is opened from file://, so allow its trusted offline package modules to import.
+ proc=spawn(chrome,['--headless=new','--no-first-run','--disable-background-networking','--allow-file-access-from-files','--remote-debugging-port=0',`--user-data-dir=${join(temp,'profile')}`,'--force-device-scale-factor=1','--autoplay-policy=no-user-gesture-required','about:blank'],{stdio:['ignore','ignore','pipe']});proc.on('error',error=>{stderr=(stderr+error.message).slice(-6000)});proc.stderr.on('data',d=>{stderr=(stderr+d).slice(-6000)});
  let port,route;for(let n=0;n<200;n++){if(proc.exitCode!==null||proc.signalCode!==null)throw Error(chromeStartFailure());try{[port,route]=(await readFile(join(temp,'profile/DevToolsActivePort'),'utf8')).trim().split(/\r?\n/);break}catch{}await delay(100)}if(!port)throw Error(chromeStartFailure());
  ws=new WebSocket(`ws://127.0.0.1:${port}${route}`);await new Promise((r,j)=>{ws.addEventListener('open',r,{once:true});ws.addEventListener('error',j,{once:true})});ws.addEventListener('message',receive);
  const target=await send('Target.createTarget',{url:'about:blank'},null);({sessionId}=await send('Target.attachToTarget',{targetId:target.targetId,flatten:true},null));
  await send('Runtime.enable');await send('Page.enable');await send('Log.enable');await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
  await send('Page.navigate',{url:pathToFileURL(html).href+'?still=1&'+arg('--query','')});
  let ready=false;for(let n=0;n<300;n++){ready=await evaluate('Boolean(window.__ready)');failOnErrors();if(ready)break;await delay(100)}if(!ready)throw Error('Film never became ready');
- const info=await evaluate("(()=>{if(window.__ready!==true)throw Error('__ready must be true');if(typeof window.renderAt!=='function')throw Error('Missing renderAt(seconds)');document.body.classList.add('render-mode');document.querySelector('#start')?.classList.add('hidden');return window.__FILM})()");
+ const info=await evaluate("(()=>{if(window.__ready!==true)throw Error('__ready must be true');if(typeof window.renderAt!=='function')throw Error('Missing renderAt(seconds)');document.body.classList.add('render-mode');document.querySelector('#start')?.classList.add('hidden');const freeze=document.createElement('style');freeze.dataset.filmExportFreeze='true';freeze.textContent='body.render-mode,body.render-mode *,body.render-mode *::before,body.render-mode *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;caret-color:transparent!important}';document.head.append(freeze);return window.__FILM})()");
  if(!info||!Number.isFinite(info.duration)||info.duration<=0||!Number.isFinite(info.fps)||info.fps<=0)throw Error('Missing positive __FILM duration/fps contract');
  captureMode=info.capture?.mode??'sync';
  if(!['sync','awaited'].includes(captureMode))throw Error('Unknown capture mode');

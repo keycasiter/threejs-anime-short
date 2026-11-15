@@ -54,8 +54,33 @@ test('opt-in constrained triangulated terrain preserves an irregular shared surf
  const g=new T.BufferGeometry(),positions=[-4,0,-4, 4,0,-4, 4,0,4, -4,0,4, 0,1,0];
  g.setAttribute('position',new T.Float32BufferAttribute(positions,3));g.setIndex([0,4,1,1,4,2,2,4,3,3,4,0]);
  const support=api.prepareTerrainRoadSupport({terrainGeometry:g,topology:'triangulated'}),road=api.createTerrainRoadSource(T,{terrainSupport:support,surfaces:[{outer:[[-3,-2],[3,-2],[3,2],[-3,2]]}]});
+ assert.equal(support.terrainTriangles,4,'support budget reports represented faces, not spatial index buckets');
+ assert.deepEqual({status:support.audit.status,triangleCount:support.audit.triangleCount,interiorBoundaryEdges:support.audit.interiorBoundaryEdges,outerBoundaryEdges:support.audit.outerBoundaryEdges,nonManifoldEdges:support.audit.nonManifoldEdges,inconsistentWindingEdges:support.audit.inconsistentWindingEdges},{status:'PASS',triangleCount:4,interiorBoundaryEdges:0,outerBoundaryEdges:4,nonManifoldEdges:0,inconsistentWindingEdges:0});
+ assert.ok(Math.abs(support.audit.areaDelta)<=support.audit.areaTolerance);assert.ok(support.audit.overlapTests>0&&support.audit.spatialReferences>0);assert.ok(Object.isFrozen(support.audit));
  assert.ok(road.stats.topTriangles>0);for(const [x,z]of [[-2.5,-1.5],[2.5,-1.5],[2.5,1.5],[-2.5,1.5],[0,0]]){const ground=down(g,x,z)[0],top=down(road.geometry,x,z)[0];assert.ok(ground&&top);near(top.point.y,ground.point.y+.12);near(road.query(x,z).topHeight,top.point.y);}
  assert.equal(road.query(3.5,0),null);road.dispose();support.dispose();const standalone=make(g,{terrainTopology:'triangulated'});assert.ok(standalone.query(0,0));standalone.dispose();g.dispose();
+});
+test('coordinate origin keeps high-world-coordinate road detail local while queries remain in world space',()=>{
+ const g=terrain((x,z)=>({height:.1*x+.2*z,dx:.1,dz:.2}),8);const p=g.getAttribute('position'),ox=10000,oz=20000;
+ for(let i=0;i<p.count;i++){p.setX(i,Math.fround(p.getX(i)+ox));p.setZ(i,Math.fround(p.getZ(i)+oz));}p.needsUpdate=true;g.computeBoundingBox();g.computeBoundingSphere();const before=[...p.array];
+ const worldRing=[[-.85,-.85],[.85,-.85],[.85,.85],[-.85,.85]].map(([x,z])=>[ox+x,oz+z]),support=api.prepareTerrainRoadSupport({terrainGeometry:g,coordinateOrigin:[ox,oz]});
+ assert.throws(()=>api.createTerrainRoadSource(T,{terrainSupport:support,coordinateOrigin:[ox+1,oz],surfaces:[{outer:worldRing}]}),/must match/);
+ const road=api.createTerrainRoadSource(T,{terrainSupport:support,surfaces:[{outer:worldRing}]});assert.deepEqual([...p.array],before);
+ assert.deepEqual(road.coordinateOrigin,[ox,oz]);assert.deepEqual(road.position,[ox,0,oz]);
+ const localBounds=road.geometry.boundingBox;assert.ok(localBounds.min.x>-.9&&localBounds.max.x<.9);assert.ok(localBounds.min.z>-.9&&localBounds.max.z<.9);
+ const material=new T.MeshBasicMaterial(),roadMesh=new T.Mesh(road.geometry,material);roadMesh.position.fromArray(road.position);roadMesh.updateMatrixWorld(true);
+ for(const [dx,dz]of [[-.37,-.21],[.31,.42]]){const worldX=ox+dx,worldZ=oz+dz,q=road.query(worldX,worldZ),ray=new T.Raycaster(new T.Vector3(worldX,30,worldZ),new T.Vector3(0,-1,0)),hit=ray.intersectObject(roadMesh)[0],ground=down(g,worldX,worldZ)[0];assert.ok(q&&hit&&ground);near(q.topHeight,ground.point.y+.12,2e-3);near(hit.point.y,q.topHeight,2e-3);}
+ material.dispose();
+ road.dispose();support.dispose();g.dispose();
+});
+test('prepared terrain sampling reads final regular and constrained triangles and respects support lifetime',()=>{
+ assert.equal(typeof api.samplePreparedTerrainSurface,'function');
+ const flat=terrain((x,z)=>({height:.3*x+.2*z,dx:.3,dz:.2}),8),support=api.prepareTerrainRoadSupport({terrainGeometry:flat});
+ const q=api.samplePreparedTerrainSurface(support,-1.37,.82),hit=down(flat,-1.37,.82)[0];assert.ok(hit);near(q.height,hit.point.y,1e-7);near(q.normal[0],hit.face.normal.x,1e-7);near(q.normal[1],hit.face.normal.y,1e-7);near(q.normal[2],hit.face.normal.z,1e-7);
+ assert.equal(api.samplePreparedTerrainSurface(support,5,0),null);assert.throws(()=>api.samplePreparedTerrainSurface(support,NaN,0),/finite/i);
+ const irregular=new T.BufferGeometry();irregular.setAttribute('position',new T.Float32BufferAttribute([-4,0,-4,4,0,-4,4,0,4,-4,0,4,0,1,0],3));irregular.setIndex([0,4,1,1,4,2,2,4,3,3,4,0]);
+ const constrained=api.prepareTerrainRoadSupport({terrainGeometry:irregular,topology:'triangulated'}),cq=api.samplePreparedTerrainSurface(constrained,0,0);near(cq.height,down(irregular,0,0)[0].point.y,1e-7);assert.ok(cq.normal[1]>0);
+ constrained.dispose();assert.throws(()=>api.samplePreparedTerrainSurface(constrained,0,0),/invalid or disposed/i);support.dispose();flat.dispose();irregular.dispose();
 });
 test('constrained triangulated support rejects holes, overlaps, reversed faces, and exhausted indexes',()=>{
  const create=()=>{const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute([-4,0,-4,4,0,-4,4,0,4,-4,0,4,0,1,0],3));g.setIndex([0,4,1,1,4,2,2,4,3,3,4,0]);return g;};

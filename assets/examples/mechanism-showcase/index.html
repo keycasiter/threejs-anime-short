@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#171d20"><link rel="icon" href="data:,">
+  <title>往复之间 · Three.js机制讲解完整样例</title>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#171d20;color:#e8e4d9;font:13px/1.55 Inter,"PingFang SC","Microsoft YaHei",sans-serif}canvas{display:block;width:100%;height:100%;touch-action:none}.labels{position:fixed;inset:0;pointer-events:none;z-index:1}.callout{padding:4px 7px;background:#172126d9;border-left:2px solid #d5a15d;color:#e8e4d9;font-size:9px;white-space:nowrap;letter-spacing:.06em;text-shadow:0 1px 2px #000}.panel{position:fixed;left:clamp(14px,2.8vw,36px);top:clamp(14px,3vh,30px);width:min(316px,calc(100vw - 28px));padding:18px;background:#171d20df;border:1px solid #d4c6a538;backdrop-filter:blur(14px);box-shadow:0 14px 48px #03080d70;z-index:3}.eyebrow{font-size:9px;letter-spacing:.22em;color:#d7ae69;font-weight:700}h1{font:500 28px/1.08 Georgia,"Songti SC",serif;margin:10px 0 8px}.lede{font-size:12px;color:#bec7c6;margin:0 0 14px}.rule{height:1px;background:#d4c6a52b;margin:14px 0}.field{display:grid;gap:6px;margin:11px 0;color:#d6d8d1;font-size:11px}.field input{width:100%;accent-color:#d7ae69}.actions{display:flex;gap:7px;flex-wrap:wrap}button{padding:7px 10px;background:#383f3f;border:1px solid #d4c6a54a;color:#eee9dd;font:inherit;cursor:pointer}button:hover{background:#505653}.readout{display:grid;grid-template-columns:1fr auto;gap:4px 14px;font:10px/1.65 ui-monospace,monospace;color:#bbc8c8}.readout b{color:#e5c27f;font-weight:500}.note{font-size:10px;color:#aab6b5;margin:11px 0 0}.footer{position:fixed;right:18px;bottom:16px;padding:9px 12px;background:#171d20bd;border:1px solid #d4c6a52e;color:#e0ddcf;font-size:9px;letter-spacing:.12em;z-index:2}.film-title{display:none;position:fixed;left:clamp(22px,6vw,82px);bottom:clamp(35px,8vh,92px);z-index:2;color:#f2e9d6;text-shadow:0 2px 18px #000;font-family:Georgia,"Songti SC",serif}.film-title strong{display:block;font-size:clamp(28px,5vw,58px);font-weight:500}.film-title span{display:block;margin-top:8px;color:#d3b67c;font:10px ui-monospace,monospace;letter-spacing:.22em}.load{position:fixed;inset:0;display:grid;place-items:center;background:#171d20;z-index:8;color:#d7ae69;letter-spacing:.2em;font-size:10px;transition:opacity .4s}#error{position:fixed;z-index:9;left:12px;bottom:12px;max-width:calc(100vw - 24px);padding:10px;background:#381c1c;color:#fff;white-space:pre-wrap}
+    body.render-mode .panel,body.render-mode .footer,body.render-mode .load{display:none!important}body.render-mode .film-title{display:block}body.render-mode .callout{font-size:11px;padding:5px 9px}
+    @media(max-width:620px){.panel{width:260px;padding:14px}.panel h1{font-size:23px}.footer{right:9px;bottom:10px;font-size:8px}}
+  </style>
+  <!-- Supply the matching Three.js r187 build/ and examples/jsm/ at ./vendor/. -->
+  <script type="importmap">{"imports":{"three":"./vendor/build/three.module.js","three/addons/":"./vendor/examples/jsm/"}}</script>
+</head>
+<body>
+  <canvas id="scene"></canvas><div class="labels" id="labels"></div>
+  <div class="load" id="load">KINEMATIC STUDY · SLIDER / CRANK</div>
+  <aside class="panel"><div class="eyebrow">THREE.JS / MECHANISM ROUTE</div><h1>往复之间</h1>
+    <p class="lede">曲柄转动把圆周运动传给活塞。零件、运动轨迹与读数共享同一绝对时间状态。</p>
+    <div class="rule"></div>
+    <label class="field">曲柄相位 <input id="phase" type="range" min="0" max="2.4" step=".005" value="0"></label>
+    <div class="actions"><button id="play">播放</button><button id="stepBack">−30°</button><button id="stepForward">+30°</button><button id="reset">复位</button></div>
+    <div class="rule"></div><div class="readout"><span>曲柄角</span><b id="angle">0.0°</b><span>活塞位移</span><b id="position">0.0 mm</b><span>活塞速度</span><b id="velocity">0 mm/s</b><span>连杆长度</span><b id="rodLength">145 mm</b><span>冲程</span><b id="stroke">70 mm</b></div>
+    <p class="note">可拖拽360°观察。播放、定位与短片渲染都调用同一个`stateAt(t)`；材质/模型由代码生成。</p>
+  </aside>
+  <div class="film-title"><strong>往复之间</strong><span>SLIDER · CRANK · ONE SHARED STATE</span></div>
+  <div class="footer">DRAG TO ORBIT · SCROLL TO APPROACH · HORIZONTAL 360°</div><pre id="error" hidden></pre>
+  <script type="module" src="./main.mjs"></script>
+</body>
+</html>

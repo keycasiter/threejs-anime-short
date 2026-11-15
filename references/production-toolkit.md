@@ -17,6 +17,8 @@
 | 目标天气确实需要可见雨丝 | [视觉雨场](../assets/environment/weather-field.mjs) | 有界LineSegments、绝对时间、风速/落速、实际强度与屋顶查询；非流体、体积雾、水花或自动湿润反馈 |
 | 需要接触AO、有限高亮扩散与正确输出 | [后期链](../assets/rendering/post-pipeline.mjs) | 半浮点线性HDR→可选GTAO→可选Bloom→一次Output→可选SMAA；不含体积光、自适应曝光、物体运动模糊 |
 | 需要定位质量责任层、复现镜头/时间、切换真实效果 | [场景工作台](../assets/runtime/scene-workbench.mjs) | 相机/target/FOV、绝对时钟、消费者开关、真实统计、可选DOM；历史模拟需额外reset，不能自动保证像素确定 |
+| 场景内文字、指示或可选语义标签 | [锚定标签](anchored-labels.md)：`createAnchoredCanvasLabel` / `createCSS2DAnnotation` | Canvas/Sprite分世界米制与视口比例；CSS2D共享单渲染器并处理DOM事件/可选引导线。CSS2D不做遮挡和避碰；明确CSS像素尺寸与scene/anchor/材质所有权 |
+| 相机/动画状态下的DOM覆盖层几何检查 | [屏幕覆盖层审计](../assets/interaction/screen-overlay-audit.mjs)：`auditScreenOverlays` | 输入同一视口内的实测CSS像素矩形，报告视口外溢、安全区越界、标签互叠及保留UI冲突；不移动元素，不判断3D遮挡或文字美感 |
 
 注入**同一锁定版本**的 `THREE` 与官方addons，已验证路径为r187/WebGLRenderer。WebGPU、其他版本、XR、多相机rig需要另外验证。适配器不复制标杆的应用shader。新任务需要表中未覆盖的能力时，显式设计扩展并先做小样，不把近似能力命名成完整能力。
 
@@ -33,6 +35,7 @@
 | 两侧宿主间的竖直承托 | 同模块`createVerticalBearingSampler(T,lower,upper)` | 给x/z、minY/maxY、上下XZ足迹偏移，有限射线输出bottomY/topY/clearance等；漏点/交叠失败，不是任意斜向接头生成器 |
 | 宽深/偏心/滚转独立的连续主形 | [section-loft](../assets/geometry/section-loft.mjs)：`createSectionLoftGeometry(T,{stations,...})`，用法见[放样配方](algorithm-recipes.md#随包工具宽深独立的沿程放样) | 椭圆环/传输架、实际端盖、米制UV/接缝法线；不含分枝、内壁、任意截面或防自交 |
 | 已设计连接图与沿边地块 | [corridor-layout](../assets/scene/corridor-layout.mjs)：`compileCorridorGraph`/`generateFrontageLots`，见[世界配方](algorithm-recipes.md#世界连接图与局部语法) | 真实宽度矩形、节点/分量与接受地块；道路厚度、地形基础/门口和任意路口需项目构造，不是自动城市 |
+| 多个定高区域、保护既有地面并重建道路 | [terrain-grading](terrain-grading.md)：`compileTerrainGradeField` → `createConstrainedTerrainGeometry` → `prepareTerrainRoadSupport` | 凸域平整区和五次过渡；不同目标高程的影响区重叠或侵入保护区则返回`UNSAT`；只接受受限规则高度网格与单值地表，不做自适应细分、任意地貌规划或自动坡度求解 |
 | 区域用途、混合完整原型与真实入口共同布局 | [frontage-neighborhood](frontage-neighborhood.md)：`compileFrontageNeighborhood` | 纯数据、完整足迹/净距/邻件资格、组间节奏及预算诊断；不是最密填充或自动世界美术 |
 | 多组完整活动候选与区域冲突仲裁 | [activity-distribution](../assets/scene/activity-distribution.mjs)：`allocateActivityGroups`，用法见[区域活动组接力](world-methods.md#区域用途到完整活动组) | 只分配调用方生成并测量的候选包络；具备稳定优先级、区域/组间/高度冲突检查、有限预算、必需组全量回滚与不可变JSON payload接力；不生成候选或证明实际通行/承托 |
 | 既有地形局部约束改形，并将道路接到新网格 | [constrained-terrain](constrained-terrain.md)：`createConstrainedTerrainGeometry`；后接[terrain-roads](terrain-roads.md)：`prepareTerrainRoadSupport` / `createTerrainRoadSource` | 规则高度网格→凸约束/保护区→预算化共形三角面→真实道路支承；源地面借用、新地形/道路归调用方。不是任意三角化、地貌设计或多层地形 |
@@ -40,7 +43,7 @@
 | 连续高度与共享世界梯度 | [height-field](../assets/environment/height-field.mjs)：`createFractalHeightField`/`createHeightFieldGeometry`，见[场配方](algorithm-recipes.md#地形水系与侵蚀) | 原创value-noise fBm、归一振幅、解析导数和单值上表面；非侵蚀/完整地貌，接触用最终三角网格 |
 | 发出网格的无效/退化/朝向检查 | [auditTriangles](../assets/geometry/audit-triangles.mjs)，调用见[几何配方](geometry-recipes.md) | 独立方向或逐顶点参考；不检查全部自交、水密、曲率或构图 |
 | 重复铺覆的完整轮廓与封边 | [bounded-profile](../assets/geometry/bounded-profile.mjs)：`clipConvexPolygon` / `createBoundedProfileGeometry`，见[边界代码](visual-construction.md#2-重复单元先归属区域再裁完整轮廓) | 凸域交集、局部XY、一维profile与Z厚度的闭合网格；非通用CSG/曲面贴合；角点在epsilon内归并采样层，真正Float32塌缩拒绝 |
-| 关键表面被谁遮挡、HUD样点冲突 | [view-readability](../assets/scene/view-readability.mjs)：`inspectFeatureVisibility`，见[观看代码](visual-construction.md#1-先让关键部位能被看清) | 实际世界样点、三角遮挡/命中实体与CSS矩形；仅普通深度WebGL透视/正交；不是可见面积或美术评分 |
+| 单视图遮挡、候选机位与多视图关键特征覆盖 | [view-readability](../assets/scene/view-readability.mjs)：`inspectFeatureVisibility`；[observation-view](../assets/scene/observation-view.mjs)：`selectObservationView` / `auditObservationSet`，见[核心三线](core-systems.md#5-规模观看与上下文) | 实际世界样点、三角遮挡/命中实体、CSS覆盖、投影尺寸与预登记视图集合并集；仅普通深度WebGL透视/正交；不是连续表面覆盖、构图或美术评分 |
 | 最近景别的曲率/特征采样估计 | [projected-sampling](../assets/geometry/projected-sampling.mjs)：`estimateSamplingStep`，见[采样代码](visual-construction.md#4-按最近目标景别分配采样) | 当前投影/zoom、世界尺度与局部step；不是自适应网格器、全局误差保证或成本自动优化器 |
 
 ## 最短可执行入口

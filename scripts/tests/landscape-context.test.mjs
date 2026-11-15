@@ -40,6 +40,13 @@ test('context is compiled from connected road regions and measured real architec
     assert.equal(a.layout.footprintAllowed({level:'context',regionId:lot.regionId,polygon:lot.footprint,clearance:.1}),true);
     assert.ok(site.partCounts.windows>0&&site.partCounts.furniture>0&&site.partCounts.roofs>0);
     assert.equal(site.measuredBounds.minY+site.baseY,site.groundY);
+   assert.equal(site.entryMeasurement?.method,'final-sourceRanges-entry-section','entry dimensions are re-read from final assembled draw ranges, not copied from lot/prototype hints');
+   assert.equal(site.entryMeasurement.revealSourceRangeIds.length,2);
+   assert.ok(site.entryMeasurement.clearWidth>0);
+   assert.ok(Math.abs(site.entryMeasurement.clearWidth-site.entrance.width)<2e-5,'the final reveal geometry independently agrees with the authored width within Float32 bake error');
+   assert.ok(Math.abs(site.entryMeasurement.clearHeight-site.entrance.height)<2e-5,'the final header lower face independently bounds the real doorway height');
+   assert.ok(Math.abs(site.entryMeasurement.thresholdHeight-site.baseY)<2e-5,'the final deck top is the measured entrance threshold');
+   assert.ok(Math.abs(site.entryMeasurement.deckOuterEdge-site.route.start[0]*site.entrance.normal[0]-site.route.start[2]*site.entrance.normal[2])<2e-5,'the actual deck outer edge agrees with the real connector start');
     assert.ok(site.route.surface.outer.length===4);assert.ok(a.roads.query(...site.route.roadCenter));
     const start=new T.Vector3(...site.route.start),end=new T.Vector3(...site.route.end),direction=end.clone().sub(start).normalize(),side=new T.Vector3(direction.z,0,-direction.x);
     for(const t of [.01,.5,.99])for(const f of [-.49,0,.49]){
@@ -53,6 +60,16 @@ test('context is compiled from connected road regions and measured real architec
   }finally{c.dispose();}
  }
 });
+test('landscape road meshes honor a shared local coordinate origin while world-space queries stay stable',()=>{
+ const material=new T.MeshStandardMaterial(),coordinateOrigin=[25,-12],context=api.buildLandscapeContext(T,{mergeGeometries,materialFor:()=>material,configuration:'grid',coordinateOrigin});
+ try{
+  const street=context.root.getObjectByName('context-street-network'),edge=context.layout.levels[0].edges.find(e=>Array.isArray(e.quad)&&e.quad.length===4),point=edge.quad.reduce((sum,p)=>[sum[0]+p[0]/4,sum[1]+p[1]/4],[0,0]);
+  assert.deepEqual(street.position.toArray(),[coordinateOrigin[0],0,coordinateOrigin[1]]);assert.ok(Math.max(...street.geometry.boundingBox.max.toArray().map(Math.abs))<100);
+  context.root.updateMatrixWorld(true);const ray=new T.Raycaster(new T.Vector3(point[0],100,point[1]),new T.Vector3(0,-1,0)),hit=ray.intersectObject(street)[0],query=context.roads.query(...point);
+  assert.ok(hit&&query);assert.ok(Math.abs(hit.point.y-query.topHeight)<=1e-5,`${hit.point.y} vs ${query.topHeight}`);
+  for(const site of context.sites)assert.deepEqual(site.route.mesh.position.toArray(),[coordinateOrigin[0],0,coordinateOrigin[1]]);
+ }finally{context.dispose();material.dispose();}
+});
 test('authored district data carries the frozen activity role and placement mode without changing the road graph',()=>{
  const expected={west:['exchange','opposed-frontage'],north:['exhibit','opposed-frontage'],east:['exhibit','opposed-frontage'],south:['garden','same-side-free-frontage']};
  for(const configuration of ['grid','ring','terraced']){
@@ -65,6 +82,7 @@ test('authored district data carries the frozen activity role and placement mode
    assert.equal(district.activityRole,activityRole,`${id} carries its authored complete-group role`);
    assert.equal(district.activityMode,activityMode,`${id} declares the frozen frontage strategy`);
    assert.equal(region.activityRole,activityRole,`${id} passes its activity role with the spatial region`);
+   const frame=region.activityFrame.inward,expectedFrame={west:[1,0],east:[-1,0],north:[0,1],south:[0,-1]}[side];assert.deepEqual(frame,expectedFrame,`${id} carries its authored local inward frame as data`);assert.deepEqual(byId.get(id).activityFrame,region.activityFrame,'the placement consumer receives the same frame data');
   }
   assert.equal(design.levels[0].edges.length,configuration==='ring'?32:26,'adding activity metadata must not mutate the existing street graph');
  }
@@ -89,6 +107,37 @@ test('ten opposed districts receive non-family apron regions measured from their
    assert.ok(Math.abs((side==='west'||side==='east'?depth:width)-(axisLength+.12))<1e-9,'tangent length retains the authored district axis plus 6cm end allowance');
   }
  }
+});
+test('opposed activity route candidates use compatible sites, final reveal ranges and the actual road union',()=>{
+ for(const configuration of ['grid','ring','terraced']){
+ const c=setup(configuration);try{
+  assert.equal(typeof api.createOpposedActivityGateCandidates,'function');
+  const plan=api.createOpposedActivityGateCandidates({...c.context,sampleTerrain:c.context.sampleTerrainSurface});
+  assert.equal(plan.status,'route-candidates-ready');assert.equal(plan.groups.length,10);assert.equal(plan.deferredSameSideRegionIds.length,2);
+  for(const group of plan.groups){
+   assert.ok(group.candidates.length>0,group.districtId);
+   for(let i=1;i<group.candidates.length;i++)assert.ok(group.candidates[i-1].tangentOffset<=group.candidates[i].tangentOffset||group.candidates[i-1].tangentOffset===group.candidates[i].tangentOffset&&group.candidates[i-1].sourceSiteId.localeCompare(group.candidates[i].sourceSiteId)<=0,'candidate ordering is finite and stable');
+   const first=group.candidates[0],site=c.context.sites.find(s=>s.id===first.sourceSiteId),district=c.context.design.districts.find(d=>d.id===group.districtId);
+   assert.equal(site.regionId,group.districtId);assert.ok(first.normal.every((v,i)=>Math.abs(v-site.entrance.normal[i])<1e-12));assert.equal(first.activityRegionId,district.activityRegionId);
+   assert.ok(first.roadCrossingDistance>0);assert.equal(first.sourceMeasurementStatus,'entry-section-measured');assert.equal(first.requiresDoorSectionMeasurement,false);assert.ok(first.measuredEntrance.clearWidth>0);assert.ok(first.measuredEntrance.clearHeight>0);
+   const inset=(first.gate.xz[0]-first.streetExit.xz[0])*first.normal[0]+(first.gate.xz[1]-first.streetExit.xz[1])*first.normal[2];assert.ok(Math.abs(inset-.06)<1e-8,'gate is inset .06m from the road curb into its apron');
+   const ground=c.context.sampleTerrainSurface(...first.gate.xz);assert.ok(Math.abs(first.gate.groundY-ground.height)<1e-12);assert.deepEqual(first.gate.groundNormal,ground.normal);assert.equal(first.gate.hostYSource,'final-rendered-terrain-triangle');
+   const support=c.context.roads.query(...first.streetExit.roadTopSample);assert.ok(support);assert.ok(Math.abs(support.topHeight-first.streetExit.roadTopHeight)<1e-6);
+  }
+  const regionalEast=plan.groups.find(g=>g.districtId==='regional/east');assert.ok(regionalEast);assert.ok(regionalEast.candidates.every(c=>!c.sourceSiteId.includes('radial/2/3')),'a radial spur mouth cannot be mistaken for the east perimeter street');
+ }finally{c.dispose();}
+ }
+});
+test('opposed activity route candidates consume an authored oblique orthonormal frame',()=>{
+ const inward=[Math.SQRT1_2,Math.SQRT1_2],tangent=[inward[1],-inward[0]],at=(d,t)=>[inward[0]*d+tangent[0]*t,inward[1]*d+tangent[1]*t],surface={outer:[at(-2,-4),at(0,-4),at(0,4),at(-2,4)],holes:[]};
+ const design={districts:[{id:'oblique/0',activityRole:'exchange',activityMode:'opposed-frontage',activityRegionId:'apron/oblique/0',activitySide:'authored',activityFrame:{inward},center:[0,0]}],regions:[{id:'apron/oblique/0',role:'activity-apron',outline:[at(0,-3),at(4,-3),at(4,3),at(0,3)]}]};
+ const roadPoint=at(-2,0),site={id:'real-entry',regionId:'oblique/0',activityRole:'exchange',activityMode:'opposed-frontage',entrance:{position:[0,0,0],normal:[inward[0],0,inward[1]]},entryMeasurement:{method:'final-sourceRanges-entry-section',clearWidth:1.8,clearHeight:2.4},route:{start:[0,0,0],end:[roadPoint[0],0,roadPoint[1]],width:1.2}};
+ const plan=api.createOpposedActivityGateCandidates({design,layout:{levels:[{id:'context',surfaces:[surface]}]},sites:[site],roads:{query:()=>({topHeight:2})},sampleTerrain:()=>({height:7.25,normal:[0,1,0]})});
+ assert.equal(plan.status,'route-candidates-ready');assert.equal(plan.groups[0].candidates.length,1);
+ const candidate=plan.groups[0].candidates[0],gate=candidate.gate.xz,expected=at(.06,0);assert.ok(Math.hypot(gate[0]-expected[0],gate[1]-expected[1])<1e-8);
+ assert.ok(Math.abs(candidate.roadCrossingDistance-2)<1e-8);assert.deepEqual(candidate.normal,[inward[0],0,inward[1]]);assert.equal(candidate.gate.groundY,7.25);assert.deepEqual(candidate.gate.groundNormal,[0,1,0]);
+ const unsupported=api.createOpposedActivityGateCandidates({design,layout:{levels:[{id:'context',surfaces:[surface]}]},sites:[site],roads:{query:()=>({topHeight:2})},sampleTerrain:()=>null});assert.equal(unsupported.status,'unsatisfied');assert.deepEqual(unsupported.groups,[]);assert.equal(unsupported.unresolved[0].reason,'no-qualified-road-boundary-in-apron');
+ assert.throws(()=>api.createOpposedActivityGateCandidates({design,layout:{levels:[{id:'context',surfaces:[surface]}]},sites:[site],roads:{query:()=>({topHeight:2})}}),/terrain sampler/i);
 });
 test('context topology changes spatial organization and owns geometry while borrowing material semantics',()=>{
  const g=setup('grid'),r=setup('ring');try{

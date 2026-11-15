@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#18201e"><link rel="icon" href="data:,">
+  <title>山息之间 · Three.js完整环境样例</title>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#17211f;color:#e9e5d8;font:13px/1.55 Inter,"PingFang SC","Microsoft YaHei",sans-serif}canvas{display:block;width:100%;height:100%;touch-action:none}
+    .panel{position:fixed;left:clamp(14px,2.8vw,36px);top:clamp(14px,3vh,30px);width:min(300px,calc(100vw - 28px));padding:18px;background:#17211edc;border:1px solid #c3d1bc3b;backdrop-filter:blur(12px);box-shadow:0 12px 48px #08100e55;z-index:2;transition:transform .25s ease,opacity .25s ease}
+    .panel.closed{transform:translateX(calc(-100% - 40px));opacity:0;pointer-events:none}.eyebrow{font-size:9px;letter-spacing:.22em;color:#c5b284;font-weight:700}h1{font:500 27px/1.1 Georgia,"Songti SC",serif;margin:10px 0 8px}.lede{font-size:12px;color:#c5cec3;margin:0 0 15px}.rule{height:1px;background:#c3d1bc30;margin:14px 0}.field{display:grid;gap:6px;margin:12px 0;color:#d4d8ca;font-size:11px}.field select,.field input{width:100%;accent-color:#d4b47c}.field select{padding:8px;background:#202c29;border:1px solid #879b8b54;color:#f0eddf}.actions{display:flex;gap:8px;flex-wrap:wrap}button{padding:8px 11px;background:#33483e;border:1px solid #aebda452;color:#f0eadc;font:inherit;cursor:pointer}button:hover{background:#435b4e}.stats{font:10px/1.6 ui-monospace,monospace;white-space:pre-wrap;color:#bdc8b9}.note{font-size:10px;color:#aeb9ad;margin:10px 0 0}
+    .footer{position:fixed;right:20px;bottom:18px;padding:9px 12px;background:#17211fbd;border:1px solid #c3d1bc30;color:#e0ddcf;font-size:9px;letter-spacing:.14em;z-index:1}.toggle{position:fixed;left:15px;bottom:16px;z-index:3}
+    .load{position:fixed;inset:0;display:grid;place-items:center;background:#17211f;z-index:5;color:#c5b284;letter-spacing:.2em;font-size:10px;transition:opacity .35s}.load.done{opacity:0;pointer-events:none}#error{position:fixed;z-index:8;left:12px;bottom:60px;max-width:calc(100vw - 24px);padding:10px;background:#381c1c;color:#fff;white-space:pre-wrap}
+    @media(max-width:620px){.panel{width:246px;padding:14px}.panel h1{font-size:23px}.footer{right:10px;bottom:12px;font-size:8px}.toggle{left:10px;bottom:11px}}
+  </style>
+  <!-- Supply the matching Three.js r187 build/ and examples/jsm/ at ./vendor/. -->
+  <script type="importmap">{"imports":{"three":"./vendor/build/three.module.js","three/addons/":"./vendor/examples/jsm/"}}</script>
+</head>
+<body>
+  <div class="load" id="load">MOUNTAIN HAMLET · AFTER RAIN</div>
+  <aside class="panel" id="panel">
+    <div class="eyebrow">THREE.JS / ENVIRONMENT ROUTE</div>
+    <h1>山息之间</h1>
+    <p class="lede">雨后山谷里，木构聚落沿坡地分层展开；热泉、桥、林缘与街巷共享真实地形。</p>
+    <div class="rule"></div>
+    <label class="field">观察任务
+      <select id="view"><option value="overview">全场鸟瞰</option><option value="courtyard">温泉与街巷</option><option value="reverse">反向山谷视图</option></select>
+    </label>
+    <label class="field">泉雾强度 <input id="steam" type="range" min="0" max="1" step=".05" value=".65"></label>
+    <div class="actions"><button id="play">暂停动画</button><button id="reset">复位视角</button><button id="panelToggle">收起说明</button></div>
+    <div class="rule"></div><pre class="stats" id="stats">正在构建地形、街巷与建筑…</pre>
+    <p class="note">所有建筑、树木、岩体、水面和材质均由Three.js代码生成；这里的样例用于演示完整环境路线。</p>
+  </aside>
+  <button class="toggle" id="showPanel" hidden>场景信息</button>
+  <div class="footer">DRAG TO ORBIT · SCROLL TO APPROACH · HORIZONTAL 360°</div>
+  <pre id="error" hidden></pre>
+  <script type="module" src="./main.mjs"></script>
+</body>
+</html>

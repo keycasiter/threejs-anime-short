@@ -1,0 +1,331 @@
+{
+  "schemaVersion": 1,
+  "suite": "threejs-anime-short-cross-domain-first-pass",
+  "threeVersion": "0.187.0",
+  "taskFamilies": [
+    "environment",
+    "object",
+    "nature",
+    "mechanism",
+    "cinematic",
+    "interactive"
+  ],
+  "runPolicy": {
+    "runsPerTask": 2,
+    "fromCleanWorkspace": true,
+    "sameSkillSnapshot": true,
+    "samePromptWithinPair": false,
+    "blindReviewRequired": true,
+    "promptPairs": "Each family has one short and one detailed request on the same subject. Keep family, deliverable, viewport, and technical constraints constant; do not add hidden coaching to short prompts."
+  },
+  "tasks": [
+    {
+      "id": "ENV-S",
+      "family": "environment",
+      "promptLength": "short",
+      "subject": "mountain hot-spring hamlet",
+      "prompt": "用 Three.js 做一个雨后山谷温泉村的可漫游场景，交付可运行源码。",
+      "mustShow": [
+        "完整地形与场景边界",
+        "村落、温泉、路径和山体有清晰空间关系",
+        "前中远景与主视觉焦点",
+        "关键物体接地、承托且可读",
+        "默认镜头之外的水平360度视向内容完整"
+      ],
+      "notAllowed": [
+        "只用孤立粗模代表整个村落",
+        "用参考图或预制模型代替 Three.js 生成的场景"
+      ],
+      "observationSet": "environmentOrbit"
+    },
+    {
+      "id": "ENV-D",
+      "family": "environment",
+      "promptLength": "detailed",
+      "subject": "mountain hot-spring hamlet",
+      "prompt": "请用 Three.js 制作雨后山谷温泉村的完整可漫游场景，交付可运行源码与 HTML。场地沿一条弯曲溪谷展开：前景石阶从画面下方通向溪边，中景由三组高低错落的木屋、温泉池和桥组成，远景由两侧山坡收拢到薄雾山口。温泉池应有石砌边缘、入水口、浅滩和水面层次；溪流穿过场地并从低处离开，不要漂浮或断流。建筑有屋顶厚度、檐口、门窗、木柱与石基，附近安排少量竹木、蕨类、苔石和雨后积水。用冷灰蓝环境光与温泉暖光形成层次，水面有细小波纹、局部反射和岸边湿润深色。默认镜头为略俯视三分之四角度，之后支持水平360度查看、俯仰、缩放和复位；从多个方位看去都应有连贯环境。细节按近中远景尺度分配，避免重复贴片和满屏噪声。场景所有物体由 Three.js 代码构造，不使用图片或模型作为最终场景素材。",
+      "mustShow": [
+        "完整地形与场景边界",
+        "村落、温泉、路径和山体有清晰空间关系",
+        "前中远景与主视觉焦点",
+        "关键物体接地、承托且可读",
+        "默认镜头之外的水平360度视向内容完整",
+        "水从高处到低处连续且贴合岸线",
+        "建筑能读出厚度和构造层次",
+        "湿润材质、雾与暖光在真实场景中成立"
+      ],
+      "notAllowed": [
+        "只用孤立粗模代表整个村落",
+        "用参考图或预制模型代替 Three.js 生成的场景"
+      ],
+      "observationSet": "environmentOrbit"
+    },
+    {
+      "id": "OBJ-S",
+      "family": "object",
+      "promptLength": "short",
+      "subject": "antique brass telescope",
+      "prompt": "用 Three.js 做一台古董黄铜天文望远镜的高品质三维展示，交付可运行作品。",
+      "mustShow": [
+        "主体轮廓和关键比例明确",
+        "镜筒、调焦、支架和底座形成可读装配",
+        "展示台/背景与主体共同构成完整镜头",
+        "表面材质能区分黄铜、玻璃、木材与暗部"
+      ],
+      "observationSet": "objectOrbit"
+    },
+    {
+      "id": "OBJ-D",
+      "family": "object",
+      "promptLength": "detailed",
+      "subject": "antique brass telescope",
+      "prompt": "用 Three.js 制作一台古董黄铜天文望远镜的完整产品级展示，交付可运行源码。望远镜采用长镜筒和收窄的目镜端，物镜端有多层压圈与玻璃；镜筒通过带刻度的调焦套环连接目镜，底部由双叉耳支架、水平转轴、俯仰轴和三脚木架支撑。各段之间要有明确的连接关系、厚度与合理装配间隙，调焦环可旋转，镜筒可俯仰。把望远镜放在有木纹、边缘倒角和铭牌的展示台上，背景使用低对比暗色工作室环境，加入柔和主光、金属轮廓光和镜片反光。镜头采用略低于主体高度的四分之三视角，另可拖拽360度旋转并缩放检查背面结构。近处可见精加工边缘、螺钉、刻度和轻微使用痕迹，远处细节不应变成噪点。场景与物体均由 Three.js 代码生成，不用外部模型或渲染图替代。",
+      "mustShow": [
+        "主体轮廓和关键比例明确",
+        "镜筒、调焦、支架和底座形成可读装配",
+        "展示台/背景与主体共同构成完整镜头",
+        "表面材质能区分黄铜、玻璃、木材与暗部",
+        "旋转调焦和俯仰动作可见且不破坏连接",
+        "背面视角结构完整"
+      ],
+      "observationSet": "objectOrbit"
+    },
+    {
+      "id": "NAT-S",
+      "family": "nature",
+      "promptLength": "short",
+      "subject": "basalt waterfall grotto",
+      "prompt": "用 Three.js 做一个瀑布进入玄武岩洞穴的自然场景，细致、完整，可从四周观看。",
+      "mustShow": [
+        "崖体、洞口、瀑布、落水潭和周围地表完整",
+        "水体与岩壁有可信交接",
+        "岩体大形、中层结构和局部细节有层次",
+        "360度视向不穿帮"
+      ],
+      "observationSet": "natureOrbit"
+    },
+    {
+      "id": "NAT-D",
+      "family": "nature",
+      "promptLength": "detailed",
+      "subject": "basalt waterfall grotto",
+      "prompt": "请用 Three.js 制作一处玄武岩瀑布洞穴的完整自然场景。主要崖壁呈弧形围合，中央偏右有一条窄而有厚度变化的瀑布，从层叠岩台落入洞前的深水潭，再经前景浅水槽流出。洞口上沿有受水切割形成的错层柱状玄武岩，侧壁保留大块断裂面、水平层理与几处向外突出的台阶；洞内明显变暗但仍可辨认后壁和落水区。岸边有湿润岩石、细碎砾石、少量苔藓与水生植物，远处是较低的林坡和雾气。设置主视角表现瀑布、洞口和水潭的关系，同时提供完整环绕观察；从背面不能看到空白平面、突然截断的水面或岩壁背壳。水雾与泡沫沿实际水流位置分布，水面反光、岩石粗糙度和阴影随空间变化。所有形体由可复建的 Three.js 几何、程序材质和粒子产生，不使用预制模型或图片作为场景内容。",
+      "mustShow": [
+        "崖体、洞口、瀑布、落水潭和周围地表完整",
+        "水体与岩壁有可信交接",
+        "岩体大形、中层结构和局部细节有层次",
+        "360度视向不穿帮",
+        "瀑布有分段速度和落点反馈",
+        "背面闭合或有真实可见的场景内容"
+      ],
+      "observationSet": "natureOrbit"
+    },
+    {
+      "id": "MECH-S",
+      "family": "mechanism",
+      "promptLength": "short",
+      "subject": "four-stroke engine cutaway",
+      "prompt": "用 Three.js 做一个可交互讲解四冲程发动机工作过程的三维剖面，交付完整页面。",
+      "mustShow": [
+        "主要运动部件关系正确",
+        "剖切能看清内部关键件",
+        "运行状态由同一套可控时间驱动",
+        "讲解UI与三维视图同步"
+      ],
+      "observationSet": "mechanismStates"
+    },
+    {
+      "id": "MECH-D",
+      "family": "mechanism",
+      "promptLength": "detailed",
+      "subject": "four-stroke engine cutaway",
+      "prompt": "请用 Three.js 制作一个四冲程单缸发动机的可交互三维剖面讲解。透明外壳或剖切窗口要让活塞、连杆、曲轴、进排气门、火花塞和燃烧室同时可见；用真实轴线和枢轴连接活塞往复与曲轴旋转，两个气门按配气相位启闭。按进气、压缩、做功、排气四阶段播放，可暂停、逐步切换、拖动进度并重置；UI当前阶段、活塞位置、曲轴角度和气门状态必须来自同一个时间状态函数。用不同但克制的颜色标识进气、压缩/燃烧、排气路径，并明确区分运动零件与静止机体。模型放在完整的台面/展台环境中，镜头采用能同时看清剖面与曲柄连杆运动的三分之四视角，支持360度检查、缩放和复位。零件要有合理厚度、连接件、紧固点、壳体接缝和材质差异；旋转后仍保持部件关系正确。场景代码可复建，不使用外部模型。",
+      "mustShow": [
+        "主要运动部件关系正确",
+        "剖切能看清内部关键件",
+        "运行状态由同一套可控时间驱动",
+        "讲解UI与三维视图同步",
+        "四阶段可定点复现并显示同一时刻",
+        "完整360度机体与底座"
+      ],
+      "observationSet": "mechanismStates"
+    },
+    {
+      "id": "CINE-S",
+      "family": "cinematic",
+      "promptLength": "short",
+      "subject": "moonlit koi pond loop",
+      "prompt": "用 Three.js 做一段月夜锦鲤池的高品质无缝循环短片，交付源码和视频。",
+      "mustShow": [
+        "完整场景而非漂浮主体",
+        "镜头运动有明确起止和节奏",
+        "鱼、水、灯光动态互相呼应",
+        "循环接缝可验证"
+      ],
+      "observationSet": "filmLoop"
+    },
+    {
+      "id": "CINE-D",
+      "family": "cinematic",
+      "promptLength": "detailed",
+      "subject": "moonlit koi pond loop",
+      "prompt": "用 Three.js 制作一段10秒、无缝循环的月夜锦鲤池短片，交付可复建源码及视频。方形石池处于庭院中央，池边有一座低矮木桥、一株修剪过的松树、纸灯笼、石灯和岸边水草；前景用石头与低矮枝叶形成框景，背景有院墙、远处屋檐和月色天空。三尾锦鲤沿不同深度的闭合轨迹缓慢游动，鳍尾有细微摆动，水波从鱼体附近扩散并与池壁相交，灯笼暖光在水面出现柔和倒影。镜头从低角度的池边近景缓慢推移到略俯视的三分之四全景，再回到起始位姿；首尾相机、灯光、鱼的位置和速度、水波状态都应连续可对齐，不能简单瞬间跳回。材质区分石材、木材、鳞片、湿润水面和半透明灯纸，动态节奏安静但有细节。所有场景物体由 Three.js 代码生成，最终帧由同一时间参数可重复重建。",
+      "mustShow": [
+        "完整场景而非漂浮主体",
+        "镜头运动有明确起止和节奏",
+        "鱼、水、灯光动态互相呼应",
+        "循环接缝可验证",
+        "首尾帧的关键状态连续",
+        "近中远景元素均有适当动态"
+      ],
+      "observationSet": "filmLoop"
+    },
+    {
+      "id": "INT-S",
+      "family": "interactive",
+      "promptLength": "short",
+      "subject": "floating observatory island",
+      "prompt": "用 Three.js 做一个可360度环绕、缩放和重置的漂浮天文台岛屿场景。",
+      "mustShow": [
+        "岛屿有完整边界、上下厚度和背面",
+        "环绕各方向有连续场景内容",
+        "缩放范围可用且不穿过地表",
+        "控制入口清楚"
+      ],
+      "observationSet": "interactiveOrbit"
+    },
+    {
+      "id": "INT-D",
+      "family": "interactive",
+      "promptLength": "detailed",
+      "subject": "floating observatory island",
+      "prompt": "请用 Three.js 制作一个完整的漂浮天文台岛屿，可拖动水平360度环绕、上下俯仰、滚轮缩放并一键复位。漂浮岛有不规则岩层底座，顶部是一座由圆顶观测台、连接廊、维护平台和信号灯组成的小型天文设施；入口前有落地平台和通往码头的阶梯，岛边分布稀疏针叶树、低矮灌木、岩石和发光标记。背景包含远处云层、月亮和几座不同距离的浮岛，近景有缓慢漂移的小云团。默认视角用三分之四俯视展现观测台、平台、岛屿边缘和底部岩层；环绕到背面、正下方及俯视时，所有方向都有连续可读的几何与背景，不出现黑幕、空壳或突然截断。使用冷月光和观测站暖窗光，薄雾按深度变化；层次结构不能依赖固定镜头遮挡。场景全部通过 Three.js 代码构建，不用图片或模型。",
+      "mustShow": [
+        "岛屿有完整边界、上下厚度和背面",
+        "环绕各方向有连续场景内容",
+        "缩放范围可用且不穿过地表",
+        "控制入口清楚",
+        "俯视、仰视、背面视向皆有连贯内容",
+        "地形、建筑、植被、远景和雾光层次完整"
+      ],
+      "observationSet": "interactiveOrbit"
+    }
+  ],
+  "observationSets": {
+    "environmentOrbit": {
+      "mode": "orbit around the authored focal region with the task prompt’s default composition as the hero view",
+      "azimuthDegrees": [
+        0,
+        45,
+        90,
+        135,
+        180,
+        225,
+        270,
+        315
+      ],
+      "elevationDegrees": [
+        20
+      ],
+      "additionalViews": [
+        {
+          "name": "overhead",
+          "azimuthDegrees": 45,
+          "elevationDegrees": 70
+        },
+        {
+          "name": "low-underside",
+          "azimuthDegrees": 225,
+          "elevationDegrees": -20
+        }
+      ],
+      "recordFocusAndDistancePerRun": true
+    },
+    "objectOrbit": {
+      "mode": "orbit around object bounds center at a distance that keeps the full object in frame",
+      "azimuthDegrees": [
+        0,
+        45,
+        90,
+        135,
+        180,
+        225,
+        270,
+        315
+      ],
+      "elevationDegrees": [
+        15
+      ],
+      "additionalViews": [
+        {
+          "name": "high-detail",
+          "azimuthDegrees": 45,
+          "elevationDegrees": 45
+        }
+      ],
+      "recordFocusAndDistancePerRun": true
+    },
+    "mechanismStates": {
+      "views": [
+        "default",
+        "front",
+        "left",
+        "right",
+        "rear"
+      ],
+      "stateSamples": [
+        "intake",
+        "compression",
+        "power",
+        "exhaust",
+        "mid-transition"
+      ],
+      "recordStateReadoutAndCameraPerRun": true
+    },
+    "filmLoop": {
+      "timeFractions": [
+        0,
+        0.25,
+        0.5,
+        0.75,
+        0.999
+      ],
+      "transitionChecks": [
+        "last-to-first loop seam",
+        "camera pose continuity",
+        "moving object continuity",
+        "water/particle continuity"
+      ],
+      "recordResolutionAndFrameRatePerRun": true
+    },
+    "interactiveOrbit": {
+      "mode": "default view plus orbit around scene center",
+      "azimuthDegrees": [
+        0,
+        45,
+        90,
+        135,
+        180,
+        225,
+        270,
+        315
+      ],
+      "elevationDegrees": [
+        20
+      ],
+      "additionalViews": [
+        {
+          "name": "overhead",
+          "azimuthDegrees": 45,
+          "elevationDegrees": 75
+        },
+        {
+          "name": "underside",
+          "azimuthDegrees": 225,
+          "elevationDegrees": -35
+        }
+      ],
+      "recordFocusAndDistancePerRun": true
+    }
+  }
+}

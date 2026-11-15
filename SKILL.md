@@ -15,32 +15,54 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 | 请求 | 执行入口 |
 |---|---|
-| 新作品 | 读[唯一生产流程](references/production-workflow.md)，按依赖完成设计、全场草案、完整代表关系、扩场、统一表现与交付 |
+| 新作品 | 先按[最终交付选择唯一主路线](references/task-routes.md)，再读[唯一生产流程](references/production-workflow.md)，按依赖完成设计、全场草案、完整代表关系、扩场、统一表现与交付 |
 | 修改已有作品 | 打开当前入口和画面，按缺陷进入下表对应模块；保留仍有效的布局、生成器与参数 |
-| 计划或局部机制 | 交付请求范围的可执行方案/实验；未实施的函数与未检查的效果明确标注 |
+| 计划或局部机制 | 先按相应[主路线](references/task-routes.md)定位方法，保持请求范围并交付可执行方案/实验；未实施的函数与未检查的效果明确标注 |
 | 研究参考实现 | 读[研究方法](references/research-methods.md)，沿输入→生成/更新→消费者→实际画面解释机制，再设计通用迁移方法 |
 
-继承用户已选方向与约束。短需求由Agent补成具体设计，不把缺少长提示词当成省略环境、结构和细节的理由。自由交互场景默认水平360°环绕、合理俯仰、缩放与复位；影片使用导演相机，两者并存时分别管理状态。
+继承用户已选方向与约束。短需求由Agent补成具体设计，不把缺少长提示词当成省略环境、结构和细节的理由。自由交互场景默认水平360°环绕、合理俯仰、缩放与复位；影片使用导演相机，两者并存时分别管理状态。所有最终允许环绕的环境、物体或机制作品，都执行[跨路线观察覆盖接力](references/task-routes.md#非影片场景的观察覆盖接力)；360°是观看范围验收，不是把任务归类为交互导览的理由。
+
+## 开工与最终交付门
+
+新作品进入大规模建模前，先确认 Three.js/addons 版本、目标浏览器与视口、运行入口、实际取景/交互的检查方式和证据保存位置；将这些检查纳入首个可运行切片，先在真实浏览器看见并操作一组包含主体、承托/邻接、目标光照的代表关系，再扩展同类内容。运行通道失败时，先修环境或选可用的本机检查路径，不以静态语法、HTML闭包或导出成功替代画面检查。
+
+最终交付前，必须从准备交付的入口/文件实际运行当前构建；按任务检查完整空间与细节景别、承诺视向/状态、主要交互或完整编码影片，修复后复查受影响视图。留下绑定当前构建与目标视口的截图/片段及简明观察结论，并按[可复核证据记录](references/validation.md#可复核证据记录)关联稳定检查点、复现步骤、实际环境、观察结论和未解决问题。没有实际查看到的方向或状态明确记为未检查；未完成视觉/交互检查时可以交付可运行产物，但不能把它描述为已验收的最终视觉成品。技术通过与视觉结论分开报告。
+
+## 按最终交付选择主路线
+
+先依据用户最终要看的/操作的交付物选**一个主路线**，再按路线文档组合空间、构造、自然形态、材光、动态等责任模块。混合需求按“缺了哪种能力，成品就不成立”来确定主路线；同一任务不要并列启动多条完整流程。自然形态是可组合的形体/材质/动态模块，按场景尺度并入环境路线，或按对象展示路线。
+
+| 最终交付的核心 | 主路线 |
+|---|---|
+| 多区域地点、城市、园林、地貌或完整环境 | [环境场景](references/task-routes.md#环境场景) |
+| 单个主体及其支撑/展示空间 | [物体展示](references/task-routes.md#物体展示) |
+| 零件或解剖结构随时间运动、需要解释状态关系 | [机制讲解](references/task-routes.md#机制讲解) |
+| 固定时长、镜头和节奏控制的成片 | [导演短片](references/task-routes.md#导演短片) |
+| 交互导航、空间/对象选择或状态操作本身是主要交付 | [交互导览](references/task-routes.md#交互导览) |
+
+打开路线后，先建立路线指定的数据/状态契约和首个可运行切片，再按任务加入责任模块。详细顺序、当前可复用入口、验证命令和已知缺失项见[任务路由](references/task-routes.md)。环境路线的完整代码纵向样例是[山息之间](assets/examples/world-showcase/index.html)及其[场景工厂](assets/examples/environment-world.mjs)；物体路线是[精密相机影棚](assets/examples/product-showcase/index.html)及其[资产工厂](assets/examples/product-camera.mjs)；机制路线是[往复之间](assets/examples/mechanism-showcase/index.html)，交互控制与影片共用绝对时间状态。它们演示可迁移的实现接力，不规定新题材的美术风格。路线模板只是决策入口；示例实验台不是最终作品模板，不能把跑通实验称为完成作品。
 
 选生成器、接模块或实现结构重建时，先读[实现基础](references/implementation-foundations.md)。写代码前，为每个关键对象留一行实现契约：**可见/功能特征 → 表示及换路条件 → 稳定输入/坐标架 → 真实消费者 → 参数变化后的重建范围 → 资源所有者/释放顺序**。输入必须实际控制生成器；表面、端口、附件和材质字段必须由真实几何/状态产生并交给明确消费者；共享资源标为借用，不重复释放。无需为这行契约另造一套JSON审批表或全局依赖图。指南中的[运行例](assets/examples/foundation-lab/index.html)把回转壳与弯轴放样接到真实网格、表面查询、附件、同步替换、失败回退和显式资源scope；先运行、再按当前对象替换设计参数。已有工具和待开发能力分开选择。涉及方向/坐标运算、扇区、静态面积、路径距离或旋转顺序时，读[空间操作](references/spatial-operations.md)的完整本地ESM，先核对度量空间和副作用。
 
 制作任意截面/闭合凸边界口沿/曲壳/融合体、分层区域或统一PBR/分段受光时，读[核心三线接力](references/core-systems.md)，按视觉标尺进入对应真实生成器，并在[完整空间入口](assets/examples/core-lab/index.html)核对几何—世界—材光的消费链；原例的布局/数值只作方法演示。
 
+世界范围很大或局部结构接近Float32精度时，不要把整场世界坐标直接写入网格。先按互相连接的空间块选择局部原点，在该块坐标中生成并验证相关几何，再用`Object3D.position`把局部网格放回场景；支承查询、标注和设计参数保持世界坐标契约。多个网格必须有可核对的共同空间变换，局部原点不能掩盖真实的轮廓塌缩或拓扑错误。地形/道路的可运行接力见[局部原点与浮点精度](references/terrain-roads.md#opt-in-constrained-triangulated-surface)。
+
 开始写空间、资产、分布或动态函数时，进入[Three.js代码接力](references/code-guidance.md)对应小节：先把设计关系写成实际输入，再沿可运行配方接到网格、端口、材料或更新函数。随包[完整工厂](assets/examples/guided-assembly.mjs)和[运行入口](assets/examples/guided-world/index.html)展示主形/邻件/受光的同源实现；新题材替换设计和生成规则，保留适用接口。参数或动作接好即读回实际消费者，再扩展同族对象。
 
-空间草案先按[观看与遮挡](references/visual-construction.md#1-先让关键部位能被看清)让目标部位和支撑/框架同时成立；重复铺覆、同族资产与近景曲面开工前，分别用该页的完整轮廓裁切、结构变体与采样配方。材料先在真实资产/邻件的同机位中校准再扩场；界面文字与合法近景共同设计。工具定位具体损失，目标视图中的可读性与完成度决定是否进入下一段制作。
+空间草案先按[观看与遮挡](references/visual-construction.md#1-先让关键部位能被看清)让目标部位和支撑/框架同时成立；重复铺覆、同族资产与近景曲面开工前，分别用该页的完整轮廓裁切、结构变体与采样配方。材料先在真实资产/邻件的同机位中校准再扩场；界面文字与合法近景共同设计。包含CSS2D标签或随相机移动的DOM说明时，在每个关键视图/时刻用[屏幕覆盖层审计](references/anchored-labels.md#屏幕空间审计与可见性检查)读回实际矩形，处理越界、互相遮挡和界面区冲突；该检查不能替代三维实体遮挡与画面可读性审查。工具定位具体损失，目标视图中的可读性与完成度决定是否进入下一段制作。
 
 ## 按责任读取
 
 | 当前工作 | 方法 | 可执行能力 |
 |---|---|---|
 | 参考、宏微观拆解、短需求到规格 | [视觉设计](references/visual-design.md) | 总图/剖面、对象族、特征到构造与目标视图 |
-| 构图、白模、完整世界与多尺度 | [空间搭建](references/scene-layout.md)；生成图/街区/房间时读[算法配方](references/algorithm-recipes.md#世界连接图与局部语法)；多区域用途需扩成完整目的地时读[活动组接力](references/world-methods.md#区域用途到完整活动组)；既有地形局部改形且需保留道路时读[约束地形](references/constrained-terrain.md) | 共享布局/表面、可调用连接图/地块、完整活动组候选分配与区域/近中远规则、地形/道路共形接力 |
+| 构图、白模、完整世界与多尺度 | [空间搭建](references/scene-layout.md)；生成图/街区/房间时读[算法配方](references/algorithm-recipes.md#世界连接图与局部语法)；多区域用途需扩成完整目的地时读[活动组接力](references/world-methods.md#区域用途到完整活动组)；既有地形局部改形且需保留道路时读[约束地形](references/constrained-terrain.md)、[坡度接缝](references/terrain-interface-field.md) | 共享布局/表面、可调用连接图/地块、完整活动组候选分配与区域/近中远规则、地形/道路共形接力 |
 | 主形、中层、厚度/开口、连接与资产工厂 | [构造方法](references/procedural-construction.md)；[几何配方](references/geometry-recipes.md) | [截面工具](references/profile-geometry.md)、[开间样件](assets/examples/procedural-bay.mjs)、端口/静态装配 |
 | 群体与具体资产细节 | [分布方法](references/detail-distribution.md)；[表面方法](references/surface-detail.md) | 原型/实例、实际宿主/完整足迹、区域与米制通道 |
 | 材光、反射、后期与自写效果 | [渲染选择](references/rendering-choices.md)；[效果配方](references/effect-recipes.md)；部件/世界坐标驱动的渐变、有限扫带或径向响应读[坐标响应](references/coordinate-response.md) | 自定义多遍时再读[渲染契约](references/render-contracts.md) |
-| 动作、资源、预算与交互 | [运行与规模](references/motion-and-scale.md)；[相机方法](references/camera-interaction.md)；涉及点击/选择/物体反馈时读[选择状态接力](references/selection-feedback.md) | 绝对时间/历史重建、真实接触、交互与观看范围；最近射线命中驱动稳定ID和对象级反馈 |
-| 复用现有模块或补算法 | [工具目录](references/production-toolkit.md)；[算法配方](references/algorithm-recipes.md)；[条件库接线](references/library-integration.md) | 随包实现与需适配方法分明，按结构、场、运动与规模选择 |
+| 动作、资源、预算与交互 | [运行与规模](references/motion-and-scale.md)；[相机方法](references/camera-interaction.md)；涉及点击/选择/物体反馈时读[选择状态接力](references/selection-feedback.md)；需要空间标签时读[锚定标签](references/anchored-labels.md) | 绝对时间/历史重建、真实接触、稳定ID反馈；按尺寸语义选DOM或Sprite标签，明确批量渲染、遮挡与资源归属 |
+| 复用现有模块或补算法 | [工具目录](references/production-toolkit.md)；[算法配方](references/algorithm-recipes.md)；[约束高程区与道路接力](references/terrain-grading.md)、[通用坡度接缝字段](references/terrain-interface-field.md)；[条件库接线](references/library-integration.md) | 随包实现与需适配方法分明，按结构、场、运动与规模选择 |
 | 最终检查与交付 | [统一验收](references/validation.md)；影片再读[导出方法](references/video-export.md) | HTML依赖、真实操作、接触粗检、视频导出与独立后验 |
 
 按需读相关小节，已有工具先确认输入输出与版本，未实现的项目函数不当作现成API。品质依据是目标与当前真实画面：字段齐全、工具通过或参考好看均不等于作品达标。只交用户要求的阶段或成品；制作时使用简明brief、共享数据、源码和问题/验证记录。

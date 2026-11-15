@@ -11,8 +11,15 @@
     "near/south": "same-side-free-frontage",
     "default": "opposed-frontage"
   },
+  "frontageFrames": {
+    "west": {"inward": [1, 0]},
+    "east": {"inward": [-1, 0]},
+    "north": {"inward": [0, 1]},
+    "south": {"inward": [0, -1]}
+  },
   "opposedApron": {
     "inwardDepth": 7.6,
-    "edgeExpansion": 0.06
+    "edgeExpansion": 0.06,
+    "gateInset": 0.06
   }
 }

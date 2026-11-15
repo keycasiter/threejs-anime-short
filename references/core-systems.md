@@ -23,10 +23,10 @@
 | 无叠面道路与分层区域 | [world-layout](../assets/scene/world-layout.mjs)；[空间生成](world-layout.md) | 并集/孔、完整足迹、显式层间连接；不自动设计城市、房间或导航 |
 | 真实原型沿街组团 | [frontage-neighborhood](frontage-neighborhood.md) | 用途/完整包络/入口→混合组团pose与诊断；不自动设计用途或保证填满 |
 | 道路贴合最终地表 | [terrain-roads](terrain-roads.md) | 并集/孔×实际地表三角→有厚度网格/查询；默认规则网格，另有严格校验的显式共形三角输入；单值地表，非桥洞/多层 |
-| 既有网格上的局部地形约束与道路保形 | [constrained-terrain](constrained-terrain.md)；消费端见[terrain-roads](terrain-roads.md) | 规则高度场→凸约束/保护走廊→共形三角网格→最终道路支承；有工作量预算，不覆盖任意输入地形或完整地貌求解 |
+| 多高程区、既有表面保护与最终道路支承 | [terrain-grading](terrain-grading.md)；底层网格见[constrained-terrain](constrained-terrain.md)、消费端见[terrain-roads](terrain-roads.md) | 冲突检查→定高区/连续过渡→保护区→共形三角网格→最终道路；限凸域、单值Float32高度网格和固定源采样，不含自适应细分或完整地貌求解 |
 | PBR与分段受光材料 | [look-palette](../assets/materials/look-palette.mjs)；[材光接力](look-development.md) | 程序材料/Toon梯度、独立基色、缓存/归属；复杂透明/体积/GI另选方案 |
 | 同源直射灯与影区 | [lighting-rig](../assets/rendering/lighting-rig.mjs)；同上 | 方向/Box3派生主辅光/target/阴影；反射环境另接原[天空/PMREM](../assets/rendering/scene-environment.mjs) |
-| 近远与观察任务 | [projected-detail](../assets/runtime/projected-detail.mjs)、[observation-view](../assets/scene/observation-view.mjs) | 投影尺度/迟滞、真实样点的候选机位排序；不是完整HLOD或自动构图评分 |
+| 近远与观察任务 | [projected-detail](../assets/runtime/projected-detail.mjs)、[observation-view](../assets/scene/observation-view.mjs) | 投影尺度/迟滞、遮挡与关键表面最小像素范围、多视图样点覆盖审计；不是完整HLOD或自动构图评分 |
 | 用途进入真实结构程序 | [区域程序](region-programs.md)；[工厂](../assets/examples/region-programs.mjs) | 展陈/作业/围合的不同开口、屋盖、内部和配套；是建筑构造方法，不是所有题材的默认三分法 |
 | 地表与保留场地连续接力 | [constrained-height-field](../assets/environment/constrained-height-field.mjs) | 矩形保留面、平滑过渡及解析导数；网格/法线/落点共用，悬挑/洞穴另选表示 |
 
@@ -124,9 +124,56 @@ PMREM输出使用锁版r187归属边界：同步调用期间只临时包装当�
 
 样点按相关可见面与任务选取；只取同一侧的点会把某个朝向的偏好藏进分数。需要比较互补方向时采样相应表面，候选顺序保留设计者的构图偏好；近景仍查看界面遮挡、画幅裁切和整体负形。
 
-关键接口用`requiredFeatures:[{id,points,minVisibleFraction}]`分别检查，不能让大量主体样点补偿一个消失的落点。`frameBounds`只检查整个叙述包络是否入画，`marginPixels`保留画幅边距；包围盒不参与表面可见性替代。所有候选都不满足时仍返回真实未满足状态，需要重新设计机位或上游空间，不能将最高分当通过。页面遮挡同时影响关键feature比例。
+关键接口用`requiredFeatures:[{id,points,minVisibleFraction}]`分别检查，不能让大量主体样点补偿一个消失的落点。若该关系还必须在此视图中达到可读尺寸，可加`minProjectedBoundsPx:{width,height}`。尺寸由当前语义任务、视口和实际预期景别制定；水平细线可把height设为0，单独检查其宽度。该约束只统计未被三角遮挡、也未被DOM覆盖的实际样点投影包围范围，不推断细线连续性、面可见率或美观；样点必须足以表示目标特征。
+
+```js
+import {selectObservationView} from './assets/scene/observation-view.mjs';
+
+export function rankAuthoredViews(THREE,{
+  candidates,primarySurfaceSamples,visibleStructure,requiredWorldEnvelope,
+  entryAndConnectionSamples,roofEdgeSamples,viewport
+}){
+  const choice=selectObservationView(THREE,{candidates,
+    points:primarySurfaceSamples,occluders:visibleStructure,
+    frameBounds:requiredWorldEnvelope,viewport,
+    requiredFeatures:[
+      {id:'entry-to-platform',points:entryAndConnectionSamples,
+        minVisibleFraction:1,minProjectedBoundsPx:{width:72,height:20}},
+      {id:'roof-edge',points:roofEdgeSamples,
+        minVisibleFraction:.9,minProjectedBoundsPx:{width:110,height:0}}
+    ]});
+  return {choice,unresolved:choice.inspection.features.filter(feature=>!feature.satisfied),
+    envelopeInside:choice.inspection.envelopeInside};
+}
+```
+
+本例阈值只示范数据形状，不是通用可读性标准；从目标截图与相邻景别先确定项目阈值。`frameBounds`只检查整个叙述包络是否入画，`marginPixels`保留画幅边距；包围盒不参与表面可见性替代。所有候选都不满足时仍返回真实未满足状态，需要重新设计机位或上游空间，不能将最高分当通过。页面遮挡同时影响关键feature比例。
 
 互补面由观察集合接力：给真实表面样点稳定ID并注明所属构件/端部/朝向，每个视图承担能同时看见的关系，再核对视图集合的联合覆盖。正面与背面互补的目标不应被写成单张图全部可见；也不能通过降低总比例掩盖具体缺失项。局部机位检查连接双方，整场反向机位另检查上下文，二者职责明确。
+
+用`auditObservationSet`对一组最终承诺视图核对样点并集；下例为完整调用函数，输入机位由场景规格预先登记，`featureSpecs`由实际对象工厂提供表面采样，并为入口、支撑、背面等关键关系分别给稳定ID：
+
+```js
+import {auditObservationSet} from './assets/scene/observation-view.mjs';
+
+export function auditSceneViews(THREE,{views,featureSpecs,occluders,viewport}){
+  const report=auditObservationSet(THREE,{views,features:featureSpecs,
+    occluders,viewport,fovDegrees:41,epsilon:.001});
+  return {complete:report.complete,
+    features:report.features.map(feature=>({id:feature.id,
+      coverageFraction:feature.coverageFraction,
+      uncoveredSampleIndices:feature.uncoveredSampleIndices,
+      perSampleViewCounts:feature.perSampleViewCounts,
+      satisfied:feature.satisfied})),
+    perView:report.viewResults.map(view=>({id:view.id,
+      features:view.features.map(feature=>({id:feature.id,
+        visibleSampleIndices:feature.visibleSampleIndices,
+        projectedBoundsPx:feature.projectedBoundsPx,
+        projectedSizeSatisfied:feature.projectedSizeSatisfied}))}))};
+}
+```
+
+每个feature用`minCoverageFraction`声明样点覆盖比例；`minProjectedBoundsPx`声明某一视图必须达到的屏幕范围，未达到时该视图不会为该特征贡献覆盖。`complete`仅表示已登记样点与阈值满足：采样疏漏可能漏掉实际空洞，结果不代表连续面覆盖或画质评分。视图集需覆盖最终交付实际允许的方位/距离/俯仰与任务所需区域近景；机位重复不能增加样点并集覆盖。
 
 局部机位的前进、侧移和抬高沿对象的实际法线/水平切向/+Y构造，再转入世界坐标。资产转向道路后，硬加世界X可能变成向前推近并裁掉包络；用真实变换后的完整bounds复核全部近景与背向任务。
 
