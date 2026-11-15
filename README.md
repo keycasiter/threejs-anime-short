@@ -535,4 +535,4 @@ Three.js r187相关回归`52/52`通过。冻结C1探针中grid/terraced通过，
 
 变更：新增r187 [`createGroundedWalkMotor`](assets/scene/walk-motor.mjs)，以短距离子步沿X/Z轴尝试移动，调用现有最终地面查询重新求高程，并把角色净空交给项目碰撞回调。相机文档说明该贴地路线与Capsule/Octree自由物理路线的职责边界，禁止两套更新同时拥有角色位置；Skill入口与工具目录增加接力。
 
-验证：贴地马达测试7/7、跟随相机回归6/6、离线HTML闭包4/4、任务路由校验及`quick_validate.py`通过。CUA在本地坡道场景观察到WASD位移与坡面路线运行，浏览器error/warn为空。场景依旧是低模机制验证；截图未存档哈希，独立Agent采用、完整障碍矩阵、移动端、性能、视觉盲评均未完成，因此不宣称画质提升或最终视觉验收。详细证据与HTML哈希见[`前向试跑记录`](evals/current-candidate-pilot/first-person-walk-forward-r1/README.md)，该记录属于本地评估，不进入Skill包。
+验证：贴地马达测试7/7、跟随相机回归6/6、离线HTML闭包4/4、任务路由校验及`quick_validate.py`通过。完整候选快照检查覆盖653个本地Markdown链接、135个章节锚点和3个重建的内部vendor链接。CUA在本地坡道场景观察到WASD位移与坡面路线运行，浏览器error/warn为空。场景依旧是低模机制验证；截图未存档哈希，独立Agent采用、完整障碍矩阵、移动端、性能、视觉盲评均未完成，因此不宣称画质提升或最终视觉验收。详细证据与HTML哈希见[`前向试跑记录`](evals/current-candidate-pilot/first-person-walk-forward-r1/README.md)，该记录属于本地评估，不进入Skill包。

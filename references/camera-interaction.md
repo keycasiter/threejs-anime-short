@@ -111,7 +111,7 @@ function moveOnFrame(dt, inputX, inputY) {
 }
 ```
 
-示例中的`PointerLockControls`只旋转相机；调用其`moveForward()`/`moveRight()`会绕开ground motor和净空回调，所以行走位置由`moveOnFrame`单独持有。若需要跳跃、跌落、推挤或高速运动，改由Capsule+Octree物理更新统一拥有角色位置，再逐帧把胶囊端点映射到相机；勿叠加两套位移更新。可运行的贴地斜坡/台阶/门洞测试页见[第一人称行走前向样例](../evals/current-candidate-pilot/first-person-walk-forward-r1/index.html)（评测产物不随Skill包发布）。验收至少覆盖平地、目标坡度边界、上/下台阶阈值、门洞/窄通道、墙角滑动、断面边缘与复位；记录首帧、移动后相机/脚底高度、阻挡状态和实屏视图。
+示例中的`PointerLockControls`只旋转相机；调用其`moveForward()`/`moveRight()`会绕开ground motor和净空回调，所以行走位置由`moveOnFrame`单独持有。若需要跳跃、跌落、推挤或高速运动，改由Capsule+Octree物理更新统一拥有角色位置，再逐帧把胶囊端点映射到相机；勿叠加两套位移更新。验收至少覆盖平地、目标坡度边界、上/下台阶阈值、门洞/窄通道、墙角滑动、断面边缘与复位；记录首帧、移动后相机/脚底高度、阻挡状态和实屏视图。
 
 ### 第三人称跟随：相机臂扫掠、绕障与平滑
 
