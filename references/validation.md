@@ -54,6 +54,12 @@ function renderFrame(){
 console.table(runtimeProbe.snapshot());
 ```
 
+### 浏览器执行通道与本地预览
+
+真实页面优先通过当前可用的 CUA/内置浏览器或已运行的浏览器检查。Three.js 本机作品用 `localhost` 预览即可，不需要上传公网或配置 HTTPS。
+
+在 macOS Codex Seatbelt 沙盒内，不要从 shell、Node 或 Playwright 再启动系统 Google Chrome/Chrome for Testing。新进程可能在 macOS 应用注册阶段 `TransformProcessType → _RegisterApplication` 处退出，页面和 DevTools 尚未启动；反复更换启动包装器会重复产生系统崩溃记录/提示。改用已运行的 CUA 浏览器或内置浏览器。确需新浏览器进程时，只通过已批准的沙盒外执行通道启动一次；若没有该通道，明确记录浏览器检查未完成，不要将这个启动失败归为作品故障，也不要用重试生成更多崩溃。
+
 入口模块未加载时探针代码也无法运行，因此模块加载/import错误、Three.js shader/program诊断与网络失败仍须查看浏览器Console/Network；需要覆盖启动前导入故障时，使用Console本身或在HTML模块入口前加短暂的经典脚本监听器。通过模块入口加载探针后，在DevTools读取`window.__threeRuntimeProbe.snapshot()`。`status: clear`只表示有成功渲染标记且当前没有捕获异常；不证明画面可见或美术质量合格。`drawCalls`也不能证明主体进入视锥，仍须看真实页面截图。
 
 ### 执行顺序与停线

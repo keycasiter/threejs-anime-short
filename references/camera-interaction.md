@@ -35,6 +35,33 @@ function pickEntity(event,canvas,camera,roots){
 
 构图/占幅按[空间方法](scene-layout.md)选择，不自动用全场AABB把主体缩小。相机边界来自内容和查看任务；限定地下/非设计内部合理，缩窄水平范围掩盖缺失场景不算完整360°。
 
+### 第一人称出生点从最终地表求，不从场景原点猜
+
+第一人称玩家的地面出生点/眼高，与环绕 `target/distance/polar`、第三人称跟随相机的角色点/相机臂端点，是不同状态。第一人称起点应落在实际可走表面上；先选路径入口的候选 `(x,z)`，再从最终地形/地面网格向下取样。只把可走面传入 `groundRoots`，水面、屋顶、装饰石和不可走边坡不要混入。坡度过滤后按世界竖直方向加眼高，并用项目的胶囊/角色碰撞检查确认身体和头顶净空。出生点在地形外、落入山体、悬空、位于水面或被屋檐/树干占据时，换候选点，不要只抬高相机掩盖空间错位。
+
+[`findWalkableSpawn`](../assets/scene/walk-spawn.mjs)提供地表命中、父级变换后的世界法线、最大坡度过滤和可接入的占位净空回调。它不实现角色碰撞；没有传入 `isCandidateClear` 时，结果只证明找到了可走表面，不能证明出生点不被墙、树或屋顶占据。
+
+```js
+import { findWalkableSpawn } from './assets/scene/walk-spawn.mjs';
+
+const spawn = findWalkableSpawn(THREE, {
+  x: routeEntrance.x,
+  z: routeEntrance.z,
+  groundRoots: [walkableTerrain, walkablePlatforms], // 最终可走网格，不含道具/水面
+  eyeHeight: 1.65,                                  // 使用场景单位
+  maxSlopeDegrees: 32,
+  isCandidateClear: ({ position, eyeHeight }) =>
+    characterCapsuleIsClear(position, { radius: 0.32, eyeHeight }, finalBlockerMeshes)
+});
+if (!spawn) throw new Error('No safe walkable spawn candidate at the route entrance.');
+
+camera.position.copy(spawn.position);
+const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), routeEntrance.yaw);
+camera.lookAt(spawn.position.clone().add(forward)); // 眼平线方向；仰俯角另设并限制
+```
+
+在目标视口实际运行后检查出生画面：入口/主焦点可读、前进方向有落脚空间，首帧没有地表穿屏或山体遮罩。移动更新也必须消费同一地形高度/碰撞源；只在初始化时修正眼高而不更新步行位置，仍会很快穿地或漂浮。第三人称相机还要独立校验跟随距离/相机臂与最终地形、树木和建筑的交叉；环绕作品则根据主体关系选 `target`，检查控制器 `update()` 后实际位置与完整取景。不要把第一人称眼高直接用作跟随/环绕机位。
+
 相机可能接近地形/建筑时分别查两件事：
 
 | 问题 | 核对方法 |
