@@ -12,6 +12,9 @@ if(!arg('--html'))throw Error('Usage: node render_film.mjs --html film.html --ou
 const html=resolve(arg('--html')),out=resolve(arg('--out','rendered')),width=Number(arg('--width',1280)),height=Number(arg('--height',720));
 const sourceHash=createHash('sha256').update(await readFile(html)).digest('hex');
 const chrome=process.env.CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+if(process.platform==='darwin'&&process.env.CODEX_SANDBOX==='seatbelt'){
+ throw Error('Refusing to launch Chrome from the Codex macOS Seatbelt sandbox: macOS app registration is denied and Chrome may SIGABRT. Run this export through approved unsandboxed execution, or inspect the page in the existing Codex browser.');
+}
 const temp=await mkdtemp(join(tmpdir(),'film-export-'));await mkdir(out,{recursive:true});
 // The manifest is a completion marker, not evidence for a failed retry.
 await rm(join(out,'manifest.json'),{force:true});

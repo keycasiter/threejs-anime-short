@@ -9,6 +9,8 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 **默认交付目标是完整的视觉作品，不是可运行白模。** 代理几何仅用于空间验证；代表对象族必须先通过[精修放行关卡](references/production-workflow.md#3-完整代表关系)，然后才扩场。扩展后，主体、支撑和环境各自按目标景别检查；全景、近景与互补方向实际未达到目标时，明确标为阶段版并继续修，不以完整流程、丰富代码或功能可用替代视觉完成。
 
+新任务按六阶段接力，不跳到细节堆量：**视觉规格 → 全场灰盒 → 完整代表关系 → 接口闭合与区域扩建 → 全场材光/动态 → 实机验收**。每阶段都要有可供下一阶段实际消费的产物和放行证据；遇到视觉缺陷按画面关系、形体、接口、材光、细节的顺序定位。完整步骤与交接字段见[唯一生产流程](references/production-workflow.md)。
+
 本分支以**代码生成三维**：Three.js构造器、自写网格/曲面/场、几何算法库与shader。图像用于视觉参考；预制模型及其压缩数组/base64形式不作为几何来源。最终交付可重新生成的源码与真实渲染结果。
 
 随包当前可执行实现锁定`three@0.187.0`；项目固定Three与`examples/jsm` addons为同一精确版本。标明r180的设计快照、源码链接或历史验证仅描述其原始基线，不可当作当前运行依赖。
@@ -54,6 +56,8 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 
 开始写空间、资产、分布或动态函数时，进入[Three.js代码接力](references/code-guidance.md)对应小节：先把设计关系写成实际输入，再沿可运行配方接到网格、端口、材料或更新函数。随包[完整工厂](assets/examples/guided-assembly.mjs)和[运行入口](assets/examples/guided-world/index.html)展示主形/邻件/受光的同源实现；新题材替换设计和生成规则，保留适用接口。参数或动作接好即读回实际消费者，再扩展同族对象。
 
+**首个场景切片必须先过真实运行门，再扩场。** 在目标浏览器加载实际入口、看到成功绘制的首帧，等待动画/异步资源稳定，检查页面错误与 Three.js/WebGL 控制台输出；再执行该作品核心控件并复查错误。没有首帧、画布空白、加载层未退出、未处理异常或着色器/上下文错误时，停在当前切片修复；静态语法和离线依赖通过不能替代运行放行。按[运行健康检查](references/validation.md#运行健康检查与放行门)记录可复现证据。
+
 空间草案先按[观看与遮挡](references/visual-construction.md#1-先让关键部位能被看清)让目标部位和支撑/框架同时成立；重复铺覆、同族资产与近景曲面开工前，分别用该页的完整轮廓裁切、结构变体与采样配方。材料先在真实资产/邻件的同机位中校准再扩场；界面文字与合法近景共同设计。包含CSS2D标签或随相机移动的DOM说明时，在每个关键视图/时刻用[屏幕覆盖层审计](references/anchored-labels.md#屏幕空间审计与可见性检查)读回实际矩形，处理越界、互相遮挡和界面区冲突；该检查不能替代三维实体遮挡与画面可读性审查。工具定位具体损失，目标视图中的可读性与完成度决定是否进入下一段制作。
 
 ## 按责任读取
@@ -68,7 +72,7 @@ description: 用于制作、改编或打磨以 Three.js 渲染的动画短片、
 | 材光、反射、后期与自写效果 | [渲染选择](references/rendering-choices.md)；[效果配方](references/effect-recipes.md)；部件/世界坐标驱动的渐变、有限扫带或径向响应读[坐标响应](references/coordinate-response.md) | 自定义多遍时再读[渲染契约](references/render-contracts.md) |
 | 动作、资源、预算与交互 | [运行与规模](references/motion-and-scale.md)；[相机方法](references/camera-interaction.md)；涉及点击/选择/物体反馈时读[选择状态接力](references/selection-feedback.md)；需要空间标签时读[锚定标签](references/anchored-labels.md) | 绝对时间/历史重建、真实接触、稳定ID反馈；按尺寸语义选DOM或Sprite标签，明确批量渲染、遮挡与资源归属 |
 | 复用现有模块或补算法 | [工具目录](references/production-toolkit.md)；[算法配方](references/algorithm-recipes.md)；[约束高程区与道路接力](references/terrain-grading.md)、[通用坡度接缝字段](references/terrain-interface-field.md)；[条件库接线](references/library-integration.md) | 随包实现与需适配方法分明，按结构、场、运动与规模选择 |
-| 最终检查与交付 | [统一验收](references/validation.md)；影片再读[导出方法](references/video-export.md) | HTML依赖、真实操作、接触粗检、视频导出与独立后验 |
+| 最终检查与交付 | [统一验收](references/validation.md)；运行异常检查使用[运行健康探针](assets/runtime/runtime-health-probe.mjs)；影片再读[导出方法](references/video-export.md) | HTML依赖、首帧/运行错误、真实操作、接触粗检、视频导出与独立后验 |
 
 按需读相关小节，已有工具先确认输入输出与版本，未实现的项目函数不当作现成API。品质依据是目标与当前真实画面：字段齐全、工具通过或参考好看均不等于作品达标。只交用户要求的阶段或成品；制作时使用简明brief、共享数据、源码和问题/验证记录。
 

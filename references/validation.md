@@ -34,6 +34,47 @@
 
 随实现使用[消费者检查代码](code-guidance.md#5-写完当前关系就读回消费者)：参数看发出的几何/矩阵/通道，动作看指定可见子件与连续片段。普通Mesh矩阵探针不覆盖shader、实例或蒙皮；对应路径另读真实buffer/姿态与画面。时钟推进、uniform变化或两个PNG不同各只证明其观察项，不扩大为全部动作通过。近远/俯仰从真实控制器读边界，普通近景与局部放大用途分别解释。
 
+## 运行健康检查与放行门
+
+此门用于区分“源码能解析”与“最终页面真的工作”。在空间草案阶段先跑一次，最终交付前对最终构建再跑一次；任何代码、依赖或控件修改后，重查受影响路径。冻结评测候选记录失败原样保留，不为让分数好看而修补评测输入。
+
+### 采集首帧与未处理错误
+
+在真实页面的浏览器 DevTools 中清空 Console 后重新加载。随Skill提供的`assets/runtime/runtime-health-probe.mjs`可捕获已运行页面的未处理脚本错误、Promise拒绝、WebGL上下文丢失，并记录成功渲染标记与draw calls；它不隐藏或吞掉错误。
+
+```js
+import {createRuntimeHealthProbe} from './assets/runtime/runtime-health-probe.mjs';
+
+const runtimeProbe=createRuntimeHealthProbe({canvas:renderer.domElement});
+function renderFrame(){
+  renderer.render(scene,camera);
+  runtimeProbe.markFrame(renderer); // Only after this frame's render call returns.
+}
+// Read in DevTools after initial rendering, a stable interval, and core interactions.
+console.table(runtimeProbe.snapshot());
+```
+
+入口模块未加载时探针代码也无法运行，因此模块加载/import错误、Three.js shader/program诊断与网络失败仍须查看浏览器Console/Network；需要覆盖启动前导入故障时，使用Console本身或在HTML模块入口前加短暂的经典脚本监听器。通过模块入口加载探针后，在DevTools读取`window.__threeRuntimeProbe.snapshot()`。`status: clear`只表示有成功渲染标记且当前没有捕获异常；不证明画面可见或美术质量合格。`drawCalls`也不能证明主体进入视锥，仍须看真实页面截图。
+
+### 执行顺序与停线
+
+1. 从最终交付目录打开精确入口，清空Console后硬刷新；确认Three.js与addons版本一致、所有本地模块加载成功，画布CSS宽高和绘图缓冲宽高均大于0。
+2. 等到场景实际绘制，不以页面标题、`DOMContentLoaded`、`ready=true`或单纯存在canvas作为成功。至少一次`renderer.render`成功且`renderer.info.render.calls > 0`；再等完整动画周期，静态作品则观察一段稳定时间。反复出现的错误要按连续帧/时间记录。
+3. 检查加载遮罩已真实退出；在目标视口截图并确认应有的主体和环境可见。首帧计数、draw calls只证明渲染调用，不证明重要对象进入画面；空黑画布、纯背景、全被遮罩或主体完全在视锥之外都算失败。
+4. 实际操作作品承诺的控制：至少覆盖环绕/俯仰/缩放/复位，或机制状态/时间轴/播放暂停；影片检查最终编码文件。每类控制操作后再次看Console、首帧/持续渲染状态、加载遮罩和主体可见性。
+5. 记录构建哈希、视口/DPR、浏览器和WebGL后端、首帧与运行时长、draw calls、console/page/unhandled-rejection/shader/上下文错误、截图哈希、操作复现步骤与结果。错误列表为空才可记录`runtime: clear`；有报错时记`runtime: issue`及首条堆栈，不得只写“页面能打开”。
+
+**硬停线：** 未出现首帧、画布尺寸为零、页面继续显示加载遮罩、目标场景为空/全黑、存在未处理JavaScript异常或Promise拒绝、Three.js shader编译失败、WebGL context丢失，任一项都必须停止扩场/最终交付并回到故障所属模块。一次运行报错不要误归为画质低分；修复后的新运行单独留证，冻结盲测样本仍保持原样。警告不自动等价失败，但每条影响目标浏览器、精确版本或实际画面的警告都要解释。
+
+### 故障归类
+
+| 观察到的现象 | 先检查 | 常见代码根因 | 回到哪层 |
+|---|---|---|---|
+| 页面能解析但启动空白 | DevTools 首条异常、模块加载顺序、启动遮罩的退出条件 | 未声明常量/材质、import失败、异常发生在首帧前 | 启动入口/模块依赖 |
+| 首帧出现后画面停止 | 异常发生时间、RAF/`setAnimationLoop`回调、当前更新对象 | 更新记录与创建记录字段名不一致、状态对象缺失、访问未创建的材质/变换 | 动画更新/状态契约 |
+| 交互后出现错误或消失 | 每个控件事件、合法状态范围、变更后的实际对象 | 几何和Mesh混用、错误对象类型、空引用、坐标/数组输入不可迭代 | 控件到真实消费者的接线 |
+| 有draw calls但主体不可见 | 目标视角截图、相机近远裁剪/遮挡、对象显隐、材质与灯光 | 渲染调用成功但主体在镜头外、被遮挡、透明度/曝光使其不可读 | 空间/相机或材光，不能判运行健康已通过 |
+
 ## 真实运行与相机
 
 交互场景按[相机方法](camera-interaction.md)在最终页面实际拖转一整圈、滚轮缩放和点击复位，检查水平8方位及承诺的俯仰/远近端点。内容覆盖与控件操作分别记录；配置或静态设机位不能证明用户操作成立。记录实际设备、浏览器/后端、目标视口、质量档及一段持续帧时间/资源成本。

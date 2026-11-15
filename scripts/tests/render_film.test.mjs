@@ -1,5 +1,5 @@
 // Real headless Chrome integration tests. No mocked browser, screenshots or CDP.
-import {test} from 'node:test';
+import {test as nodeTest} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
@@ -8,6 +8,41 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const script=fileURLToPath(new URL('../render_film.mjs',import.meta.url));
+const chrome=process.env.CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+// These tests each start an isolated browser. Probe once so an environment-level
+// Chrome launch failure cannot create one crash report per test case.
+async function probeHeadlessChrome(){
+ const dir=await mkdtemp(join(tmpdir(),'film-chrome-probe-'));
+ const child=spawn(chrome,['--headless=new','--no-first-run','--remote-debugging-port=0',`--user-data-dir=${join(dir,'profile')}`,'about:blank'],{stdio:['ignore','ignore','pipe']});
+ let stderr='',spawnError;child.stderr.on('data',data=>stderr=(stderr+data).slice(-2000));child.on('error',error=>spawnError=error);
+ const waitForClose=()=>new Promise(resolve=>{
+  if(child.exitCode!==null||child.signalCode!==null)return resolve();
+  child.once('close',resolve);
+  if(child.exitCode!==null||child.signalCode!==null)resolve();
+ });
+ try{
+  for(let i=0;i<60;i++){
+   if(spawnError)return {ok:false,reason:`Headless Chrome could not start: ${spawnError.message}`};
+   if(child.exitCode!==null||child.signalCode!==null){
+    return {ok:false,reason:`Headless Chrome unavailable (${child.signalCode||`exit ${child.exitCode}`})${stderr.trim()?`: ${stderr.trim()}`:''}`};
+   }
+   try{await readFile(join(dir,'profile/DevToolsActivePort'),'utf8');child.kill('SIGTERM');await waitForClose();return {ok:true};}catch{}
+   await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  child.kill('SIGTERM');await waitForClose();
+  return {ok:false,reason:'Headless Chrome did not publish DevToolsActivePort within 6 seconds'};
+ }catch(error){
+  child.kill('SIGTERM');await waitForClose();return {ok:false,reason:`Headless Chrome probe failed: ${error.message}`};
+ }finally{await rm(dir,{recursive:true,force:true,maxRetries:4,retryDelay:100});}
+}
+const sandboxBlocksChrome=process.platform==='darwin'&&process.env.CODEX_SANDBOX==='seatbelt';
+const chromeStatus=sandboxBlocksChrome
+ ? {ok:false,reason:'Headless Chrome tests require approved unsandboxed execution on macOS; refusing to launch Chrome from the Codex Seatbelt sandbox.'}
+ : await probeHeadlessChrome();
+function test(name,fn){
+ nodeTest(name,{skip:chromeStatus.ok?false:chromeStatus.reason},fn);
+}
 
 async function fixture(t,body){
  const dir=await mkdtemp(join(tmpdir(),'film-contract-test-'));

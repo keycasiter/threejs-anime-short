@@ -79,6 +79,54 @@ placeAtAnchor(THREE, {
 
 它要求host/parent祖先链与guest子树保持世界矩阵自动更新；更新矩阵、验证刚性单位尺度后再写guest的parent与TRS；输入锚点不被修改。尺寸由几何参数生成，根scale保持1，避免拉伸物理UV。中心接口对齐不意味着不同高度对象的地脚自动齐平；需要地脚对齐时选择对应结构端口或按设计建立新端口。连接对齐后另查承载、穿插与可见接缝。
 
+变换也要有唯一owner。把局部形状放在Geometry顶点/生成参数中，把资产摆放交给一个`Object3D`层级，把批量实例差异交给`InstancedMesh`的实例矩阵；同一空间偏移只写入其中一个负责层级，避免顶点/实例已带世界偏移后又重复移动父Group。调试时更新真实世界矩阵，读回`getWorldPosition()`或实例的最终世界变换，与设计锚点比较；看变量值不能证明屏幕上的最终位置正确。
+
+### 跨表面接口闭合
+
+当两种表面相邻——例如水/岸、道路/地形、屋面/墙体、根/土、壳体/密封圈——共享路径或锚点只保证它们有共同设计输入，**不保证最终三角面实际相接**。先确定接口由谁拥有：一条稳定的边界曲线/空间场、一套坐标架，以及两侧各自的采样器。每侧在同一参数位置求最终世界点、法线和边界材料信号；变换后检查，不用初始控制点代替最终网格。
+
+明确选择实际关系：共边、压入/搭接、包覆过渡、融合表面，或设计留缝。若两侧边界不同，生成真正跨接两边界的过渡网格；网格沿接口的采样密度由最小曲率和最近目标景别决定。若设计为压入/搭接，写明可见覆盖宽度和压入深度，并确认远/近视图都没有底色裂口。边缘渐隐、泡沫/封边或法线混合只表达材料/外观，不能掩盖几何未连接。
+
+下面是可运行的最小桥接几何生成器。`edgeA`与`edgeB`为同一局部坐标架中的对应`THREE.Vector3[]`，两列需沿接口同向、长度相同；它们应从最终宿主表面/边界采样得到。输出的`BufferGeometry`形成实际网格，不含材质、边界求值或自动裁剪。若面朝向反了，交换一侧采样顺序，或反转三角索引。
+
+```js
+function createInterfaceBand(THREE, edgeA, edgeB) {
+  if (!Array.isArray(edgeA) || edgeA.length !== edgeB?.length || edgeA.length < 2) {
+    throw new Error('interface edges must have the same sample count >= 2');
+  }
+  const count = edgeA.length;
+  const positions = new Float32Array(count * 2 * 3);
+  const uvs = new Float32Array(count * 2 * 2);
+  const indices = [];
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1);
+    for (const [side, point] of [edgeA[i], edgeB[i]].entries()) {
+      if (!point?.isVector3 || ![point.x, point.y, point.z].every(Number.isFinite)) {
+        throw new Error(`invalid interface point at sample ${i}`);
+      }
+      const vertex = i * 2 + side;
+      point.toArray(positions, vertex * 3);
+      uvs[vertex * 2] = t;
+      uvs[vertex * 2 + 1] = side;
+    }
+    if (i + 1 < count) {
+      const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+      indices.push(a, b, c, b, d, c);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+```
+
+验收接口前，沿完整边界测量最大间隙/重叠，检查三角面方向与面积，再在近景和全场目标机位看着色接缝。`computeVertexNormals()`只平滑该过渡网格，不会合并相邻Mesh的法线；真正连续的表面应从共享顶点生成，或显式共享/平均边界法线。保留有意的材料边界，不要模糊掉破损的剪影。
+
 生成器拥有生成几何，借用材料；`dispose()`只释放自有几何。表面为每米UV且已算切线；换tile需要匹配UV度量。分面拱只支持偶数8–64段半圆顶，尺寸/净距约束见源码。用同一工厂在展柜和场景中生成，不保留第二套简化替身。
 
 ## 4 让表面和受光一起完成

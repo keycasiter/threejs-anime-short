@@ -2,6 +2,8 @@
 
 `render_film.mjs` 仅用于渲染自己有权制作的离线影片源码；不是网站浏览或 CUA 权限回退工具。依赖 Node 22+、本机 Chrome；`--video`导出和最终MP4证据校验需要 ffmpeg/ffprobe。通过 `CHROME` 指定其他平台的可执行文件。
 
+macOS 上若 `CODEX_SANDBOX=seatbelt`，导出器会在启动前停止：当前沙盒禁止新 Chrome 进程查询 macOS LaunchServices / WindowServer，headless Chrome 会在应用注册阶段 `SIGABRT`。不要用变更启动参数反复重试；通过已批准的沙盒外执行运行导出，或用现存的 Codex 浏览器完成页面观察。集成测试在此沙盒标识下会整组跳过，不再逐用例启动 Chrome。
+
 导出器以临时隔离配置启动 headless Chrome，并允许该本地页面导入同一离线包中的 ES 模块文件；这对应它直接导航到 `file://` 源文件的渲染方式。只对可信的本地影片源码运行，不把它用于浏览外部网页。
 
 ```sh
