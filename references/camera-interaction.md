@@ -49,7 +49,58 @@ function pickEntity(event,canvas,camera,roots){
 ## 最终入口的实际操作
 
 1. 记录初始相机位置/target、azimuth、polar、distance，保存目标视口。
-2. 用鼠标/触摸实际拖动一整圈，跨±π正确unwrap累计角度，读回真实OrbitControls/实际相机状态；至少观察8方位，完整水平轨迹应达到约359°以上。鼠标像素位移和脚本设机位不是实际角度证据。
+2. 用鼠标/触摸实际拖动一整圈，读回真实OrbitControls/实际相机状态；至少观察8方位，完整水平轨迹应达到约359°以上。鼠标像素位移和脚本设机位不是实际角度证据。可用[`createOrbitCoverageRecorder`](../assets/runtime/scene-probes.mjs)记录真实的`change`事件、跨±π解包后的方位角、俯仰/距离和各方位代表机位：
+
+```js
+import { createOrbitCoverageRecorder } from './assets/runtime/scene-probes.mjs';
+
+controls.autoRotate = false;        // 只测用户输入，不混入自动旋转
+controls.update();                  // 先让真实控制器收敛到当前机位
+const sweep = createOrbitCoverageRecorder(controls, {
+  sectorCount: 8,
+  minCoverageDegrees: 359,
+  maxSampleStepDegrees: 90
+});
+
+// 此处由测试者实际拖动一整圈；应用现有帧循环继续调用 controls.update()。
+// 松手后等待阻尼产生的 change 事件结束，再读取结果。
+const trace = sweep.snapshot();
+console.log(trace.angularSweepComplete, trace.visitedSectors, trace.missingSectors);
+const measuredViews = trace.sectorSamples.filter(Boolean).map((sample, index) => ({
+  id: `orbit-sector-${index}`,
+  position: sample.position,
+  target: sample.target
+}));
+sweep.dispose();
+```
+
+`angularSweepComplete`还要求采样点的俯仰变化和观察目标漂移处于配置容差内；它不表示目标可见、画面无遮挡或视觉质量通过。将`measuredViews`交给[`auditObservationSet`](core-systems.md)做真实特征/遮挡合同检查，并在浏览器逐方位查看画面。单次采样若跨过180°会产生角度别名；若`largeStepObserved`为`true`，降低手势速度并重测。自动旋转期间、无事件监听的控制器或未持续调用`controls.update()`的页面不能用此结果证明用户环绕覆盖。
+
+将角度路径与场景可见性接成同一份结果时，用[`auditOrbitObservations`](../assets/scene/observation-view.mjs)传入记录快照、关键表面样点和最终遮挡物；`requiredSectors`声明该特征必须读出的方位，`minVisibleFractionPerView`声明每个指定方位的最低无遮挡样点比例。例子里的sector 0/4来自实测环绕样本，并非预设镜头：
+
+```js
+import { auditOrbitObservations } from './assets/scene/observation-view.mjs';
+
+const orbitAudit = auditOrbitObservations(THREE, {
+  trace: sweep.snapshot(),
+  features: [
+    { id: 'scene-landmarks', points: landmarkSurfaceSamples,
+      minCoverageFraction: 0.8 },
+    { id: 'bridge-to-river-relation', points: bridgeRiverSamples,
+      minCoverageFraction: 1,
+      requiredSectors: [0, 1, 7],
+      minVisibleFractionPerView: 0.8 }
+  ],
+  occluders: [finalWorldRoot],
+  viewport: { width: 1280, height: 720 },
+  overlays: [] // 若HUD覆盖画布中的锚点，传入其canvas-relative CSS矩形
+});
+
+console.table(orbitAudit.perFeatureSectorChecks);
+if (!orbitAudit.complete) console.warn(orbitAudit.missingSectors, orbitAudit.failedSectorChecks);
+```
+
+`landmarkSurfaceSamples`/`bridgeRiverSamples`必须来自实际几何表面，`finalWorldRoot`必须覆盖会遮挡视线的最终Mesh；不要拿整个包围盒代替锚点，也不要漏掉树冠、屋檐等中层遮挡物。`minCoverageFraction`检查所有测量视图的并集；指定`requiredSectors`后再逐方位应用`minVisibleFractionPerView`，既能表达“总有一个方向能看清”，也能表达“这一关系在这些方位必须保留”。缺少目标扇区、角度路径不完整、几何合同失败都会让`complete`为false。该审计是CPU三角射线与投影检查，仍需逐扇区看浏览器实际画面；透明裁切、shader位移、反射、后期、构图与美术质量不由它证明。
 3. 用滚轮/双指缩放，检查近/远端；再检查承诺的俯仰端点，看穿模、裁切、地平线/地面露边、空白侧背和信息遮挡。
 4. 点击实际复位入口，等待阻尼稳定，核对position/target/方位/俯仰/距离回到设计容差；影片/自由模式来回切换也检查状态。
 

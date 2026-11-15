@@ -94,16 +94,20 @@ export function selectObservationView(T,{candidates,points,occluders=[],ignore=[
  * view whose optional projected-size constraint is met. This unions samples;
  * it does not estimate surface area or judge composition. Register each
  * structural relationship (such as a support-to-platform connection) as its
- * own feature group so visible body samples cannot stand in for it.
+ * own feature group so visible body samples cannot stand in for it. Set
+ * includeSampleDiagnostics only when a feature misses its target; this adds
+ * per-view status, overlays, projected pixel and JSON-safe first-blocker data
+ * for each authored point, without retaining Three Object3D references.
  */
 export function auditObservationSet(T,{views,features,occluders=[],ignore=[],viewport,overlays=[],
-  fovDegrees=41,near=.1,far=250,epsilon=1e-5}={}) {
+  fovDegrees=41,near=.1,far=250,epsilon=1e-5,includeSampleDiagnostics=false}={}) {
   if(!T?.PerspectiveCamera||!T?.Vector3)throw new TypeError('T must provide PerspectiveCamera and Vector3');
   if(!Array.isArray(views)||!views.length||views.length>64)throw new Error('Supply 1..64 authored views');
   if(!Array.isArray(features)||!features.length||features.length>32)throw new Error('Supply 1..32 semantic features');
   if(!Number.isFinite(fovDegrees)||fovDegrees<=0||fovDegrees>=180||!Number.isFinite(near)||near<=0||!Number.isFinite(far)||far<=near)throw new Error('Invalid perspective projection');
   if(!viewport||!Number.isFinite(viewport.width)||viewport.width<=0||!Number.isFinite(viewport.height)||viewport.height<=0)throw new Error('Positive viewport required');
   if(!Number.isFinite(epsilon)||epsilon<0)throw new Error('epsilon must be finite and nonnegative');
+  if(typeof includeSampleDiagnostics!=='boolean')throw new TypeError('includeSampleDiagnostics must be boolean');
 
   const viewIds=new Set();
   for(const view of views){
@@ -135,9 +139,21 @@ export function auditObservationSet(T,{views,features,occluders=[],ignore=[],vie
       const creditedSampleIndices=projectedSizeSatisfied
         ?visibleSampleIndices:[];
       for(const index of creditedSampleIndices)sampleViewCounts[featureIndex][index]++;
-      return {id:feature.id,visibleFraction:visibleSampleIndices.length/feature.points.length,
+      const result={id:feature.id,visibleFraction:visibleSampleIndices.length/feature.points.length,
         visibleSampleIndices,creditedSampleIndices,overlaySampleCount:inspection.overlaySampleCount,
         projectedBoundsPx:bounds,minProjectedBoundsPx:minimum,projectedSizeSatisfied};
+      if(includeSampleDiagnostics)result.sampleDiagnostics=inspection.samples.map((sample,sampleIndex)=>{
+        const accepted=creditedSampleIndices.includes(sampleIndex);
+        return {sampleIndex,status:sample.status,overlays:sample.overlays,
+          pixel:sample.pixel,accepted,
+          exclusionReason:accepted?null:sample.status!=='visible'?sample.status:
+            sample.overlays.length?'overlay':!projectedSizeSatisfied?'projected-size':null,
+          blocker:sample.blocker?{uuid:sample.blocker.object.uuid,
+            name:sample.blocker.object.name||null,type:sample.blocker.object.type,
+            instanceId:sample.blocker.instanceId,distance:sample.blocker.distance,
+            point:sample.blocker.point.toArray()}:null};
+      });
+      return result;
     });
     viewResults.push({id:view.id,features:viewFeatures});
   }
@@ -151,4 +167,78 @@ export function auditObservationSet(T,{views,features,occluders=[],ignore=[],vie
       satisfied:coverageFraction>=feature.minCoverageFraction};
   });
   return {complete:featureResults.every(feature=>feature.satisfied),features:featureResults,viewResults};
+}
+
+/** Join measured OrbitControls sector poses to a semantic visibility contract.
+ * Angular coverage alone is not visual coverage. This adapter evaluates the
+ * recorder's actual sampled poses with the same surface-raycast audit used for
+ * authored views, then optionally enforces per-feature visibility in selected
+ * sectors. `minCoverageFraction` remains the union requirement across views;
+ * `requiredSectors` plus `minVisibleFractionPerView` expresses views where a
+ * feature must remain readable; omitting the threshold for required sectors
+ * means all supplied samples must be visible. Without `requiredSectors`, a
+ * supplied per-view threshold applies to every sampled sector. This is still a geometric sample
+ * audit, not raster/pixel proof or an artistic composition score.
+ */
+export function auditOrbitObservations(T,{trace,features,occluders=[],ignore=[],viewport,overlays=[],
+  fovDegrees=41,near=.1,far=250,epsilon=1e-5,includeSampleDiagnostics=false}={}) {
+  if(!trace||typeof trace.angularSweepComplete!=='boolean'||!Number.isInteger(trace.sectorCount)||
+      trace.sectorCount<4||trace.sectorCount>64||!Array.isArray(trace.sectorSamples)) {
+    throw new TypeError('trace must be a createOrbitCoverageRecorder snapshot');
+  }
+  if(!Array.isArray(features)||!features.length||features.length>32)throw new Error('Supply 1..32 semantic features');
+  const bySector=new Map();
+  for(const sample of trace.sectorSamples.filter(Boolean)) {
+    if(!Number.isInteger(sample.sector)||sample.sector<0||sample.sector>=trace.sectorCount||bySector.has(sample.sector)) {
+      throw new Error('trace sector samples must have unique valid sector IDs');
+    }
+    for(const key of ['position','target'])if(!Array.isArray(sample[key])||sample[key].length!==3||!sample[key].every(Number.isFinite)) {
+      throw new Error(`trace sector ${sample.sector} must contain finite position and target`);
+    }
+    bySector.set(sample.sector,sample);
+  }
+  const views=[...bySector.entries()].sort((a,b)=>a[0]-b[0]).map(([sector,sample])=>({
+    id:`sector-${sector}`,position:sample.position,target:sample.target
+  }));
+  if(!views.length||views.length>64)throw new Error('trace must contain 1..64 sampled sectors');
+  const viewAudit=auditObservationSet(T,{views,features,occluders,ignore,viewport,overlays,
+    fovDegrees,near,far,epsilon,includeSampleDiagnostics});
+  const availableSectors=new Set(views.map(view=>Number(view.id.slice('sector-'.length))));
+  const perFeatureSectorChecks=features.flatMap(feature=>{
+    const threshold=feature.minVisibleFractionPerView;
+    if(threshold!==undefined&&(!Number.isFinite(threshold)||threshold<=0||threshold>1)) {
+      throw new Error(`feature ${feature.id} minVisibleFractionPerView must be in (0, 1]`);
+    }
+    let requiredSectors=feature.requiredSectors;
+    if(requiredSectors!==undefined) {
+      if(!Array.isArray(requiredSectors)||requiredSectors.some(sector=>!Number.isInteger(sector)||sector<0||sector>=trace.sectorCount)||
+          new Set(requiredSectors).size!==requiredSectors.length)throw new Error(`feature ${feature.id} requiredSectors must contain unique valid sector IDs`);
+    } else if(threshold!==undefined) requiredSectors=[...availableSectors];
+    else requiredSectors=[];
+    const minimum=threshold??1;
+    return requiredSectors.map(sector=>{
+      const view=viewAudit.viewResults.find(result=>result.id===`sector-${sector}`);
+      const measured=view?.features.find(result=>result.id===feature.id);
+      const visibleFraction=measured?.visibleFraction??0;
+      const projectedSizeSatisfied=measured?.projectedSizeSatisfied??false;
+      return {featureId:feature.id,sector,visibleFraction,minVisibleFraction:minimum,
+        projectedSizeSatisfied,sampled:!!measured,
+        satisfied:!!measured&&visibleFraction>=minimum&&projectedSizeSatisfied};
+    });
+  });
+  const missingRequiredSectors=perFeatureSectorChecks.filter(check=>!check.sampled).map(({featureId,sector})=>({featureId,sector}));
+  const failedSectorChecks=perFeatureSectorChecks.filter(check=>!check.satisfied);
+  const angularSectorsComplete=bySector.size===trace.sectorCount;
+  return {
+    complete:trace.angularSweepComplete&&angularSectorsComplete&&viewAudit.complete&&failedSectorChecks.length===0,
+    angularSweepComplete:trace.angularSweepComplete,
+    angularSectorsComplete,
+    sampledSectors:views.map(view=>Number(view.id.slice('sector-'.length))),
+    missingSectors:Array.from({length:trace.sectorCount},(_,sector)=>sector).filter(sector=>!bySector.has(sector)),
+    featureCoverage:viewAudit.features,
+    perFeatureSectorChecks,
+    missingRequiredSectors,
+    failedSectorChecks,
+    viewResults:viewAudit.viewResults
+  };
 }

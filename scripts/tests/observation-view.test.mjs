@@ -108,6 +108,77 @@ test('view-set audit rejects duplicate identities and impossible coverage thresh
   {views:[...base.views,...base.views]},
   {features:[...base.features,...base.features]},
   {features:[{id:'body',points:[[0,0,0]],minCoverageFraction:0}]},
-  {features:[{id:'body',points:[[0,0,0]],minProjectedBoundsPx:{width:0,height:0}}]}
+  {features:[{id:'body',points:[[0,0,0]],minProjectedBoundsPx:{width:0,height:0}}]},
+  {includeSampleDiagnostics:1}
  ])assert.throws(()=>api.auditObservationSet(T,{...base,...patch}));
+});
+
+test('optional sample diagnostics name the blocker for each unresolved view without serializing Object3D',()=>{
+ const blocker=new T.Mesh(new T.BoxGeometry(.7,.7,.7),new T.MeshBasicMaterial());
+ blocker.name='opaque-crate';blocker.position.z=2;
+ const args={views:[
+  {id:'blocked-front',position:[0,0,5],target:[0,0,0]},
+  {id:'clear-back',position:[0,0,-5],target:[0,0,0]}
+ ],features:[{id:'front-face',points:[[0,0,0]],minCoverageFraction:1}],
+ occluders:[blocker],viewport:{width:800,height:600}};
+ const ordinary=api.auditObservationSet(T,args);
+ assert.equal('sampleDiagnostics' in ordinary.viewResults[0].features[0],false);
+ const detailed=api.auditObservationSet(T,{...args,includeSampleDiagnostics:true});
+ const blocked=detailed.viewResults[0].features[0].sampleDiagnostics[0];
+ assert.equal(blocked.status,'occluded');
+ assert.equal(blocked.blocker.name,'opaque-crate');
+ assert.equal(blocked.blocker.type,'Mesh');
+ assert.equal(typeof blocked.blocker.uuid,'string');
+ assert.equal(blocked.blocker.instanceId,null);
+ assert.ok(Array.isArray(blocked.blocker.point));
+ assert.equal(typeof blocked.blocker.distance,'number');
+ assert.equal(JSON.stringify(blocked).includes('isObject3D'),false);
+ assert.equal(detailed.viewResults[1].features[0].sampleDiagnostics[0].status,'visible');
+ assert.equal(detailed.features[0].coverageFraction,1);
+ blocker.geometry.dispose();blocker.material.dispose();
+});
+
+test('measured orbit audit separates union coverage from required per-sector visibility',()=>{
+ assert.equal(typeof api.auditOrbitObservations,'function');
+ const blocker=new T.Mesh(new T.BoxGeometry(.8,3,.8),new T.MeshBasicMaterial());
+ blocker.position.set(0,0,2);blocker.name='near-building';
+ const trace={angularSweepComplete:true,sectorCount:8,sectorSamples:Array.from({length:8},(_,sector)=>{
+  const angle=sector*Math.PI/4;
+  return {sector,position:[Math.sin(angle)*5,0,Math.cos(angle)*5],target:[0,0,0]};
+ })};
+ const result=api.auditOrbitObservations(T,{trace,
+  features:[{id:'spring-bridge',points:[[0,0,0]],minCoverageFraction:1,
+   requiredSectors:[0,4],minVisibleFractionPerView:.9}],
+  occluders:[blocker],viewport:{width:800,height:600},includeSampleDiagnostics:true
+ });
+ assert.equal(result.angularSectorsComplete,true);
+ assert.equal(result.featureCoverage[0].satisfied,true);
+ assert.equal(result.perFeatureSectorChecks.length,2);
+ assert.equal(result.perFeatureSectorChecks.find(check=>check.sector===0).satisfied,false);
+ assert.equal(result.perFeatureSectorChecks.find(check=>check.sector===4).satisfied,true);
+ assert.equal(result.complete,false);
+ assert.equal(result.viewResults.find(view=>view.id==='sector-0').features[0].sampleDiagnostics[0].blocker.name,'near-building');
+ blocker.geometry.dispose();blocker.material.dispose();
+});
+
+test('measured orbit audit rejects incomplete angular/sample contracts and bad sector thresholds',()=>{
+ const trace={angularSweepComplete:true,sectorCount:8,sectorSamples:[{sector:0,position:[0,0,5],target:[0,0,0]}]};
+ const args={trace,features:[{id:'hero',points:[[0,0,0]],requiredSectors:[1],minVisibleFractionPerView:.5}],viewport:{width:800,height:600}};
+ const result=api.auditOrbitObservations(T,args);
+ assert.equal(result.complete,false);
+ assert.equal(result.angularSectorsComplete,false);
+ assert.deepEqual(result.missingSectors,[1,2,3,4,5,6,7]);
+ assert.deepEqual(result.missingRequiredSectors,[{featureId:'hero',sector:1}]);
+ const tooSmall=api.auditOrbitObservations(T,{trace:{angularSweepComplete:true,sectorCount:8,sectorSamples:[
+  {sector:0,position:[0,0,5],target:[0,0,0]}
+ ]},features:[{id:'hero',points:[[-.1,0,0],[.1,0,0]],requiredSectors:[0],
+   minVisibleFractionPerView:.5,minProjectedBoundsPx:{width:1000,height:1}}],viewport:{width:800,height:600}});
+ assert.equal(tooSmall.perFeatureSectorChecks[0].visibleFraction,1);
+ assert.equal(tooSmall.perFeatureSectorChecks[0].projectedSizeSatisfied,false);
+ assert.equal(tooSmall.perFeatureSectorChecks[0].satisfied,false);
+ for(const patch of [
+  {trace:{}},{trace:{...trace,sectorSamples:[...trace.sectorSamples,{...trace.sectorSamples[0]}]}},
+  {features:[{id:'hero',points:[[0,0,0]],requiredSectors:[8]}]},
+  {features:[{id:'hero',points:[[0,0,0]],minVisibleFractionPerView:0}]}
+ ])assert.throws(()=>api.auditOrbitObservations(T,{...args,...patch}));
 });

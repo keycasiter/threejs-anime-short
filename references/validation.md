@@ -38,6 +38,37 @@
 
 交互场景按[相机方法](camera-interaction.md)在最终页面实际拖转一整圈、滚轮缩放和点击复位，检查水平8方位及承诺的俯仰/远近端点。内容覆盖与控件操作分别记录；配置或静态设机位不能证明用户操作成立。记录实际设备、浏览器/后端、目标视口、质量档及一段持续帧时间/资源成本。
 
+## 视口契约与屏幕安全区
+
+在开始调镜头前，固定参考 CSS viewport；用户未指定时使用 1280×720 桌面视口，支持窄屏的页面另测 390×844。记录设备像素比。页面布局完成后，Three.js 相机/renderer、程序化占幅计算、浏览器截图必须共用实际 canvas 矩形；不能用一个宽高比写几何测试，再用另一个页面视口验收。
+
+```js
+function readCanvasViewport(renderer) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  if (!(rect.width > 0 && rect.height > 0)) {
+    throw new Error('Three.js canvas has no visible CSS layout rectangle');
+  }
+  return {
+    left: rect.left, top: rect.top,
+    width: rect.width, height: rect.height,
+    aspect: rect.width / rect.height,
+    dpr: window.devicePixelRatio
+  };
+}
+
+function projectToScreen(camera, worldPoint, viewport) {
+  camera.updateWorldMatrix(true, false);
+  const p = worldPoint.clone().project(camera);
+  return {
+    x: viewport.left + (p.x + 1) * viewport.width / 2,
+    y: viewport.top + (1 - p.y) * viewport.height / 2,
+    inFrustum: p.z >= -1 && p.z <= 1 && Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1
+  };
+}
+```
+
+用真实模型/特征样点而非只用目标中心，测主体边界、入口、支撑/连接和题目要求的细节；相机投影改变时按实际 canvas aspect 更新。将标题、按钮、说明等 DOM 的 `getBoundingClientRect()` 与关键 3D 投影一起检查：重叠只有在明确设计为图文叠层且目标仍可读时才接受。对俯仰滑杆、相机 zoom、预设镜位和交互状态，实际驱动页面控件到最小值、默认值、最大值，再读取当前对象姿态和投影；不要只调用另一个离线函数代替真实控件。任何状态裁边或被 UI 遮住，都回到镜头、目标或安全区布局修正，然后在同一 CSS viewport 复拍。
+
 只保留目标页面视口；CUA/MCP、Playwright或直接CDP各按实际执行范围说明。通道不可用写具体未覆盖项，不以导出帧冒充输入操作。页面/console/shader/资源错误、空canvas和事件遮罩分层排查。
 
 ## 可复核证据记录

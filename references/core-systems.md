@@ -175,6 +175,8 @@ export function auditSceneViews(THREE,{views,featureSpecs,occluders,viewport}){
 
 每个feature用`minCoverageFraction`声明样点覆盖比例；`minProjectedBoundsPx`声明某一视图必须达到的屏幕范围，未达到时该视图不会为该特征贡献覆盖。`complete`仅表示已登记样点与阈值满足：采样疏漏可能漏掉实际空洞，结果不代表连续面覆盖或画质评分。视图集需覆盖最终交付实际允许的方位/距离/俯仰与任务所需区域近景；机位重复不能增加样点并集覆盖。
 
+若某组特征未满足，不要先挪相机或降低阈值。用相同冻结输入重新运行`auditObservationSet(..., {includeSampleDiagnostics:true})`，检查每个样点在每个机位的`status`、`exclusionReason`、覆盖该点的DOM区域，以及JSON安全的首个遮挡物`blocker.{name,type,uuid,instanceId,distance,point}`。再决定是修正样点定义、清理结构遮挡、调整空间关系、补充观察视图，还是把业务要求的阈值重新量化。此开关会增加报告体积，只在诊断未满足项时启用；它仍是CPU射线解释，不能替代实屏复核。
+
 局部机位的前进、侧移和抬高沿对象的实际法线/水平切向/+Y构造，再转入世界坐标。资产转向道路后，硬加世界X可能变成向前推近并裁掉包络；用真实变换后的完整bounds复核全部近景与背向任务。
 
 ### 区域、原型、宿主与道路的接力

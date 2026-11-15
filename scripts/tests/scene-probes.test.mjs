@@ -213,3 +213,112 @@ test('orbit limits reject reversed, missing, NaN, negative and invalid angular b
     assert.throws(() => read({...defaults,...patch}), /distance|polar|angle|limit/i);
   }
 });
+
+function fakeOrbitControls(initialAngle=0) {
+  const listeners=new Set(),target=new T.Vector3(),object={position:new T.Vector3()};
+  const controls={
+    angle:initialAngle,polar:Math.PI/2,distance:5,object,target,
+    addEventListener(type,listener){if(type==='change')listeners.add(listener);},
+    removeEventListener(type,listener){if(type==='change')listeners.delete(listener);},
+    getAzimuthalAngle(){return this.angle;},getPolarAngle(){return this.polar;},getDistance(){return this.distance;},
+    setAngle(angle,{polar=this.polar,distance=this.distance}={}){
+      this.angle=angle;this.polar=polar;this.distance=distance;
+      object.position.set(distance*Math.sin(polar)*Math.sin(angle),distance*Math.cos(polar),distance*Math.sin(polar)*Math.cos(angle));
+      for(const listener of listeners)listener({type:'change'});
+    },listenerCount(){return listeners.size;}
+  };
+  controls.setAngle(initialAngle);
+  return controls;
+}
+
+test('orbit coverage recorder unwraps the ±PI seam without inventing a full sweep',()=>{
+  const record=probe('createOrbitCoverageRecorder'),controls=fakeOrbitControls(170*Math.PI/180);
+  const recorder=record(controls);
+  for(const angle of [179,-179,-170].map(value=>value*Math.PI/180))controls.setAngle(angle);
+  const result=recorder.snapshot();
+  assert.ok(Math.abs(result.signedTravelDegrees-20)<1e-8);
+  assert.ok(Math.abs(result.angularSpanDegrees-20)<1e-8);
+  assert.equal(result.angularSweepComplete,false);
+  recorder.dispose();
+});
+
+test('orbit coverage recorder requires near-full angular span and every authored sector',()=>{
+  const record=probe('createOrbitCoverageRecorder'),controls=fakeOrbitControls(0),recorder=record(controls);
+  for(let degrees=45;degrees<=360;degrees+=45)controls.setAngle(degrees*Math.PI/180);
+  const result=recorder.snapshot();
+  assert.equal(result.angularSweepComplete,true);
+  assert.equal(result.missingSectors.length,0);
+  assert.ok(Math.abs(result.angularSpanDegrees-360)<1e-8);
+  assert.equal(result.sectorSamples.length,8);
+  assert.ok(result.sectorSamples.every(sample=>sample&&Array.isArray(sample.position)&&Array.isArray(sample.target)));
+  recorder.dispose();
+});
+
+test('orbit coverage recorder reads actual Three.js r187 OrbitControls updates',()=>{
+  const record=probe('createOrbitCoverageRecorder'),camera=new T.PerspectiveCamera();
+  camera.position.set(0,0,5);
+  const controls=new OrbitControls(camera);controls.update();
+  const recorder=record(controls);
+  for(let degrees=45;degrees<=360;degrees+=45){
+    const angle=degrees*Math.PI/180;
+    camera.position.set(Math.sin(angle)*5,0,Math.cos(angle)*5);
+    controls.update();
+  }
+  assert.equal(recorder.snapshot().angularSweepComplete,true);
+  recorder.dispose();
+});
+
+test('orbit coverage recorder rejects a partial or reversing arc as full angular coverage',()=>{
+  const record=probe('createOrbitCoverageRecorder'),controls=fakeOrbitControls(0),recorder=record(controls);
+  for(const degrees of [45,90,135,180,135,90,45,0])controls.setAngle(degrees*Math.PI/180);
+  const result=recorder.snapshot();
+  assert.equal(result.angularSweepComplete,false);
+  assert.equal(result.angularSpanDegrees,180);
+  assert.ok(result.missingSectors.length>0);
+  recorder.dispose();
+});
+
+test('orbit coverage recorder flags sparsely sampled large steps instead of trusting aliased angle data',()=>{
+  const record=probe('createOrbitCoverageRecorder'),controls=fakeOrbitControls(0),recorder=record(controls,{maxSampleStepDegrees:90});
+  for(const degrees of [100,200,300,360])controls.setAngle(degrees*Math.PI/180);
+  const result=recorder.snapshot();
+  assert.equal(result.largeStepObserved,true);
+  assert.equal(result.angularSweepComplete,false);
+  assert.ok(result.maxObservedStepDegrees>=90);
+  recorder.dispose();
+});
+
+test('orbit coverage recorder does not pass a full azimuth sweep with changing polar angle or target',()=>{
+  const record=probe('createOrbitCoverageRecorder'),controls=fakeOrbitControls(0),recorder=record(controls);
+  for(let degrees=45;degrees<=360;degrees+=45)controls.setAngle(degrees*Math.PI/180);
+  controls.setAngle(2*Math.PI,{polar:Math.PI/2+8*Math.PI/180});
+  const tilted=recorder.snapshot();
+  assert.ok(tilted.polarSpanDegrees>5);
+  assert.equal(tilted.angularSweepComplete,false);
+  recorder.reset();
+  for(let degrees=45;degrees<=360;degrees+=45)controls.setAngle(degrees*Math.PI/180);
+  controls.target.x=.01;controls.setAngle(2*Math.PI);
+  const panned=recorder.snapshot();
+  assert.equal(panned.targetStable,false);
+  assert.equal(panned.angularSweepComplete,false);
+  recorder.dispose();
+});
+
+test('orbit coverage recorder reset re-baselines to the current pose and dispose detaches its listener',()=>{
+  const record=probe('createOrbitCoverageRecorder'),controls=fakeOrbitControls(0),recorder=record(controls);
+  controls.setAngle(Math.PI/2);recorder.reset();controls.setAngle(Math.PI);
+  assert.equal(recorder.snapshot().sampleCount,2);
+  assert.ok(Math.abs(recorder.snapshot().signedTravelDegrees-90)<1e-8);
+  assert.equal(controls.listenerCount(),1);recorder.dispose();recorder.dispose();
+  assert.equal(controls.listenerCount(),0);
+  controls.setAngle(3*Math.PI/2);assert.equal(recorder.snapshot().sampleCount,2);
+});
+
+test('orbit coverage recorder validates required OrbitControls readers and thresholds',()=>{
+  const record=probe('createOrbitCoverageRecorder'),controls=fakeOrbitControls();
+  assert.throws(()=>record(null),/OrbitControls/i);
+  for(const options of [{sectorCount:3},{sectorCount:65},{minCoverageDegrees:0},{minCoverageDegrees:361},
+    {maxSampleStepDegrees:180},{maxPolarDriftDegrees:181},{maxTargetDriftWorld:-1}])
+    assert.throws(()=>record(controls,options),/sectorCount|minCoverage|maxSampleStep|maxPolar|maxTarget/i);
+  controls.angle=NaN;assert.throws(()=>record(controls),/nonfinite/i);
+});

@@ -125,3 +125,137 @@ export function readOrbitLimits(controls) {
   }
   return {distance:{min:minDistance,max:maxDistance}, polarAngle:{min:minPolarAngle,max:maxPolarAngle}};
 }
+
+const TAU = Math.PI * 2;
+const degrees = radians => radians * 180 / Math.PI;
+const wrapRadians = angle => ((angle % TAU) + TAU) % TAU;
+
+function wrappedDelta(next, previous) {
+  let delta = (next - previous) % TAU;
+  if (delta >= Math.PI) delta -= TAU;
+  if (delta < -Math.PI) delta += TAU;
+  return delta;
+}
+
+/** Records actual OrbitControls change states for a manual horizontal sweep.
+ * This measures angular coverage and supplies sampled camera poses for later
+ * view audits; it does NOT prove that the scene is visible, attractive, or free
+ * of occlusion. Disable autoRotate and keep per-event angular changes below
+ * 180 degrees so wrapped samples cannot alias multiple turns into a short arc.
+ */
+export function createOrbitCoverageRecorder(controls, {
+  sectorCount = 8,
+  minCoverageDegrees = 359,
+  maxSampleStepDegrees = 90,
+  maxPolarDriftDegrees = 5,
+  maxTargetDriftWorld = 1e-4
+} = {}) {
+  if (!controls || typeof controls.addEventListener !== 'function' ||
+      typeof controls.removeEventListener !== 'function' ||
+      typeof controls.getAzimuthalAngle !== 'function' ||
+      typeof controls.getPolarAngle !== 'function' ||
+      typeof controls.getDistance !== 'function' ||
+      !controls.object?.position?.toArray || !controls.target?.toArray) {
+    throw new TypeError('OrbitControls with camera object, target and angle/distance readers are required');
+  }
+  if (!Number.isInteger(sectorCount) || sectorCount < 4 || sectorCount > 64) {
+    throw new RangeError('sectorCount must be an integer from 4 to 64');
+  }
+  if (!Number.isFinite(minCoverageDegrees) || minCoverageDegrees <= 0 || minCoverageDegrees > 360) {
+    throw new RangeError('minCoverageDegrees must be finite and in (0, 360]');
+  }
+  if (!Number.isFinite(maxSampleStepDegrees) || maxSampleStepDegrees <= 0 || maxSampleStepDegrees >= 180) {
+    throw new RangeError('maxSampleStepDegrees must be finite and in (0, 180)');
+  }
+  if (!Number.isFinite(maxPolarDriftDegrees) || maxPolarDriftDegrees < 0 || maxPolarDriftDegrees > 180) {
+    throw new RangeError('maxPolarDriftDegrees must be finite and in [0, 180]');
+  }
+  if (!Number.isFinite(maxTargetDriftWorld) || maxTargetDriftWorld < 0) {
+    throw new RangeError('maxTargetDriftWorld must be finite and nonnegative');
+  }
+
+  let samples = [], lastAngle = null, unwrappedAngle = 0;
+  let minAngle = Infinity, maxAngle = -Infinity, totalTravel = 0, maxStep = 0;
+  let minPolar = Infinity, maxPolar = -Infinity, baselineTarget = null, observedTargetDrift = 0;
+  let largeStepObserved = false, disposed = false;
+
+  function record() {
+    if (disposed) return;
+    const azimuth = controls.getAzimuthalAngle();
+    const polar = controls.getPolarAngle();
+    const distance = controls.getDistance();
+    const position = controls.object.position.toArray();
+    const target = controls.target.toArray();
+    if (![azimuth, polar, distance, ...position, ...target].every(Number.isFinite) || distance < 0) {
+      throw new RangeError('OrbitControls returned a nonfinite camera sample');
+    }
+    let step = 0;
+    if (lastAngle === null) unwrappedAngle = azimuth;
+    else {
+      step = wrappedDelta(azimuth, lastAngle);
+      const stepDegrees = Math.abs(degrees(step));
+      totalTravel += Math.abs(step);
+      maxStep = Math.max(maxStep, stepDegrees);
+      if (stepDegrees >= maxSampleStepDegrees) largeStepObserved = true;
+      unwrappedAngle += step;
+    }
+    lastAngle = azimuth;
+    minAngle = Math.min(minAngle, unwrappedAngle);
+    maxAngle = Math.max(maxAngle, unwrappedAngle);
+    minPolar = Math.min(minPolar, polar); maxPolar = Math.max(maxPolar, polar);
+    if (!baselineTarget) baselineTarget = [...target];
+    else observedTargetDrift = Math.max(observedTargetDrift, Math.hypot(...target.map((value,index)=>value-baselineTarget[index])));
+    const normalizedAzimuth = wrapRadians(azimuth);
+    const sector = Math.floor((normalizedAzimuth + TAU * 1e-12) / TAU * sectorCount) % sectorCount;
+    samples.push({azimuth, unwrappedAzimuth:unwrappedAngle, polar, distance, position, target, sector});
+  }
+
+  function reset() {
+    samples = []; lastAngle = null; unwrappedAngle = 0;
+    minAngle = Infinity; maxAngle = -Infinity; totalTravel = 0; maxStep = 0;
+    minPolar = Infinity; maxPolar = -Infinity; baselineTarget = null; observedTargetDrift = 0;
+    largeStepObserved = false;
+    record();
+  }
+
+  function snapshot() {
+    const visited = new Set(samples.map(sample => sample.sector));
+    const missingSectors = Array.from({length:sectorCount},(_,index)=>index).filter(index=>!visited.has(index));
+    const sectorSamples = Array.from({length:sectorCount},(_,sector)=>{
+      const candidates = samples.filter(sample=>sample.sector===sector);
+      if (!candidates.length) return null;
+      const center = (sector + .5) * TAU / sectorCount;
+      candidates.sort((a,b)=>Math.abs(wrappedDelta(a.azimuth,center))-Math.abs(wrappedDelta(b.azimuth,center)));
+      return {...candidates[0],sector};
+    });
+    const angularSpanDegrees = samples.length ? degrees(maxAngle-minAngle) : 0;
+    const polarSpanDegrees = samples.length ? degrees(maxPolar-minPolar) : 0;
+    const targetStable = observedTargetDrift <= maxTargetDriftWorld;
+    return {
+      sampleCount:samples.length,
+      signedTravelDegrees:samples.length ? degrees(unwrappedAngle-samples[0].unwrappedAzimuth) : 0,
+      totalTravelDegrees:degrees(totalTravel),
+      angularSpanDegrees,
+      polarSpanDegrees,
+      maxTargetDriftWorld:observedTargetDrift,
+      targetStable,
+      maxObservedStepDegrees:maxStep,
+      largeStepObserved,
+      sectorCount,
+      visitedSectors:[...visited].sort((a,b)=>a-b),
+      missingSectors,
+      sectorSamples,
+      angularSweepComplete:!largeStepObserved && angularSpanDegrees>=minCoverageDegrees && missingSectors.length===0 &&
+        polarSpanDegrees<=maxPolarDriftDegrees && targetStable,
+      limits:{minCoverageDegrees,maxSampleStepDegrees,maxPolarDriftDegrees,maxTargetDriftWorld}
+    };
+  }
+
+  record();
+  controls.addEventListener('change', record);
+  return {
+    snapshot,
+    reset,
+    dispose(){if(disposed)return;disposed=true;controls.removeEventListener('change',record);}
+  };
+}
