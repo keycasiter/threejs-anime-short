@@ -60,7 +60,58 @@ const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 
 camera.lookAt(spawn.position.clone().add(forward)); // 眼平线方向；仰俯角另设并限制
 ```
 
-在目标视口实际运行后检查出生画面：入口/主焦点可读、前进方向有落脚空间，首帧没有地表穿屏或山体遮罩。移动更新也必须消费同一地形高度/碰撞源；只在初始化时修正眼高而不更新步行位置，仍会很快穿地或漂浮。第三人称相机还要独立校验跟随距离/相机臂与最终地形、树木和建筑的交叉；环绕作品则根据主体关系选 `target`，检查控制器 `update()` 后实际位置与完整取景。不要把第一人称眼高直接用作跟随/环绕机位。
+### 第三人称跟随：相机臂扫掠、绕障与平滑
+
+角色移动不等于相机跟随正确。相机目标点、期望端点和路径间的净空必须与最终世界几何一起检查；只从角色到相机打一条中心射线，会漏掉视锥附近的小杆件，直接把被挡距离硬截断也会产生贴脸跳变。对运行中的第三人称相机，使用[`createFollowCameraSolver`](../assets/scene/follow-camera.mjs)在默认相机臂及少量项目验证过的备选偏移间做五射线截面扫掠。它返回安全机位和阻挡信息，不移动角色、不更新障碍物矩阵，也不负责时间平滑或材质淡出。
+
+```js
+import { createFollowCameraSolver } from './assets/scene/follow-camera.mjs';
+
+// blockers只收集真实可能挡住相机的最终网格；不要把跟随角色放进去。
+const cameraSolver = createFollowCameraSolver(THREE, {
+  occluders: cameraBlockerMeshes,
+  volumeRadius: 0.24,       // 相机/取景余量，使用场景单位
+  skin: 0.18,               // 命中面前的安全间距
+  minDistance: 0.7,          // 小于该值时显式报告空间不足
+  detours: [                 // 世界坐标候选；按本项目的实际净空验证后配置
+    [0, 0.9, 0], [0, 1.6, 0], [0.7, 0, 0], [-0.7, 0, 0]
+  ]
+});
+
+const pivot = new THREE.Vector3();
+const desiredEndpoint = new THREE.Vector3();
+const smoothedPosition = new THREE.Vector3();
+const cameraUp = new THREE.Vector3(0, 1, 0);
+
+function updateFollowCamera(dt) {
+  // 先更新角色、动画、程序形变和会移动的遮挡物，再求相机。
+  scene.updateMatrixWorld(true);
+  pivot.copy(actor.position).add(new THREE.Vector3(0, actorEyeHeight, 0));
+  desiredEndpoint.copy(pivot).add(desiredBoomOffset); // 期望臂偏移由相机方位/俯仰/距离算出
+  const solved = cameraSolver.solve(pivot, desiredEndpoint);
+
+  // 碰撞时立刻拉近；空间变开后再平滑移远，避免插值穿过刚避开的几何。
+  if (smoothedPosition.lengthSq() === 0 || solved.position.distanceTo(pivot) < smoothedPosition.distanceTo(pivot)) {
+    smoothedPosition.copy(solved.position);
+  } else {
+    smoothedPosition.lerp(solved.position, 1 - Math.exp(-dt * 5));
+  }
+  camera.position.copy(smoothedPosition);
+  camera.up.copy(cameraUp);
+  camera.lookAt(pivot);
+
+  if (solved.tooClose) showCameraClearanceWarning();
+  setCameraStatus({ blocked: solved.blocked, detoured: solved.detoured,
+    distance: solved.actualDistance, obstacle: solved.primaryObstacle ?? solved.obstacle });
+  // 若产品允许淡出挡镜物体，在独立回调里管理材质克隆/还原与dispose。
+}
+```
+
+候选`detours`是世界XYZ偏移，不是自动找到的全空间路径规划。先根据角色可走区、顶棚、树冠与门洞净空选少量候选，并确保候选不会把主体关系、地平线或操作区域移出画面；分数优先保留清晰且接近期望的原路径，备选只在确实改善安全距离时采用。对象含透明面、实例、蒙皮或Shader位移时，登记与实际可见遮挡一致的碰撞代理并在该状态下人工核对。障碍Mesh必须在调用`solve`前更新世界矩阵。若`tooClose`为真，应暂停/限速角色、改走候选相机侧位或提示空间不足；不可把机位强行推过墙体。相机内插、淡出状态及其克隆材质由调用端拥有，结束时需恢复原材质并释放克隆。
+
+跟随相机要分别验收：初始构图/转向后主体占幅；无遮挡时保持期望臂；窄口或横梁处不穿模、不跳脸并能恢复；所有备选镜位仍看清角色和当前路径；复位、拖动和缩放状态均可用。五射线只是低成本近似，不能证明连续相机体积无碰撞，结果仍须在目标浏览器操作并查看实际画面。
+
+在目标视口实际运行后检查第一人称出生画面：入口/主焦点可读、前进方向有落脚空间，首帧没有地表穿屏或山体遮罩。移动更新也必须消费同一地形高度/碰撞源；只在初始化时修正眼高而不更新步行位置，仍会很快穿地或漂浮。第三人称相机还要独立校验跟随距离/相机臂与最终地形、树木和建筑的交叉；环绕作品则根据主体关系选 `target`，检查控制器 `update()` 后实际位置与完整取景。不要把第一人称眼高直接用作跟随/环绕机位。
 
 相机可能接近地形/建筑时分别查两件事：
 

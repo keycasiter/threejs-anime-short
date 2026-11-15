@@ -15,6 +15,7 @@
 | 核心三线与完整组合 | [核心接力](references/core-systems.md)、[连续形体](references/continuous-surfaces.md)、[分层空间](references/world-layout.md)、[材光](references/look-development.md)、[运行入口](assets/examples/core-lab/index.html) |
 | 区域用途与真实构造 | [区域程序](references/region-programs.md)、[同源工厂](assets/examples/region-programs.mjs)；真实足迹、到达面、材料语义与互补观察随同一设计接力 |
 | 空间、相机构图与世界规则 | [空间搭建](references/scene-layout.md)、[相机操作](references/camera-interaction.md) |
+| 第三人称相机臂避障 | [跟随相机代码与使用边界](assets/scene/follow-camera.mjs)、[扫掠/恢复/验收方法](references/camera-interaction.md#第三人称跟随相机臂扫掠绕障与平滑) |
 | 点击选择与对象级反馈 | [选择状态接力](references/selection-feedback.md)、[选择实验](assets/examples/selection-lab/index.html) |
 | 场景锚点、CSS2D/Sprite标签 | [锚定标签方法](references/anchored-labels.md)、[r187标签实验](assets/examples/anchored-label-lab/index.html) |
 | 高程区、地形整平、坡度接缝与道路保形 | [高程规划/验收](references/terrain-grading.md)、[坡度接口字段](references/terrain-interface-field.md)、[受约束网格](references/constrained-terrain.md)、[道路消费者](references/terrain-roads.md) |
@@ -518,3 +519,11 @@ Three.js r187相关回归`52/52`通过。冻结C1探针中grid/terraced通过，
 变更：在制作规格中要求每个关键特征/关系明确ID、预期可见线索、参数/消费者和目标视图角色；允许单帧支持多项检查的前提是各条线索实际清晰可见，否则使用互补视图。统一验收新增对应的图像证据条件，避免字段/几何检查替代画面审阅。
 
 验证：生产流程和验收文档改动后，Markdown链接/章节检查通过，`git diff --check`通过。全新索道页面基于Three.js r187本地运行，语法和离线依赖闭包通过；CUA检查了全景、站房接入、上下端滑轮、支架、吊舱及若干环绕角度。视图拆分改善了关系可见性，但场景仍有明显简化造型；截图没有哈希存档、环绕轨迹不完整、性能/控制台和独立盲评分缺失，因此不宣称画质提升或最终视觉验收。
+
+### 2026-11-15｜第三人称跟随相机臂避障
+
+依据：源码审计只找到一份明确第三人称跟随实现；固定镜头、Orbit和第一人称不能替代角色移动时的相机臂避障。新建温室巡检场景后，空间路径先撞闭合端墙，修正墙体开口后用低灌溉横梁验证相机臂净空。该场景与既有地形/障碍样本构成两种作者侧上下文，仍非独立Agent遵循测试。
+
+变更：新增可复用r187 [`createFollowCameraSolver`](assets/scene/follow-camera.mjs)，使用主臂与调用方选择的安全备选、五射线截面扫掠、最小距离状态和首选/实际阻挡网格。相机文档加入真实障碍列表、矩阵更新、近向立即避让/远向平滑恢复、备选视点取舍、对象淡出资源归属及视觉验收边界；工具目录与Skill入口增加路由。
+
+验证：r187行为测试6/6通过；模块/内联语法、离线HTML闭包与差异空白检查通过。CUA在本地浏览器实测初始`CLEAR`、驶过横梁时`DETOUR`、复位、拖拽和滚轮距离变化。完整温室渲染仍显低模、重复，实时截图未保存并哈希绑定，性能、全路径边界及独立评分未测；本次只支持相机机制可复用，不证明整体画质或Agent遵循率提升。完整记录：`evals/current-candidate-pilot/follow-camera-forward-r1/README.md`（评测产物不纳入Skill包）。
