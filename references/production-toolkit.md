@@ -44,7 +44,7 @@
 | 连续高度与共享世界梯度 | [height-field](../assets/environment/height-field.mjs)：`createFractalHeightField`/`createHeightFieldGeometry`，见[场配方](algorithm-recipes.md#地形水系与侵蚀) | 原创value-noise fBm、归一振幅、解析导数和单值上表面；非侵蚀/完整地貌，接触用最终三角网格 |
 | 发出网格的无效/退化/朝向检查 | [auditTriangles](../assets/geometry/audit-triangles.mjs)，调用见[几何配方](geometry-recipes.md) | 独立方向或逐顶点参考；不检查全部自交、水密、曲率或构图 |
 | 重复铺覆的完整轮廓与封边 | [bounded-profile](../assets/geometry/bounded-profile.mjs)：`clipConvexPolygon` / `createBoundedProfileGeometry`，见[边界代码](visual-construction.md#2-重复单元先归属区域再裁完整轮廓) | 凸域交集、局部XY、一维profile与Z厚度的闭合网格；非通用CSG/曲面贴合；角点在epsilon内归并采样层，真正Float32塌缩拒绝 |
-| 单视图遮挡、候选机位、多视图覆盖与实测Orbit扇区验收 | [view-readability](../assets/scene/view-readability.mjs)：`inspectFeatureVisibility`；[observation-view](../assets/scene/observation-view.mjs)：`selectObservationView` / `auditObservationSet` / `auditOrbitObservations`，见[核心三线](core-systems.md#5-规模观看与上下文) | 实际世界样点、三角遮挡/命中实体、CSS覆盖、投影尺寸、视图并集和从OrbitControls记录的真实扇区位姿；可选约束关键特征必须可见的方位；未达线时输出逐样点状态和首个遮挡体；仅普通深度WebGL透视/正交；不证明连续表面覆盖、真实GPU像素、构图或美术评分 |
+| 单视图遮挡、候选机位、多视图覆盖与实测Orbit扇区验收 | [view-readability](../assets/scene/view-readability.mjs)：`inspectFeatureVisibility`；[observation-view](../assets/scene/observation-view.mjs)：`selectObservationView` / `auditObservationSet` / `auditOrbitObservations`，见[核心三线](core-systems.md#5-规模观看与上下文) | 实际世界样点、三角遮挡/命中实体、CSS覆盖、投影尺寸、视图并集和实测控制器扇区位姿；OrbitControls可自动订阅，自定义控制器用`readState`适配并手动采样或提供带清理函数的事件订阅；可选约束关键特征必须可见的方位；仅普通深度WebGL透视/正交；不证明连续表面覆盖、真实GPU像素、构图或美术评分 |
 | 最近景别的曲率/特征采样估计 | [projected-sampling](../assets/geometry/projected-sampling.mjs)：`estimateSamplingStep`，见[采样代码](visual-construction.md#4-按最近目标景别分配采样) | 当前投影/zoom、世界尺度与局部step；不是自适应网格器、全局误差保证或成本自动优化器 |
 
 ## 最短可执行入口
@@ -66,7 +66,7 @@
 | 沿程主形与实际侧面接点 | [createSectionLoftSource](../assets/geometry/loft-source.mjs) | 原loft同源网格/侧面三角形重心/frame；不含端盖、融合或自交修复 |
 | 按身份/用途分离随机流 | [createRandomStreams](../assets/runtime/random-streams.mjs) | uint32根seed与稳定字符串ID；每次stream返回新游标，非加密 |
 | 多波网格/法线与参数附着 | [createWaveSurface](../assets/environment/wave-surface.mjs) | CPU解析波、当前位置/法线/bounds；局部rest参数，不是固定worldXZ或流体 |
-| 项目消费者的参数/刚体/相机读回 | [scene-probes](../assets/runtime/scene-probes.mjs)：`probeParameter` / `probeRigidMotion` / `readOrbitLimits` / `createOrbitCoverageRecorder` | 有限数字数组、普通Mesh世界矩阵、真实controls边界与水平角度采样（8方位、目标/俯仰稳定、采样步长）；角度覆盖不代表场景可见或无像素遮挡 |
+| 项目消费者的参数/刚体/相机读回 | [scene-probes](../assets/runtime/scene-probes.mjs)：`probeParameter` / `probeRigidMotion` / `readOrbitLimits` / `createOrbitCoverageRecorder` | 有限数字数组、普通Mesh世界矩阵、OrbitControls或自定义导航器的真实水平角度采样（8方位、目标/俯仰稳定、采样步长）；自定义适配器读取实际相机状态并在更新后采样；角度覆盖不代表场景可见或无像素遮挡 |
 
 [组合诊断场景](../assets/examples/production-lab/index.html)和[完整接线源码](../assets/examples/production-lab/main.mjs)同时调用上述模块、现有设备箱工厂和同一材质目录，包含完整关系/结构样件/材质样片视图。
 

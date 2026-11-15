@@ -268,6 +268,36 @@ test('orbit coverage recorder reads actual Three.js r187 OrbitControls updates',
   recorder.dispose();
 });
 
+test('orbit coverage recorder supports custom controllers through readState and explicit sampling',()=>{
+  const record=probe('createOrbitCoverageRecorder');
+  let angle=0;
+  const navigation={read(){return {azimuth:angle,polar:Math.PI/2,
+    position:[5*Math.sin(angle),0,5*Math.cos(angle)],target:[0,0,0]};}};
+  const recorder=record(navigation,{readState:source=>{
+    const state=source.read();
+    return {azimuth:state.azimuth,polar:state.polar,position:state.position,target:state.target};
+  }});
+  for(let degrees=45;degrees<=360;degrees+=45){angle=degrees*Math.PI/180;recorder.record();}
+  const result=recorder.snapshot();
+  assert.equal(result.angularSweepComplete,true);
+  assert.equal(result.sectorSamples.length,8);
+  assert.ok(result.sectorSamples.every(sample=>Math.abs(sample.distance-5)<1e-8));
+  recorder.dispose();
+  const count=recorder.snapshot().sampleCount;angle=Math.PI*1.5;recorder.record();
+  assert.equal(recorder.snapshot().sampleCount,count);
+});
+
+test('orbit coverage recorder custom subscription and read contract clean up on dispose',()=>{
+  const record=probe('createOrbitCoverageRecorder');
+  let angle=0,listener=null,removed=false;
+  const source={read(){return {azimuth:angle,polar:Math.PI/2,position:[Math.sin(angle),0,Math.cos(angle)],target:[0,0,0]};}};
+  const recorder=record(source,{readState:value=>value.read(),subscribe:onSample=>{listener=onSample;return ()=>{removed=true;listener=null;};}});
+  angle=Math.PI/4;listener();assert.equal(recorder.snapshot().sampleCount,2);
+  recorder.dispose();assert.equal(removed,true);assert.equal(listener,null);
+  assert.throws(()=>record(source,{readState:()=>({azimuth:0,polar:1,position:[0,0,0],target:[0,0,0]})}),/distance|sample/i);
+  assert.throws(()=>record(source,{readState:value=>value.read(),subscribe:()=>undefined}),/unsubscribe/i);
+});
+
 test('orbit coverage recorder rejects a partial or reversing arc as full angular coverage',()=>{
   const record=probe('createOrbitCoverageRecorder'),controls=fakeOrbitControls(0),recorder=record(controls);
   for(const degrees of [45,90,135,180,135,90,45,0])controls.setAngle(degrees*Math.PI/180);
@@ -320,5 +350,5 @@ test('orbit coverage recorder validates required OrbitControls readers and thres
   for(const options of [{sectorCount:3},{sectorCount:65},{minCoverageDegrees:0},{minCoverageDegrees:361},
     {maxSampleStepDegrees:180},{maxPolarDriftDegrees:181},{maxTargetDriftWorld:-1}])
     assert.throws(()=>record(controls,options),/sectorCount|minCoverage|maxSampleStep|maxPolar|maxTarget/i);
-  controls.angle=NaN;assert.throws(()=>record(controls),/nonfinite/i);
+  controls.angle=NaN;assert.throws(()=>record(controls),/finite/i);
 });

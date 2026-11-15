@@ -49,7 +49,7 @@ function pickEntity(event,canvas,camera,roots){
 ## 最终入口的实际操作
 
 1. 记录初始相机位置/target、azimuth、polar、distance，保存目标视口。
-2. 用鼠标/触摸实际拖动一整圈，读回真实OrbitControls/实际相机状态；至少观察8方位，完整水平轨迹应达到约359°以上。鼠标像素位移和脚本设机位不是实际角度证据。可用[`createOrbitCoverageRecorder`](../assets/runtime/scene-probes.mjs)记录真实的`change`事件、跨±π解包后的方位角、俯仰/距离和各方位代表机位：
+2. 用鼠标/触摸实际拖动一整圈，读回真实控制器/实际相机状态；至少观察8方位，完整水平轨迹应达到约359°以上。鼠标像素位移和脚本设机位不是实际角度证据。可用[`createOrbitCoverageRecorder`](../assets/runtime/scene-probes.mjs)记录OrbitControls真实的`change`事件、跨±π解包后的方位角、俯仰/距离和各方位代表机位：
 
 ```js
 import { createOrbitCoverageRecorder } from './assets/runtime/scene-probes.mjs';
@@ -74,7 +74,33 @@ const measuredViews = trace.sectorSamples.filter(Boolean).map((sample, index) =>
 sweep.dispose();
 ```
 
-`angularSweepComplete`还要求采样点的俯仰变化和观察目标漂移处于配置容差内；它不表示目标可见、画面无遮挡或视觉质量通过。将`measuredViews`交给[`auditObservationSet`](core-systems.md)做真实特征/遮挡合同检查，并在浏览器逐方位查看画面。单次采样若跨过180°会产生角度别名；若`largeStepObserved`为`true`，降低手势速度并重测。自动旋转期间、无事件监听的控制器或未持续调用`controls.update()`的页面不能用此结果证明用户环绕覆盖。
+`angularSweepComplete`还要求采样点的俯仰变化和观察目标漂移处于配置容差内；它不表示目标可见、画面无遮挡或视觉质量通过。将`measuredViews`交给[`auditObservationSet`](core-systems.md)做真实特征/遮挡合同检查，并在浏览器逐方位查看画面。单次采样若跨过180°会产生角度别名；若`largeStepObserved`为`true`，降低手势速度并重测。自动旋转期间、控制器更新之前采样，或既无事件订阅也未手动调用`record()`时，不能用此结果证明用户环绕覆盖。
+
+项目使用自定义相机控制器时，传入真实状态读回函数，并在控制器更新后、实际手势进行期间手动调用`record()`；也可以为实现`EventTarget`的控制器提供事件订阅函数自动采样。不要按拖动像素估角，也不要在更新控制器之前采样：
+
+```js
+const sweep = createOrbitCoverageRecorder(navigation, {
+  readState: () => {
+    const state = navigation.read();
+    return { azimuth: state.azimuth, polar: state.polar, distance: state.distance,
+      position: state.position, target: state.target };
+  },
+  // 可选：仅当控制器发出真实相机变化事件时使用；必须返回清理函数。
+  subscribe: onChange => {
+    navigation.addEventListener('change', onChange);
+    return () => navigation.removeEventListener('change', onChange);
+  }
+});
+
+// 在逐帧更新中：先消费相机输入，再读取真实相机状态。
+function frame(dt) {
+  navigation.update(dt);
+  if (manualOrbitGestureActive) sweep.record();
+  renderer.render(scene, camera);
+}
+```
+
+自定义控制器必须能读回以世界+Z为方位零方向、向上为极角零方向的`azimuth`/`polar`，以及实际相机`position`和`target`；若项目采用其它角度约定，应在适配器中先转换到该约定。`subscribe`必须返回解绑监听器的函数；没有事件接口时用手动`record()`。帧循环未采样时会漏掉手势中经过的扇区；若控制器带阻尼，在阻尼结束前继续采样。
 
 将角度路径与场景可见性接成同一份结果时，用[`auditOrbitObservations`](../assets/scene/observation-view.mjs)传入记录快照、关键表面样点和最终遮挡物；`requiredSectors`声明该特征必须读出的方位，`minVisibleFractionPerView`声明每个指定方位的最低无遮挡样点比例。例子里的sector 0/4来自实测环绕样本，并非预设镜头：
 

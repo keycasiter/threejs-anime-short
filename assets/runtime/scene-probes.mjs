@@ -137,26 +137,30 @@ function wrappedDelta(next, previous) {
   return delta;
 }
 
-/** Records actual OrbitControls change states for a manual horizontal sweep.
+/** Records actual orbit-controller states for a manual horizontal sweep.
  * This measures angular coverage and supplies sampled camera poses for later
  * view audits; it does NOT prove that the scene is visible, attractive, or free
  * of occlusion. Disable autoRotate and keep per-event angular changes below
  * 180 degrees so wrapped samples cannot alias multiple turns into a short arc.
+ * OrbitControls is read/subscribed automatically. Custom controllers provide
+ * readState() and call record() after each real input/update sample, or supply a
+ * subscribe(record) function that returns an unsubscribe callback.
  */
 export function createOrbitCoverageRecorder(controls, {
   sectorCount = 8,
   minCoverageDegrees = 359,
   maxSampleStepDegrees = 90,
   maxPolarDriftDegrees = 5,
-  maxTargetDriftWorld = 1e-4
+  maxTargetDriftWorld = 1e-4,
+  readState,
+  subscribe
 } = {}) {
-  if (!controls || typeof controls.addEventListener !== 'function' ||
-      typeof controls.removeEventListener !== 'function' ||
-      typeof controls.getAzimuthalAngle !== 'function' ||
-      typeof controls.getPolarAngle !== 'function' ||
-      typeof controls.getDistance !== 'function' ||
-      !controls.object?.position?.toArray || !controls.target?.toArray) {
-    throw new TypeError('OrbitControls with camera object, target and angle/distance readers are required');
+  const hasOrbitControlsReaders=controls&&typeof controls.getAzimuthalAngle==='function'&&
+    typeof controls.getPolarAngle==='function'&&controls.object?.position?.toArray&&controls.target?.toArray;
+  if (readState!==undefined&&typeof readState!=='function') throw new TypeError('readState must be a function');
+  if (subscribe!==undefined&&typeof subscribe!=='function') throw new TypeError('subscribe must be a function');
+  if (!readState&&!hasOrbitControlsReaders) {
+    throw new TypeError('OrbitControls readers or a custom readState adapter are required');
   }
   if (!Number.isInteger(sectorCount) || sectorCount < 4 || sectorCount > 64) {
     throw new RangeError('sectorCount must be an integer from 4 to 64');
@@ -178,17 +182,29 @@ export function createOrbitCoverageRecorder(controls, {
   let minAngle = Infinity, maxAngle = -Infinity, totalTravel = 0, maxStep = 0;
   let minPolar = Infinity, maxPolar = -Infinity, baselineTarget = null, observedTargetDrift = 0;
   let largeStepObserved = false, disposed = false;
+  let unsubscribe=()=>{};
+
+  function readPose() {
+    const state=readState?readState(controls):{
+      azimuth:controls.getAzimuthalAngle(),polar:controls.getPolarAngle(),
+      distance:controls.getDistance?.(),position:controls.object.position,target:controls.target
+    };
+    const vector=value=>value?.toArray?value.toArray():value;
+    const position=vector(state?.position),target=vector(state?.target);
+    if (!state||!Number.isFinite(state.azimuth)||!Number.isFinite(state.polar)||
+        !Array.isArray(position)||position.length!==3||!Array.isArray(target)||target.length!==3||
+        ![...position,...target].every(Number.isFinite)) {
+      throw new RangeError('orbit readState must return finite azimuth, polar, position and target');
+    }
+    const dx=position[0]-target[0],dy=position[1]-target[1],dz=position[2]-target[2];
+    const distance=state.distance??Math.hypot(dx,dy,dz);
+    if (!Number.isFinite(distance)||distance<=0) throw new RangeError('orbit readState returned a nonpositive distance');
+    return {azimuth:state.azimuth,polar:state.polar,distance,position:[...position],target:[...target]};
+  }
 
   function record() {
     if (disposed) return;
-    const azimuth = controls.getAzimuthalAngle();
-    const polar = controls.getPolarAngle();
-    const distance = controls.getDistance();
-    const position = controls.object.position.toArray();
-    const target = controls.target.toArray();
-    if (![azimuth, polar, distance, ...position, ...target].every(Number.isFinite) || distance < 0) {
-      throw new RangeError('OrbitControls returned a nonfinite camera sample');
-    }
+    const {azimuth,polar,distance,position,target}=readPose();
     let step = 0;
     if (lastAngle === null) unwrappedAngle = azimuth;
     else {
@@ -252,10 +268,18 @@ export function createOrbitCoverageRecorder(controls, {
   }
 
   record();
-  controls.addEventListener('change', record);
+  if (subscribe) {
+    const cleanup=subscribe(record,controls);
+    if(typeof cleanup!=='function')throw new TypeError('subscribe must return an unsubscribe function');
+    unsubscribe=cleanup;
+  } else if(typeof controls?.addEventListener==='function'&&typeof controls?.removeEventListener==='function') {
+    controls.addEventListener('change',record);
+    unsubscribe=()=>controls.removeEventListener('change',record);
+  }
   return {
     snapshot,
     reset,
-    dispose(){if(disposed)return;disposed=true;controls.removeEventListener('change',record);}
+    record,
+    dispose(){if(disposed)return;disposed=true;unsubscribe();}
   };
 }
