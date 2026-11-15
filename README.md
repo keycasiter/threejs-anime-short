@@ -23,6 +23,7 @@
 | 形体与真实关系 | [构造](references/procedural-construction.md)、[几何配方](references/geometry-recipes.md)、[分布](references/detail-distribution.md) |
 | 表面与表现 | [表面](references/surface-detail.md)、[渲染](references/rendering-choices.md)、[效果代码](references/effect-recipes.md)、[坐标响应](references/coordinate-response.md) |
 | 实际工具与运行 | [工具目录](references/production-toolkit.md)、[运行/规模](references/motion-and-scale.md)、[条件库接线](references/library-integration.md) |
+| 对象族完整度核验 | [资产族放行校验器](scripts/validate-visual-finish.mjs)、[放行卡流程](references/production-workflow.md#视觉完成放行卡阶段3至交付的停止条件) |
 | 从设计到可执行代码 | [代码接力](references/code-guidance.md)、[完整构造工厂](assets/examples/guided-assembly.mjs)、[全场接线入口](assets/examples/guided-world/index.html) |
 | 算法与参数接力 | [算法配方](references/algorithm-recipes.md)、[参数设计](references/parameter-design.md)；连接图/地块、椭圆放样与共享梯度提供可调用源码 |
 | 本地算法教学 | 按需读[空间求解](references/world-methods.md)、[自然形态](references/nature-methods.md)、[水与约束](references/water-motion-methods.md)；[出处](references/source-notes.md)只用于额外查证 |
@@ -35,6 +36,14 @@ README记录维护范围与验证，不作为普通制作的历史指令加载�
 维护执行引导与比较版本时读[分层测评](references/skill-evaluation.md)。它保留执行、正确性、视觉和交付的独立判断及完整A/B设计，不自动扩展普通制作任务。
 
 ## 迭代记录
+
+### 2026-11-15｜可见资产族逐特征放行校验
+
+依据：R3跨路线前向作品中的环境、自然、机制和物件都已具备空间/状态/主要构件，但画面仍能暴露粗糙资产族或不完整接口；旧证据模型只检查整组视向、任务覆盖和五维摘要，无法核对每个生成器/对象族的必查线索是否真的落到目标视图。该缺口是跨题材验收接力问题，不对应单一资产。
+
+变更：新增`validate-visual-finish.mjs`，要求运行清单枚举可见质量相关资产族及其必查特征/目标检查点；视觉证据逐族逐特征引用实际检查点、观察结果和`clear`/`issue`状态。冻结评测证据校验复用该逻辑；生产流程要求清单对照真实生成器/场景树，普通项目可继续用等价Markdown记录。严格通过要求每项目标视图均有记录，且没有声明问题。
+
+验证与边界：校验器单测、证据校验、配对cohort回归共22/22通过；CLI正反例验证完整清单可通过、记录缺陷时严格模式失败。Skill格式校验、任务路由映射、全仓Markdown链接/章节和`git diff --check`均通过。脚本检查记录结构和人工状态，不判断截图像素、来源或清单是否漏列了场景中的真实资产；仍需人眼核对对象目录与实屏。
 
 ### 2026-11-15｜共享材质的单网格状态与颜色通道校准
 

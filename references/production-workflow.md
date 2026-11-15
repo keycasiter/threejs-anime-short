@@ -22,8 +22,35 @@
 把“主体、配景和环境各自达到目标景别”落成逐族检查，不以代码齐全、元素数量、主角精致或一个英雄视角代替。场景对象目录中凡在目标镜头可见且影响识别/空间关系的族，都要列入放行卡；至少覆盖主体、支撑/连接、主要配景、背景环境和重复群体。每族记录：
 
 ```text
-族/区域 | 目标景别与视图 | 必须读出的特征 | 当前运行图/构建 | 形体/接口/材光/细节检查 | 缺陷归属阶段 | 状态
+族ID/区域ID | 目标景别与视图 | 特征ID与必须读出的线索 | 当前运行图/构建 | 形体/接口/材光/细节检查 | 缺陷归属阶段 | 状态
 ```
+
+对象清单要从真实生成器/区域工厂和最终场景树盘出，列出所有会影响识别、空间关系或材光层次的可见族，包括主体、支撑/连接、主要配景、背景和重复群体。每项特征给稳定ID和目标检查点；逐张查看时把结果接回同一族/特征ID，不能用“全场看过”代替逐族核对。冻结评测使用`run.json.assetFamilies`声明族与特征、`qa/visual-evidence.json.assetFamilyReviews`记录检查；可运行`node scripts/validate-visual-finish.mjs <run-directory>`校验清单与证据是否逐项对应。普通制作可用同字段Markdown表，不必伪造评测运行文件。
+
+先按生成器/场景树中真实存在的生产责任分族，而不是把每个网格拆成一族，也不要把全场合并成“environment”一族。示例：
+
+```json
+{
+  "assetFamilies": [{
+    "id": "terraced-cliff",
+    "name": "Terraced cliff and retaining edges",
+    "role": "supports the route and frames the focal structure",
+    "requiredFeatures": [
+      { "id": "profile", "description": "Readable stepped silhouette and thickness", "targetCheckpointIds": ["hero", "azimuth-180"] },
+      { "id": "route-junction", "description": "Path visibly joins the upper terrace without floating", "targetCheckpointIds": ["hero", "azimuth-090"] }
+    ]
+  }],
+  "assetFamilyReviews": [{
+    "familyId": "terraced-cliff",
+    "featureChecks": [
+      { "featureId": "profile", "status": "clear", "checkpointIds": ["hero", "azimuth-180"], "observation": "The steps and slab thickness read in both cited views." },
+      { "featureId": "route-junction", "status": "issue", "checkpointIds": ["hero", "azimuth-090"], "observation": "The path edge floats above the upper terrace in azimuth-090." }
+    ]
+  }]
+}
+```
+
+`targetCheckpointIds`是该线索必须实际查看的视图，不是建议视角；先从任务覆盖表中确定稳定检查点，再引用同一ID。观察到缺陷仍属于有效证据，应记`issue`并指明视图、可见现象和回退阶段；不能为满足校验器改成`clear`。这张卡的目标是把“哪里做得弱”连回具体对象族、特征和生成/装配职责，帮助返修定位，不会自动发现漏列族、判定截图真伪或代替人眼评分。
 
 状态仅用`通过`、`返修`、`未检查`。通过须同时满足以下条件：
 
